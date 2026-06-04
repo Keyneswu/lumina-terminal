@@ -27,6 +27,7 @@ export interface TerminalRenderOptions extends ITerminalOptions {
 export interface TerminalProfile extends TerminalRenderOptions {
     name: string;
     exePath: string;
+    cwd?: string;
     default?: boolean;
     type?: ProfileType;
     ssh?: SSHConfig;

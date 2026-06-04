@@ -87,5 +87,7 @@
     "Identity File": "Identity File",
     "Import from SSH Config": "Import from .ssh/config",
     "New Local Profile": "New Local Profile",
-    "New Remote Profile": "New Remote Profile"
+    "New Remote Profile": "New Remote Profile",
+    "Startup Directory": "Startup Directory",
+    "Default": "Default"
 }

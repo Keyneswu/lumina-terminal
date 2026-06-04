@@ -255,6 +255,33 @@ export default function ProfileSettings({
                     </div>
                     )}
 
+                    {/* Startup Directory */}
+                    <div className="flex flex-col gap-1.5">
+                        <Label htmlFor="profile-cwd">{t["Startup Directory"]}</Label>
+                        <div className="flex flex-row gap-2 items-center">
+                            <Input
+                                id="profile-cwd"
+                                value={draft.cwd ?? ""}
+                                onChange={(e) => updateDraft({ cwd: e.target.value || undefined })}
+                                className="flex-1 max-w-sm"
+                                placeholder={t["Default"]}
+                            />
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onPress={async () => {
+                                    const dir = await open({
+                                        multiple: false,
+                                        directory: true,
+                                    });
+                                    if (dir) updateDraft({ cwd: dir });
+                                }}
+                            >
+                                {t["Select"]}
+                            </Button>
+                        </div>
+                    </div>
+
                     {/* SSH Config Fields */}
                     {profileType === "remote" && (
                         <div className="flex flex-col gap-3">

@@ -87,5 +87,7 @@
     "Identity File": "密钥文件",
     "Import from SSH Config": "从 .ssh/config 导入",
     "New Local Profile": "新建本地配置",
-    "New Remote Profile": "新建远程配置"
+    "New Remote Profile": "新建远程配置",
+    "Startup Directory": "启动目录",
+    "Default": "默认"
 }

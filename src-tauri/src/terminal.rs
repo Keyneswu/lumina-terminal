@@ -27,6 +27,7 @@ pub fn start_terminal(
     rows: Option<u16>,
     profile_type: Option<String>,
     ssh_config: Option<SshConfig>,
+    cwd: Option<String>,
 ) {
     {
         let terminals = state
@@ -67,11 +68,19 @@ pub fn start_terminal(
             c.args(&["-o", "PubkeyAuthentication=no", "-o", "PreferredAuthentications=password"]);
         }
         c.env("TERM", "xterm-256color");
+        if let Some(ref dir) = cwd {
+            c.cwd(dir);
+        }
+        log::debug!("Creating terminal with ssh");
         c
     } else {
-        let mut c = CommandBuilder::new(exe_path);
+        let mut c = CommandBuilder::new(&exe_path);
         c.args(&["--login", "-i"]);
         c.env("TERM", "xterm-256color");
+        if let Some(ref dir) = cwd {
+            c.cwd(dir);
+        }
+        log::debug!("Creating terminal {:?} with cwd {:?}", exe_path, c.get_cwd());
         c
     };
     let child: CommandChild = pty_pair
