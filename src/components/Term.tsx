@@ -68,6 +68,7 @@ export default function Term(props : TermProps) {
         let charHeight = renderDimensions?.actualCellHeight || charSizeService?.height;
         debug(`Char size measured: ${charWidth}x${charHeight}`);
         term.dispose();
+        dummyDiv.remove();
         let widthOffset = 0; let heightOffset = 0;
         if (termRef.current) {
             widthOffset = window.innerWidth - termRef.current.clientWidth;
@@ -153,9 +154,18 @@ export default function Term(props : TermProps) {
         isInitialized.current = true;
 
         // Create terminal inside effect so StrictMode remount gets a fresh instance
+        // Strip non-xterm properties (fontStyle, padding, name, exePath, etc.) so they
+        // don't interfere with xterm's canvas font measurement and rendering.
+        const {
+            cols: _cols, rows: _rows, webgl: _webgl, padding: _padding,
+            themePath: _themePath, theme: _theme, fontStyle: _fontStyle,
+            name: _name, exePath: _exePath, cwd: _cwd, default: _default,
+            type: _type, ssh: _ssh,
+            ...xtermOptions
+        } = profile;
         term.current = new Terminal({
             allowProposedApi: true,
-            ...profile,
+            ...xtermOptions,
         });
 
         let observer: ResizeObserver | undefined;

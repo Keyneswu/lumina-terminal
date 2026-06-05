@@ -63,7 +63,9 @@ export async function parseProfileTheme(profile: TerminalRenderOptions, defaultT
 }
 
 export async function parseProfile(profile: TerminalProfile, globalProfile?: TerminalRenderOptions): Promise<TerminalProfile> {
-    const p = {...globalProfile, ...profile};
+    const cleanGlobal = globalProfile ? Object.fromEntries(Object.entries(globalProfile).filter(([_, v]) => v !== undefined)) : {};
+    const cleanProfile = Object.fromEntries(Object.entries(profile).filter(([_, v]) => v !== undefined));
+    const p = {...cleanGlobal, ...cleanProfile} as TerminalProfile;
     if (globalProfile) {
         let globalTheme = await parseProfileTheme(globalProfile);
         p.theme = await parseProfileTheme(profile, globalTheme);

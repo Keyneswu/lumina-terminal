@@ -89,16 +89,17 @@ export default function ProfileSettings({
         if (!draft) return;
         const oldName = profile.name;
         info(`Profile saved: ${oldName}`);
-        const trimmed: TerminalProfile = {
+        // Build trimmed profile — omitted undefined keys won't override globalProfile.
+        const trimmed: TerminalProfile = JSON.parse(JSON.stringify({
             ...draft,
             name: draft.name.trim(),
             exePath: draft.exePath.trim(),
             fontFamily: draft.fontFamily?.trim() || undefined,
-            fontStyle: draft.fontStyle === "italic" ? "italic" : "normal",
+            fontStyle: draft.fontStyle || undefined,
             themePath: draft.themePath?.trim() || undefined,
             type: draft.type ?? "local",
             ssh: draft.type === "remote" ? draft.ssh : undefined,
-        };
+        }));
         const newName = trimmed.name;
         if (!newName) return;
 

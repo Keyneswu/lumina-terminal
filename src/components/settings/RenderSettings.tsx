@@ -196,7 +196,6 @@ export default function RenderSettings({
                     </Switch.Control>
                 </Switch>
             </div>
-
         </div>
     );
 

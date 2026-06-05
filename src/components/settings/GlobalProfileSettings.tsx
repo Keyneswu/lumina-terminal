@@ -35,12 +35,12 @@ export default function GlobalProfileSettings({ borderColor }: { borderColor: st
 
     const handleSave = () => {
         info("Global profile settings saved");
-        const trimmed: TerminalRenderOptions = {
+        const trimmed: TerminalRenderOptions = JSON.parse(JSON.stringify({
             ...draft,
             fontFamily: draft.fontFamily?.trim() || undefined,
-            fontStyle: draft.fontStyle === "italic" ? "italic" : "normal",
+            fontStyle: draft.fontStyle || undefined,
             themePath: draft.themePath?.trim() || undefined,
-        };
+        }));
         updateConfig({ globalProfile: trimmed });
     };
 
