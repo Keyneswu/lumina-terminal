@@ -31,6 +31,7 @@ interface TermProps {
     onOpenCommandPalette?: () => void;
     onOpenSettings?: () => void;
     onToTab?: (index: number) => void;
+    onToggleSidebar?: () => void;
 }
 
 export default function Term(props : TermProps) {
@@ -97,6 +98,9 @@ export default function Term(props : TermProps) {
                 break;
             case "openSettings":
                 props.onOpenSettings?.();
+                break;
+            case "toggleSidebar":
+                props.onToggleSidebar?.();
                 break;
             case "toTab":
                 if (args?.index !== undefined) {
@@ -300,6 +304,19 @@ export default function Term(props : TermProps) {
             observer.observe(termRef.current);
         }
     }, [id]);
+
+    // Hot-reload keybindings + copyWithCtrl when the config changes (e.g. after the user edits
+    // a shortcut in Settings). attachCustomKeyEventHandler replaces the previous handler, so
+    // already-open terminals pick up the new bindings live without needing a tab restart.
+    useEffect(() => {
+        if (!isInitialized.current || !term.current) return;
+        loadBindings(term.current, parseBindings(config.bindings), (action, args) => {
+            handleActionsRef.current(action, args);
+        }, config.copyWithCtrl ?? false, (data) => {
+            invoke("write_to_terminal", {id, content: data}).then();
+        });
+        debug(`Bindings hot-reloaded for terminal ${id}`);
+    }, [config.bindings, config.copyWithCtrl, id]);
 
     // Auto-focus xterm when this tab becomes active
     useEffect(() => {

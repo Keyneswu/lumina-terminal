@@ -74,6 +74,17 @@ function keySignature(key: string, withKeys: string[]): string {
     return `${key}|${[...withKeys].sort().join(",")}`;
 }
 
+// Normalize a key for comparison. Single-character keys are compared case-insensitively so a
+// binding stored as "p" still matches event.key "P" when Shift is held (and vice-versa). This
+// keeps loadBindings consistent with matchBinding and lets the settings recorder store the
+// lowercase form of a letter key alongside an explicit "shift" modifier.
+function keyMatches(bindingKey: string, eventKey: string): boolean {
+    if (bindingKey.length === 1 && eventKey.length === 1) {
+        return bindingKey.toLowerCase() === eventKey.toLowerCase();
+    }
+    return bindingKey === eventKey;
+}
+
 export function loadBindings(
     term: Terminal,
     bindings: Binding[],
@@ -86,7 +97,7 @@ export function loadBindings(
     term.attachCustomKeyEventHandler((event) => {
         if (event.type === "keyup") {
             for (const binding of bindings) {
-                if (binding.key === event.key) {
+                if (keyMatches(binding.key, event.key)) {
                     held.delete(keySignature(binding.key, binding.with));
                 }
             }
@@ -114,7 +125,7 @@ export function loadBindings(
         }
 
         for (const binding of bindings) {
-            if (binding.key === event.key) {
+            if (keyMatches(binding.key, event.key)) {
                 let flag = true;
                 for (const w of binding.with) {
                     switch (w) {

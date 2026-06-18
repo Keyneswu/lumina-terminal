@@ -19,10 +19,8 @@ import SettingsPage from "./pages/SettingsPage.tsx";
 import AboutPage from "./pages/AboutPage.tsx";
 import {SETTINGS_TAB_ID, ABOUT_TAB_ID} from "./constants.ts";
 import { info, debug, error } from "@tauri-apps/plugin-log";
-import {isLinux} from "./lib/utils.ts";
 import {usePaddingOffset} from "./hooks/paddingOffset.ts";
 import {getMaximized} from "./hooks/maximized.ts";
-import ResizeHandle from "./components/ResizeHandle.tsx";
 
 function InnerApp() {
     const {config, updateConfig} = useGlobalConfig();
@@ -208,6 +206,9 @@ function InnerApp() {
             case "openCommandPalette":
                 setIsCommandPaletteOpen(true);
                 break;
+            case "toggleSidebar":
+                updateConfig({ showTabBar: !tabBarVisible });
+                break;
             case "toTab":
                 if (args?.index !== undefined) {
                     const idx = args.index === "last" ? -1 : parseInt(args.index, 10);
@@ -215,7 +216,7 @@ function InnerApp() {
                 }
                 break;
         }
-    }, [currentId, config.profiles, openSettings, toTab]);
+    }, [currentId, config.profiles, openSettings, toTab, tabBarVisible, updateConfig]);
     useKeyboardBindings(parsedBindings, handleNonTerminalAction, isNonTerminalTab);
 
     // Global: prevent browser defaults for configured shortcuts
@@ -435,6 +436,7 @@ function InnerApp() {
                                     onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
                                     onOpenSettings={openSettings}
                                     onToTab={toTab}
+                                    onToggleSidebar={() => updateConfig({ showTabBar: !tabBarVisible })}
                                 />
                             </div>
                         ))}
@@ -463,13 +465,9 @@ function App() {
         >
             <div
                 className={`w-full h-full overflow-hidden ${isMaximized ? "" : "rounded-lg"}`}
-                style={{
-                    boxShadow: isLinux() ? "0 5px 15px rgba(0, 0, 0, 0.3), 0 1px 5px rgba(0, 0, 0, 0.2)" : undefined,
-                }}
             >
                 <InnerApp/>
             </div>
-            {isLinux() && <ResizeHandle size={paddingOffset} />}
         </div>
     );
 }

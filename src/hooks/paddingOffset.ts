@@ -1,5 +1,5 @@
 import {useEffect, useState} from "react";
-import {isLinux, isMacOS} from "../lib/utils.ts";
+import {isMacOS} from "../lib/utils.ts";
 import {getMaximized} from "./maximized.ts";
 
 export function usePaddingOffset() {
@@ -7,24 +7,16 @@ export function usePaddingOffset() {
     const [offset, setOffset] = useState(0);
 
     const loadDefaultPadding = () => {
-        if (isLinux()) {
-            setOffset(15);
-        } else if (isMacOS()) {
+        if (isMacOS()) {
             setOffset(8);
         } else {
             setOffset(0);
         }
     }
 
-    const loadMaximizedPadding = () => {
-        if (isLinux()) {
-            setOffset(0);
-        }
-    }
-
     useEffect(() => {
         if (isMaximized) {
-            loadMaximizedPadding();
+            setOffset(0);
         } else {
             loadDefaultPadding();
         }

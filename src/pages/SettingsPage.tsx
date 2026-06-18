@@ -8,6 +8,7 @@ import {
     FileCog,
     Bug,
     Globe,
+    Keyboard,
 } from "lucide-react";
 import { ITheme } from "@xterm/xterm";
 import { useGlobalConfig } from "../hooks/config.tsx";
@@ -20,8 +21,9 @@ import DeveloperSettings from "../components/settings/DeveloperSettings.tsx";
 import GlobalProfileSettings from "../components/settings/GlobalProfileSettings.tsx";
 import GeneralSettings from "../components/settings/GeneralSettings.tsx";
 import AddProfileModal from "../components/settings/AddProfileModal.tsx";
+import BindingsSettings from "../components/settings/BindingsSettings.tsx";
 
-type SettingsSection = "general" | "globalProfile" | string;
+type SettingsSection = "general" | "globalProfile" | "bindings" | "developer" | string;
 
 function SidebarItem({
     children,
@@ -142,6 +144,18 @@ export default function SettingsPage({ theme, openAbout }: { theme: ITheme | nul
                         </div>
                     </SidebarItem>
 
+                    {/* Keyboard Shortcuts */}
+                    <SidebarItem
+                        isSelected={selectedSection === "bindings"}
+                        onClick={() => handleSectionChange("bindings")}
+                        colors={colors}
+                    >
+                        <div className="flex items-center gap-2">
+                            <Keyboard size={15} />
+                            <span className="truncate">{t["Keyboard Shortcuts"]}</span>
+                        </div>
+                    </SidebarItem>
+
                     <div className="mb-1" />
 
                     {/* Profiles header */}
@@ -206,6 +220,8 @@ export default function SettingsPage({ theme, openAbout }: { theme: ITheme | nul
                     <GeneralSettings borderColor={colors.borderColor} openAbout={openAbout} />
                 ) : selectedSection === "globalProfile" ? (
                     <GlobalProfileSettings borderColor={colors.borderColor} />
+                ) : selectedSection === "bindings" ? (
+                    <BindingsSettings borderColor={colors.borderColor} />
                 ) : selectedSection === "developer" ? (
                     <DeveloperSettings />
                 ) : (
