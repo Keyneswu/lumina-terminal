@@ -20,3 +20,10 @@ body {
     height: 100vh;
     overflow: hidden;
 }
+
+.xterm .xterm-scrollable-element > .scrollbar > .slider {
+    width: 8px !important;
+    left: auto !important;
+    right: 3px;
+    border-radius: 4px;
+}

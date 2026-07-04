@@ -3,7 +3,7 @@ import {Terminal} from "@xterm/xterm";
 import {listen} from "@tauri-apps/api/event";
 import {invoke} from "@tauri-apps/api/core";
 import {TerminalProfile} from "../types/terminal.ts";
-import {FitAddon} from "@xterm/addon-fit";
+import {FloatingFitAddon} from "../lib/FloatingFitAddon.ts";
 import {WebglAddon} from "@xterm/addon-webgl";
 import {getCurrentWindow, LogicalSize} from "@tauri-apps/api/window";
 import {parseProfilePadding, parseProfileTheme} from "../lib/term.ts";
@@ -194,7 +194,7 @@ export default function Term(props : TermProps) {
         const imageAddon = new ImageAddon(IMAGE_ADDON_SETTINGS);
         term.current.loadAddon(imageAddon);
 
-        const fitAddon = new FitAddon();
+        const fitAddon = new FloatingFitAddon();
         term.current.loadAddon(fitAddon);
 
         if (profile.webgl) {
