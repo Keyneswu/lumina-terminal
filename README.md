@@ -10,6 +10,13 @@
 
 A modern, cross-platform terminal emulator built with Tauri, React, and Xterm.js — featuring a sleek UI, command palette, and customizable profiles.
 
+## Installation
+* Linux / macOS: install with script
+```shell
+curl -fsSL https://raw.githubusercontent.com/iewnfod/lumina-terminal/master/install.sh | bash
+```
+* Windows: download installer from [releases](https://github.com/iewnfod/lumina-terminal/releases)
+
 ## Screenshots
 
 ### Terminal

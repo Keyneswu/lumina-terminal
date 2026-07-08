@@ -10,6 +10,13 @@
 
 一个基于 Tauri、React 和 Xterm.js 构建的现代跨平台终端模拟器，拥有精美的界面、命令面板和可自定义的配置文件。
 
+## 安装
+* Linux / macOS: 使用脚本安装
+```shell
+curl -fsSL https://raw.githubusercontent.com/iewnfod/lumina-terminal/master/install.sh | bash
+```
+* Windows: 从[发布页](https://github.com/iewnfod/lumina-terminal/releases)下载安装包
+
 ## 截图
 
 ### 终端
