@@ -1,7 +1,7 @@
-import { Plus, X, Settings } from "lucide-react";
+import { Plus, X, Settings, Info } from "lucide-react";
 import Icon from "../assets/icon.svg";
 import { isMacOS } from "../lib/platform.ts";
-import { SETTINGS_TAB_ID } from "../constants.ts";
+import { SETTINGS_TAB_ID, ABOUT_TAB_ID } from "../constants.ts";
 import { useSurfaceColors } from "../hooks/surfaceColors.ts";
 import {useI18n} from "../hooks/i18n.tsx";
 
@@ -91,6 +91,9 @@ export default function TabBar(props: TabBarProps) {
                             <div className="flex items-center gap-2 flex-1 min-w-0">
                                 {tab.id === SETTINGS_TAB_ID && (
                                     <Settings size={14} className="shrink-0" />
+                                )}
+                                {tab.id === ABOUT_TAB_ID && (
+                                    <Info size={14} className="shrink-0" />
                                 )}
                                 <span
                                     className="text-sm truncate"
