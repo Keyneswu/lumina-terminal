@@ -1,10 +1,9 @@
 import {useI18n} from "../../hooks/i18n.tsx";
 import {useEffect, useState} from "react";
-import {getConfigFilePath, openConfigFile} from "../../lib/configFile.ts";
+import {getConfigFilePath} from "../../lib/configFile.ts";
 import {invoke} from "@tauri-apps/api/core";
 import {Button, Label} from "@heroui/react";
 import {Bug, FolderOpen} from "lucide-react";
-import {openPath} from "@tauri-apps/plugin-opener";
 import {debug} from "@tauri-apps/plugin-log";
 
 export default function DeveloperSettings() {
@@ -37,7 +36,13 @@ export default function DeveloperSettings() {
                             variant="outline"
                             size="sm"
                             className="shrink-0"
-                            onPress={() => openConfigFile().catch(console.error)}
+                            onPress={() => {
+                                if (configPath) {
+                                    invoke("open_in_file_manager", {path: configPath}).catch((e) => {
+                                        debug(`Failed to open config file: ${e}`);
+                                    });
+                                }
+                            }}
                         >
                             <FolderOpen size={15} />
                             {t["Open"]}
@@ -58,8 +63,8 @@ export default function DeveloperSettings() {
                             className="shrink-0"
                             onPress={() => {
                                 if (logDir) {
-                                    openPath(logDir).catch(() => {
-                                        debug(`Failed to open log directory: ${logDir}`);
+                                    invoke("open_in_file_manager", {path: logDir}).catch((e) => {
+                                        debug(`Failed to open log directory: ${e}`);
                                     });
                                 }
                             }}
