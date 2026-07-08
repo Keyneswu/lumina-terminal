@@ -74,6 +74,21 @@ export default function RenderSettings({
                         className="w-24"
                     />
                 </div>
+                {/* Scrollback */}
+                <div className="flex flex-col gap-1.5">
+                    <Label htmlFor={`${idPrefix}-scrollback`}>{t["Scrollback"]}</Label>
+                    <Input
+                        id={`${idPrefix}-scrollback`}
+                        type="number"
+                        min={0}
+                        value={String(draft.scrollback ?? "")}
+                        onChange={(e) => {
+                            const v = e.target.value;
+                            updateDraft({ scrollback: v ? Math.max(0, +v || 0) : undefined });
+                        }}
+                        className="w-24"
+                    />
+                </div>
             </div>
 
             {/* Font Family */}
