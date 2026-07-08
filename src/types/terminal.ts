@@ -32,3 +32,14 @@ export interface TerminalProfile extends TerminalRenderOptions {
     type?: ProfileType;
     ssh?: SSHConfig;
 }
+
+/** Currently-running command in a terminal, for the tab subtitle. `null` means
+ * the terminal is idle at the shell prompt (nothing to show). */
+export interface CurrentCommand {
+    /** argv[0] basename of the foreground process (e.g. "npm", "sudo"). */
+    command: string;
+    /** True for elevated/privileged operations (sudo, su, doas, pkexec, or a
+     * process running as root). The tab subtitle shows a red dot before the
+     * command name when this is true. */
+    privileged: boolean;
+}

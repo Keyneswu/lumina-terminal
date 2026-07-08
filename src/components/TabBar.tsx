@@ -8,6 +8,11 @@ import {useI18n} from "../hooks/i18n.tsx";
 export interface TabInfo {
     id: string;
     name: string;
+    /** Optional small subtitle shown under the title (e.g. running command). */
+    subtitle?: string;
+    /** When true, the running command is a privileged/elevated operation
+     * (sudo/su/doas/pkexec or root); a red dot is shown before it. */
+    commandPrivileged?: boolean;
 }
 
 interface TabBarProps {
@@ -18,12 +23,14 @@ interface TabBarProps {
     onNew: () => void;
     backgroundColor: string;
     foregroundColor: string;
+    /** Theme-aware red used for danger indicators (privileged-command dot). */
+    dangerColor: string;
     collapsed: boolean;
     defaultProfileName?: string;
 }
 
 export default function TabBar(props: TabBarProps) {
-    const { tabs, activeId, onSelect, onClose, onNew, backgroundColor, foregroundColor, collapsed, defaultProfileName } = props;
+    const { tabs, activeId, onSelect, onClose, onNew, backgroundColor, foregroundColor, dangerColor, collapsed, defaultProfileName } = props;
     const t = useI18n();
 
     const colors = useSurfaceColors(backgroundColor);
@@ -88,21 +95,41 @@ export default function TabBar(props: TabBarProps) {
                             }}
                             title={tab.name}
                         >
-                            <div className="flex items-center gap-2 flex-1 min-w-0">
+                            <div className="flex items-start gap-2 flex-1 min-w-0">
                                 {tab.id === SETTINGS_TAB_ID && (
-                                    <Settings size={14} className="shrink-0" />
+                                    <Settings size={14} className="shrink-0 mt-0.5" />
                                 )}
                                 {tab.id === ABOUT_TAB_ID && (
-                                    <Info size={14} className="shrink-0" />
+                                    <Info size={14} className="shrink-0 mt-0.5" />
                                 )}
-                                <span
-                                    className="text-sm truncate"
-                                    style={{
-                                        color: isActive ? foregroundColor : colors.inactiveText,
-                                    }}
-                                >
-                                    {tab.name}
-                                </span>
+                                <div className="flex flex-col min-w-0">
+                                    <span
+                                        className="text-sm truncate leading-tight"
+                                        style={{
+                                            color: isActive ? foregroundColor : colors.inactiveText,
+                                        }}
+                                    >
+                                        {tab.name}
+                                    </span>
+                                    {tab.subtitle && (
+                                        <div
+                                            className="text-xs leading-tight flex items-center gap-1.5 min-w-0 overflow-hidden"
+                                            style={{
+                                                color: colors.inactiveText,
+                                                opacity: 0.6,
+                                            }}
+                                        >
+                                            {tab.commandPrivileged && (
+                                                <span
+                                                    className="inline-block w-2 h-2 rounded-full shrink-0 translate-y-0.5"
+                                                    style={{ backgroundColor: dangerColor }}
+                                                    title="Privileged / elevated command"
+                                                />
+                                            )}
+                                            <span className="truncate min-w-0">{tab.subtitle}</span>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                             <button
                                 className="opacity-0 group-hover:opacity-100 rounded p-0.5 shrink-0 transition-all ml-1"

@@ -6,7 +6,7 @@ use portable_pty::{CommandBuilder, PtySize};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
 
-use crate::state::{CommandChild, SharedChild, TerminalState};
+use crate::state::{CommandChild, SharedChild, TerminalEntry, TerminalState};
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -15,6 +15,18 @@ pub struct SshConfig {
     pub port: Option<u16>,
     pub user: Option<String>,
     pub identity_file: Option<String>,
+}
+
+/// Payload for the `term-command-<id>` event: the currently-running command
+/// and whether it looks like a privileged/elevated operation (sudo, su, doas,
+/// pkexec, or a process running as root). The frontend shows a red dot before
+/// the command name when `privileged` is true.
+#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CommandInfo {
+    /// argv[0] basename (e.g. "npm", "sudo"). Empty string = idle at prompt.
+    pub command: String,
+    pub privileged: bool,
 }
 
 #[tauri::command]
@@ -100,6 +112,12 @@ pub fn start_terminal(
         .expect("Failed to clone writer");
 
     let shared_child: SharedChild = Arc::new(std::sync::Mutex::new(child));
+    let shell_pid = {
+        let guard = shared_child
+            .try_lock()
+            .expect("Failed to lock child to read pid");
+        guard.process_id()
+    };
 
     // Store in state
     {
@@ -107,7 +125,15 @@ pub fn start_terminal(
             .terminals
             .try_lock()
             .expect("Failed to lock terminals");
-        terminals.insert(id.clone(), (pty_pair, shared_child.clone(), writer));
+        terminals.insert(
+            id.clone(),
+            TerminalEntry {
+                pty_pair,
+                child: shared_child.clone(),
+                writer,
+                shell_pid,
+            },
+        );
     }
 
     // Reader thread: forwards terminal output to frontend
@@ -138,13 +164,21 @@ pub fn start_terminal(
         log::debug!("Reader thread ended for {}", id_reader);
     });
 
-    // Watcher thread: polls child process exit, then cleans up
+    // Watcher thread: polls child process exit, then cleans up. Also tracks
+    // the foreground process group of the pty (the fallback path for the
+    // "current command" feature) and emits `term-command-<id>` when it changes.
     let term_exit_event_name = format!("term-exit-{}", id);
+    let term_command_event_name = format!("term-command-{}", id);
     let app_watcher = app.clone();
     let state_watcher = state.inner().clone();
     let id_watcher = id.clone();
     thread::spawn(move || {
         log::debug!("Watcher thread started for {}", id_watcher);
+        // The last foreground command reported to the frontend. `None` means
+        // nothing reported yet; `Some(CommandInfo { command: "", .. })` means
+        // idle at the shell prompt.
+        let mut last_command: Option<CommandInfo> = None;
+        let mut tick: u32 = 0;
         loop {
             let exited = {
                 let mut child_guard = shared_child
@@ -168,6 +202,28 @@ pub fn start_terminal(
             if exited {
                 break;
             }
+
+            // Foreground-command tracking runs on Unix only (the master pty
+            // exposes the foreground process group there). Throttled to once
+            // per second (every 5 ticks of the 200ms exit-poll).
+            #[cfg(unix)]
+            {
+                tick = tick.wrapping_add(1);
+                if tick % 5 == 0 {
+                    let next = match foreground_command(&state_watcher, &id_watcher) {
+                        Some(info) => info,
+                        None => CommandInfo {
+                            command: String::new(), // idle at the shell prompt
+                            privileged: false,
+                        },
+                    };
+                    if Some(&next) != last_command.as_ref() {
+                        last_command = Some(next.clone());
+                        let _ = app_watcher.emit(&term_command_event_name, next);
+                    }
+                }
+            }
+
             thread::sleep(Duration::from_millis(200));
         }
 
@@ -195,15 +251,139 @@ pub fn start_terminal(
     });
 }
 
+/// Resolve the command name of the terminal's foreground process group, for
+/// the "current command" fallback path. Returns `None` when the foreground
+/// process group is the shell itself (i.e. idle at the prompt), and `Some`
+/// when a child command is running. Unix-only; reads `/proc/<pgid>/cmdline`
+/// on Linux and shells out to `ps` on macOS/other Unix. The returned
+/// `CommandInfo.privileged` flag is true for elevated commands (sudo/su/doas/
+/// pkexec, or a process whose effective uid is 0).
+#[cfg(unix)]
+fn foreground_command(state: &TerminalState, id: &str) -> Option<CommandInfo> {
+    let (shell_pid, fg_pgid) = {
+        let terminals = state.terminals.try_lock().ok()?;
+        let entry = terminals.get(id)?;
+        // process_group_leader() returns libc::pid_t (i32); process_id() is u32.
+        // Normalize to u32 — a real pid/gid is always non-negative.
+        let fg = entry.pty_pair.master.process_group_leader()?.max(0) as u32;
+        (entry.shell_pid, fg)
+    };
+
+    // The shell is the foreground process group -> idle at the prompt.
+    if shell_pid == Some(fg_pgid) {
+        return None;
+    }
+
+    proc_command_info(fg_pgid)
+}
+
+/// Names of argv[0] basenames that indicate elevation/privilege escalation.
+const PRIVILEGED_COMMANDS: &[&str] = &["sudo", "su", "doas", "pkexec", "gsudo", "runuser"];
+
+/// True if the command basename is a known privilege-escalation wrapper.
+#[cfg(unix)]
+fn is_privileged_name(basename: &str) -> bool {
+    PRIVILEGED_COMMANDS.iter().any(|&p| p == basename)
+}
+
+#[cfg(unix)]
+fn proc_command_info(pid: u32) -> Option<CommandInfo> {
+    #[cfg(target_os = "linux")]
+    {
+        // `/proc/<pid>/cmdline` is NUL-separated argv. We join argv[0..] into a
+        // single space-separated command line (argv[0] reduced to its basename,
+        // the rest verbatim), so e.g. "sudo sleep 10" shows in full. The
+        // frontend truncates the overflow.
+        let path = format!("/proc/{}/cmdline", pid);
+        let raw = std::fs::read(&path).ok()?;
+        let argv: Vec<String> = raw
+            .split(|&b| b == 0)
+            .filter(|p| !p.is_empty())
+            .map(|p| String::from_utf8_lossy(p).into_owned())
+            .collect();
+        let argv0 = argv.first()?;
+        let base0 = basename(argv0);
+        if base0.is_empty() {
+            return None;
+        }
+        let mut line = String::from(base0);
+        for arg in argv.iter().skip(1) {
+            line.push(' ');
+            line.push_str(arg);
+        }
+        let privileged = is_privileged_name(base0) || proc_euid_is_root(pid);
+        Some(CommandInfo {
+            command: line,
+            privileged,
+        })
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        // macOS and other Unix without /proc: ask `ps` for the full command
+        // line (`args=`), which is already space-joined with argv[0].
+        let out = std::process::Command::new("ps")
+            .args(["-o", "args=", "-p"])
+            .arg(pid.to_string())
+            .output()
+            .ok()?;
+        let line = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if line.is_empty() {
+            return None;
+        }
+        // argv[0] basename is the first whitespace-delimited token's basename;
+        // re-normalize argv[0] to its basename to match the Linux path.
+        let base0 = line.split_whitespace().next().unwrap_or("");
+        let base0 = basename(base0);
+        let privileged = is_privileged_name(base0);
+        Some(CommandInfo {
+            command: line,
+            privileged,
+        })
+    }
+}
+
+/// Return the final path component of `s` (e.g. "/usr/bin/npm" -> "npm").
+#[cfg(unix)]
+fn basename(s: &str) -> &str {
+    s.rsplit('/').next().unwrap_or(s)
+}
+
+/// On Linux, read `/proc/<pid>/status` and return true if the effective uid is
+/// 0 (root). This catches binaries with the setuid bit, `sudoedit`, or any
+/// process that ended up privileged without argv[0] naming a wrapper.
+#[cfg(target_os = "linux")]
+fn proc_euid_is_root(pid: u32) -> bool {
+    let path = format!("/proc/{}/status", pid);
+    let status = match std::fs::read_to_string(&path) {
+        Ok(s) => s,
+        Err(_) => return false,
+    };
+    for line in status.lines() {
+        if let Some(rest) = line.strip_prefix("Uid:") {
+            // Fields are: real, effective, saved set, fs uid.
+            let mut fields = rest.split_whitespace();
+            fields.next(); // real uid
+            if let Some(euid) = fields.next() {
+                if euid == "0" {
+                    return true;
+                }
+            }
+            return false;
+        }
+    }
+    false
+}
+
 #[tauri::command]
 pub fn kill_terminal(id: String, state: State<TerminalState>) {
     let mut terminals = state
         .terminals
         .try_lock()
         .expect("Failed to lock terminals");
-    if let Some((_, shared_child, _)) = terminals.remove(&id) {
+    if let Some(entry) = terminals.remove(&id) {
         log::info!("Killing terminal {}", id);
-        let mut child = shared_child
+        let mut child = entry
+            .child
             .try_lock()
             .expect("Failed to lock child in kill_terminal");
         let _ = child.kill();
@@ -218,11 +398,12 @@ pub fn write_to_terminal(id: String, content: &[u8], state: State<TerminalState>
         .terminals
         .try_lock()
         .expect("Failed to lock terminals");
-    if let Some((_, _, writer)) = terminals.get_mut(&id) {
-        writer
+    if let Some(entry) = terminals.get_mut(&id) {
+        entry
+            .writer
             .write_all(content)
             .expect("Failed to write to terminal");
-        writer.flush().expect("Failed to flush writer");
+        entry.writer.flush().expect("Failed to flush writer");
     }
 }
 
@@ -232,14 +413,15 @@ pub fn resize_terminal(id: String, cols: u16, rows: u16, state: State<TerminalSt
         .terminals
         .try_lock()
         .expect("Failed to lock terminals");
-    if let Some((pty_pair, _, _)) = terminals.get_mut(&id) {
+    if let Some(entry) = terminals.get_mut(&id) {
         let size = PtySize {
             rows,
             cols,
             pixel_width: 0,
             pixel_height: 0,
         };
-        pty_pair
+        entry
+            .pty_pair
             .master
             .resize(size)
             .expect("Failed to resize terminal");

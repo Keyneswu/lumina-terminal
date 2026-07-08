@@ -1,7 +1,7 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {Terminal} from "@xterm/xterm";
 import {listen} from "@tauri-apps/api/event";
-import {TerminalProfile} from "../types/terminal.ts";
+import {TerminalProfile, CurrentCommand} from "../types/terminal.ts";
 import {FloatingFitAddon} from "../lib/FloatingFitAddon.ts";
 import {WebglAddon} from "@xterm/addon-webgl";
 import {getCurrentWindow, LogicalSize} from "@tauri-apps/api/window";
@@ -21,6 +21,7 @@ import {openUrl} from "@tauri-apps/plugin-opener";
 import {ImageAddon} from "@xterm/addon-image";
 import {IMAGE_ADDON_SETTINGS} from "../constants.ts";
 import {resizeTerminal, startTerminal, writeToTerminal} from "../lib/terminalApi.ts";
+import {CurrentCommandParser} from "../lib/currentCommand.ts";
 
 let hasAppliedInitialWindowSize = false;
 
@@ -44,6 +45,9 @@ interface TermProps {
     // ring (a fullscreen TUI's own bg), or null when there is none. Only the
     // active tab reports; inactive tabs report null.
     onEdgeBackgroundChange?: (color: string | null) => void;
+    // Reports the currently-running command for this terminal, or null when
+    // idle at the shell prompt. Drives the small subtitle under the tab title.
+    onCommandChange?: (command: CurrentCommand | null) => void;
 }
 
 export default function Term(props : TermProps) {
@@ -129,6 +133,31 @@ export default function Term(props : TermProps) {
     // Keep onClose ref fresh for the term-exit listener (avoid stale closure)
     const onCloseRef = useRef(props.onClose);
     onCloseRef.current = props.onClose;
+
+    // Keep onCommandChange ref fresh and track the current command.
+    const onCommandChangeRef = useRef(props.onCommandChange);
+    onCommandChangeRef.current = props.onCommandChange;
+    // Last command reported upward. `null` = nothing reported yet / idle.
+    const currentCommandRef = useRef<CurrentCommand | null>(null);
+    const commandParserRef = useRef<CurrentCommandParser | null>(null);
+    // True once the shell has emitted an OSC sequence this session — used to
+    // decide whether the backend's process-group fallback should be honored.
+    const oscActiveRef = useRef<boolean>(false);
+
+    const reportCommand = useCallback((cmd: CurrentCommand | null) => {
+        // Compare structurally (command name + privileged flag) before notifying.
+        const prev = currentCommandRef.current;
+        const changed =
+            prev === null
+                ? cmd !== null
+                : cmd === null
+                    ? true
+                    : prev.command !== cmd.command || prev.privileged !== cmd.privileged;
+        if (changed) {
+            currentCommandRef.current = cmd;
+            onCommandChangeRef.current?.(cmd);
+        }
+    }, []);
 
     // Drag-and-drop: insert file path into terminal
     const lastDropRef = useRef(0);
@@ -280,9 +309,23 @@ export default function Term(props : TermProps) {
             }
         }
 
+        // Lazily create the OSC parser (one per terminal, kept in a ref).
+        if (!commandParserRef.current) {
+            commandParserRef.current = new CurrentCommandParser();
+        }
+
         listen<string>(`term-write-${id}`, (event) => {
             if (term.current && event.payload) {
                 const data = event.payload;
+                // Parse shell-integration sequences BEFORE writing to xterm;
+                // xterm drops unknown OSC, so the visible output is unaffected.
+                const parsed = commandParserRef.current!.feed(data);
+                if (parsed !== null) {
+                    oscActiveRef.current = true;
+                    reportCommand(
+                        parsed === "" ? null : { command: parsed, privileged: false }
+                    );
+                }
                 pendingWrites.push(data);
                 if (!writeScheduled) {
                     writeScheduled = true;
@@ -294,6 +337,17 @@ export default function Term(props : TermProps) {
                 info(`Terminal started: id=${id} profile=${profile.name}`);
                 resizeTerminal(id, term.current!.cols, term.current!.rows).then();
             });
+        });
+
+        // Backend fallback: reports the foreground process-group command
+        // (from /proc on Linux, ps on macOS) as { command, privileged }. Only
+        // honored when the shell is NOT emitting OSC sequences — once OSC takes
+        // over, it is authoritative (OSC cannot currently report privilege).
+        listen<CurrentCommand>(`term-command-${id}`, (event) => {
+            if (oscActiveRef.current) return;
+            const info = event.payload;
+            const cmd = (info?.command ?? "").trim();
+            reportCommand(cmd === "" ? null : { command: cmd, privileged: !!info?.privileged });
         });
 
         listen(`term-exit-${id}`, () => {

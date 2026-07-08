@@ -1,14 +1,15 @@
 import Term from "./components/Term.tsx";
 import {useCallback, useEffect, useMemo, useRef, useState} from "react";
-import {TerminalProfile} from "./types/terminal.ts";
+import {TerminalProfile, CurrentCommand} from "./types/terminal.ts";
 import {useGlobalConfig} from "./hooks/config.tsx";
 import {useI18n} from "./hooks/i18n.tsx";
 import WelcomePage from "./pages/WelcomePage.tsx";
 import {getCurrentWindow} from "@tauri-apps/api/window";
 import TitleBar from "./components/TitleBar.tsx";
-import TabBar from "./components/TabBar.tsx";
+import TabBar, { type TabInfo } from "./components/TabBar.tsx";
 import {parseProfile} from "./lib/term.ts";
 import {killTerminal} from "./lib/terminalApi.ts";
+import {visibleRed} from "./lib/color.ts";
 import CommandPalette, {CommandAction} from "./components/CommandPalette.tsx";
 import {useEffectiveTheme} from "./hooks/useEffectiveTheme.ts";
 import {bindingToShortcut, findBinding, parseBindings, useKeyboardBindings, matchBinding} from "./lib/bindings.ts";
@@ -30,6 +31,9 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
     const [ids, setIds] = useState<string[]>([]);
     const [terminals, setTerminals] = useState<Record<string, TerminalProfile>>({});
     const [currentId, setCurrentId] = useState<string | null>(null);
+    // Per-terminal currently-running command (subtitle under the tab title).
+    // null/undefined = idle at the shell prompt; an object = a command is running.
+    const [commands, setCommands] = useState<Record<string, CurrentCommand | null>>({});
     const currentProfile = useMemo(() => {
         if (currentId) {
             return terminals[currentId] ?? null;
@@ -38,6 +42,12 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
         }
     }, [currentId, terminals]);
     const {theme: effectiveTheme, bg: effectiveBg, fg: effectiveFg, setEdgeBg} = useEffectiveTheme(currentProfile, currentId);
+    // Danger color for the privileged-command indicator: follows the theme's
+    // ANSI reds so it stays visible even on red-dominant backgrounds.
+    const dangerColor = useMemo(
+        () => visibleRed(effectiveTheme?.red, effectiveTheme?.brightRed, effectiveBg),
+        [effectiveTheme?.red, effectiveTheme?.brightRed, effectiveBg],
+    );
     const tabBarVisible = config.showTabBar ?? false;
     const parsedBindings = useMemo(() => parseBindings(config.bindings), [config.bindings]);
     const defaultProfile = useMemo(() => {
@@ -360,11 +370,17 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
                     return { id, name: t["About"] };
                 }
                 if (id in terminals) {
-                    return { id, name: terminals[id].name };
+                    const cmd = commands[id];
+                    return {
+                        id,
+                        name: terminals[id].name,
+                        subtitle: cmd ? cmd.command : undefined,
+                        commandPrivileged: cmd ? cmd.privileged : false,
+                    };
                 }
                 return null;
             })
-            .filter(Boolean) as { id: string; name: string }[];
+            .filter(Boolean) as TabInfo[];
 
         return (
             <div
@@ -384,6 +400,7 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
                     onNew={() => newTerminal(defaultProfile)}
                     backgroundColor={effectiveBg ?? "#000000"}
                     foregroundColor={effectiveFg ?? "#ffffff"}
+                    dangerColor={dangerColor}
                     collapsed={!tabBarVisible}
                     defaultProfileName={defaultProfile?.name}
                 />
@@ -441,6 +458,11 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
                                         // inactive tabs report null and are ignored.
                                         if (id === currentId) setEdgeBg(color);
                                     }}
+                                    onCommandChange={(cmd) => {
+                                        setCommands((prev) =>
+                                            prev[id] === cmd ? prev : { ...prev, [id]: cmd }
+                                        );
+                                    }}
                                 />
                             </div>
                         ))}
@@ -467,9 +489,7 @@ function App() {
                 background: "transparent",
             }}
         >
-            <div
-                className={`w-full h-full overflow-hidden ${isMaximized ? "" : "rounded-lg"}`}
-            >
+            <div className={`w-full h-full overflow-hidden ${isMaximized ? "" : "rounded-lg"}`}>
                 <InnerApp isMaximized={isMaximized} paddingOffset={paddingOffset}/>
             </div>
         </div>
