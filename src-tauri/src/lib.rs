@@ -5,6 +5,101 @@ mod utils;
 use crate::state::TerminalState;
 use crate::terminal::*;
 use crate::utils::*;
+#[cfg(target_os = "macos")]
+use tauri::Emitter;
+
+#[cfg(target_os = "macos")]
+const OPEN_ABOUT_EVENT: &str = "lumina-open-about";
+
+#[cfg(target_os = "macos")]
+fn configure_about_menu(app: &tauri::App) -> tauri::Result<()> {
+    use tauri::menu::{
+        Menu, MenuItem, PredefinedMenuItem, Submenu, HELP_SUBMENU_ID, WINDOW_SUBMENU_ID,
+    };
+
+    let app_name = app.package_info().name.clone();
+    let about_item = MenuItem::with_id(
+        app,
+        OPEN_ABOUT_EVENT,
+        format!("About {app_name}"),
+        true,
+        None::<&str>,
+    )?;
+    let window_menu = Submenu::with_id_and_items(
+        app,
+        WINDOW_SUBMENU_ID,
+        "Window",
+        true,
+        &[
+            &PredefinedMenuItem::minimize(app, None)?,
+            &PredefinedMenuItem::maximize(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::close_window(app, None)?,
+        ],
+    )?;
+    let help_menu = Submenu::with_id_and_items(app, HELP_SUBMENU_ID, "Help", true, &[])?;
+
+    let menu = Menu::with_items(
+        app,
+        &[
+            &Submenu::with_items(
+                app,
+                app_name,
+                true,
+                &[
+                    &about_item,
+                    &PredefinedMenuItem::separator(app)?,
+                    &PredefinedMenuItem::services(app, None)?,
+                    &PredefinedMenuItem::separator(app)?,
+                    &PredefinedMenuItem::hide(app, None)?,
+                    &PredefinedMenuItem::hide_others(app, None)?,
+                    &PredefinedMenuItem::separator(app)?,
+                    &PredefinedMenuItem::quit(app, None)?,
+                ],
+            )?,
+            &Submenu::with_items(
+                app,
+                "File",
+                true,
+                &[&PredefinedMenuItem::close_window(app, None)?],
+            )?,
+            &Submenu::with_items(
+                app,
+                "Edit",
+                true,
+                &[
+                    &PredefinedMenuItem::undo(app, None)?,
+                    &PredefinedMenuItem::redo(app, None)?,
+                    &PredefinedMenuItem::separator(app)?,
+                    &PredefinedMenuItem::cut(app, None)?,
+                    &PredefinedMenuItem::copy(app, None)?,
+                    &PredefinedMenuItem::paste(app, None)?,
+                    &PredefinedMenuItem::select_all(app, None)?,
+                ],
+            )?,
+            &Submenu::with_items(
+                app,
+                "View",
+                true,
+                &[&PredefinedMenuItem::fullscreen(app, None)?],
+            )?,
+            &window_menu,
+            &help_menu,
+        ],
+    )?;
+
+    app.set_menu(menu)?;
+
+    app.on_menu_event(move |app, event| {
+        if event.id() == OPEN_ABOUT_EVENT {
+            if let Err(e) = app.emit(OPEN_ABOUT_EVENT, ()) {
+                log::error!("Failed to emit About menu event: {e}");
+            }
+        }
+    });
+
+    Ok(())
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -42,6 +137,12 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .manage(state)
+        .setup(|app| {
+            #[cfg(target_os = "macos")]
+            configure_about_menu(app)?;
+
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             start_terminal,
             kill_terminal,

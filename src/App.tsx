@@ -20,6 +20,9 @@ import {SETTINGS_TAB_ID, ABOUT_TAB_ID} from "./constants.ts";
 import { info, debug, error } from "@tauri-apps/plugin-log";
 import {usePaddingOffset} from "./hooks/paddingOffset.ts";
 import {useMaximized} from "./hooks/maximized.ts";
+import {listen} from "@tauri-apps/api/event";
+
+const OPEN_ABOUT_EVENT = "lumina-open-about";
 
 function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOffset: number}) {
     const {config, updateConfig} = useGlobalConfig();
@@ -152,13 +155,34 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
 
     const openAbout = useCallback(() => {
         info("Opening about");
-        if (ids.includes(ABOUT_TAB_ID)) {
-            setCurrentId(ABOUT_TAB_ID);
-            return;
-        }
-        setIds((prevState) => [...prevState, ABOUT_TAB_ID]);
+        setIds((prevState) => {
+            if (prevState.includes(ABOUT_TAB_ID)) return prevState;
+            return [...prevState, ABOUT_TAB_ID];
+        });
         setCurrentId(ABOUT_TAB_ID);
-    }, [ids]);
+    }, []);
+
+    useEffect(() => {
+        let unlisten: (() => void) | undefined;
+        let cancelled = false;
+
+        listen(OPEN_ABOUT_EVENT, () => {
+            openAbout();
+        }).then((cleanup) => {
+            if (cancelled) {
+                cleanup();
+            } else {
+                unlisten = cleanup;
+            }
+        }).catch((e) => {
+            error(`Failed to listen for About menu event: ${e}`);
+        });
+
+        return () => {
+            cancelled = true;
+            unlisten?.();
+        };
+    }, [openAbout]);
 
     useEffect(() => {
         if (isInitialized.current) return;
