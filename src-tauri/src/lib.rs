@@ -5,76 +5,6 @@ mod utils;
 use crate::state::TerminalState;
 use crate::terminal::*;
 use crate::utils::*;
-use tauri::menu::Menu;
-use tauri::{AppHandle, Emitter};
-
-/// Build the macOS application menu with a custom "About" item that emits an
-/// event to the frontend instead of opening the native About window.
-///
-/// On other platforms this is a no-op (returns None) — those platforms don't
-/// have a native app menu bar with a built-in About item.
-fn build_app_menu(app: &AppHandle) -> Option<Menu<tauri::Wry>> {
-    #[cfg(target_os = "macos")]
-    {
-        use tauri::menu::{MenuItem, PredefinedMenuItem, Submenu};
-
-        let app_name = app.config().productName.clone();
-
-        // Custom About item — emits "menu-about" to the frontend so it can
-        // show our custom AboutPage tab instead of the native macOS About window.
-        let about_item = MenuItem::with_id(app, "about", format!("About {}", app_name), true, None::<&str>)?;
-
-        // Standard separators and items to rebuild the default app menu structure
-        let sep = PredefinedMenuItem::separator(app)?;
-        let services = PredefinedMenuItem::services(app, Some("Services"))?;
-        let hide = PredefinedMenuItem::hide(app, Some(format!("Hide {}", app_name)))?;
-        let hide_others = PredefinedMenuItem::hide_others(app, Some("Hide Others"))?;
-        let show_all = PredefinedMenuItem::show_all(app, Some("Show All"))?;
-        let quit = PredefinedMenuItem::quit(app, Some(format!("Quit {}", app_name)))?;
-
-        let app_submenu = Submenu::with_items(
-            app,
-            &app_name,
-            true,
-            &[&about_item, &sep, &services, &sep, &hide, &hide_others, &show_all, &sep, &quit],
-        )?;
-
-        // Also provide a minimal Edit menu so copy/paste shortcuts work in the webview
-        let edit_submenu = Submenu::with_items(
-            app,
-            "Edit",
-            true,
-            &[
-                &PredefinedMenuItem::undo(app, Some("Undo"))?,
-                &PredefinedMenuItem::redo(app, Some("Redo"))?,
-                &PredefinedMenuItem::separator(app)?,
-                &PredefinedMenuItem::cut(app, Some("Cut"))?,
-                &PredefinedMenuItem::copy(app, Some("Copy"))?,
-                &PredefinedMenuItem::paste(app, Some("Paste"))?,
-                &PredefinedMenuItem::select_all(app, Some("Select All"))?,
-            ],
-        )?;
-
-        // Window menu — includes standard window management items on macOS
-        let window_submenu = Submenu::with_items(
-            app,
-            "Window",
-            true,
-            &[
-                &PredefinedMenuItem::minimize(app, Some("Minimize"))?,
-                &PredefinedMenuItem::fullscreen(app, Some("Enter Full Screen"))?,
-            ],
-        )?;
-
-        let menu = Menu::with_items(app, &[&app_submenu, &edit_submenu, &window_submenu])?;
-        Some(menu)
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = app;
-        None
-    }
-}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -112,18 +42,6 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .manage(state)
-        .setup(|app| {
-            if let Some(menu) = build_app_menu(app.handle()) {
-                app.set_menu(menu)?;
-            }
-            Ok(())
-        })
-        .on_menu_event(|app, event| {
-            if event.id().as_ref() == "about" {
-                log::info!("About menu item clicked");
-                let _ = app.emit("menu-about", ());
-            }
-        })
         .invoke_handler(tauri::generate_handler![
             start_terminal,
             kill_terminal,
