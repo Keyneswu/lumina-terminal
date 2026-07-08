@@ -1,11 +1,11 @@
 import {Terminal} from "@xterm/xterm";
-import {Actions, Binding} from "../types/config.ts";
+import {Actions, Binding, WithKeys} from "../types/config.ts";
 import {DEFAULT_BINDINGS} from "../constants.ts";
-import {isMacOS} from "./utils.ts";
+import {isMacOS} from "./platform.ts";
 import {debug} from "@tauri-apps/plugin-log";
 import {useEffect} from "react";
 
-function actionSignature(b: Binding): string {
+export function actionSignature(b: Binding): string {
     const args = b.args
         ? JSON.stringify(Object.keys(b.args).sort().map((k) => [k, b.args![k]]))
         : "";
@@ -70,8 +70,13 @@ export function findBinding(
         return aKeys.every((k) => b.args![k] === args![k]);
     });
 }
-function keySignature(key: string, withKeys: string[]): string {
-    return `${key}|${[...withKeys].sort().join(",")}`;
+// Stable signature for a key + modifier set. CtrlOrCommand is normalized to its
+// platform-specific form (cmd on macOS, ctrl elsewhere) so the same binding
+// produces one signature regardless of platform, and conflict detection stays
+// consistent. Keys are lowercased for stable comparison.
+export function keySignature(key: string, withKeys: WithKeys[]): string {
+    const norm = withKeys.map((w) => (w === "CtrlOrCommand" ? (isMacOS() ? "command" : "ctrl") : w));
+    return `${key.toLowerCase()}|${[...norm].sort().join(",")}`;
 }
 
 // Normalize a key for comparison. Single-character keys are compared case-insensitively so a

@@ -1,31 +1,38 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {Terminal} from "@xterm/xterm";
 import {listen} from "@tauri-apps/api/event";
-import {invoke} from "@tauri-apps/api/core";
 import {TerminalProfile} from "../types/terminal.ts";
 import {FloatingFitAddon} from "../lib/FloatingFitAddon.ts";
 import {WebglAddon} from "@xterm/addon-webgl";
 import {getCurrentWindow, LogicalSize} from "@tauri-apps/api/window";
-import {parseProfilePadding, parseProfileTheme} from "../lib/term.ts";
+import {parseProfilePadding} from "../lib/term.ts";
 import {sampleEdgeBackground} from "../lib/edgeBackground.ts";
-import {loadBindings, parseBindings} from "../lib/bindings.ts";
+import {loadBindings} from "../lib/bindings.ts";
+import type {Binding} from "../types/config.ts";
 import {Actions} from "../types/config.ts";
-import {isMacOS, openConfigFile} from "../lib/utils.ts";
+import {isMacOS} from "../lib/platform.ts";
+import {openConfigFile} from "../lib/configFile.ts";
 import {useGlobalConfig} from "../hooks/config.tsx";
 import {useI18n} from "../hooks/i18n.tsx";
 import { info, debug } from "@tauri-apps/plugin-log";
 import {getCurrentWebview} from "@tauri-apps/api/webview";
-import {usePaddingOffset} from "../hooks/paddingOffset.ts";
 import {WebLinksAddon} from "@xterm/addon-web-links";
 import {openUrl} from "@tauri-apps/plugin-opener";
 import {ImageAddon} from "@xterm/addon-image";
 import {IMAGE_ADDON_SETTINGS} from "../constants.ts";
+import {resizeTerminal, startTerminal, writeToTerminal} from "../lib/terminalApi.ts";
 
 let hasAppliedInitialWindowSize = false;
 
 interface TermProps {
     id: string;
     profile: TerminalProfile;
+    // Pre-parsed bindings (merged defaults + user overrides), shared from App
+    // so every terminal uses the same parsed set instead of re-parsing each.
+    bindings: Binding[];
+    // Padding offset shared from App (derived from window maximize state +
+    // platform), so every terminal shares one source of truth.
+    paddingOffset: number;
     isActive?: boolean;
     onClose?: () => void;
     onNewTab?: (profileName?: string) => void;
@@ -40,11 +47,10 @@ interface TermProps {
 }
 
 export default function Term(props : TermProps) {
-    const {id, profile, isActive} = props;
+    const {id, profile, isActive, bindings, paddingOffset} = props;
     const term = useRef<Terminal | null>(null);
     const termRef = useRef<HTMLDivElement>(null);
     const isInitialized = useRef<boolean>(false);
-    const paddingOffset = usePaddingOffset();
     const padding = useMemo(() => parseProfilePadding(profile, paddingOffset), [profile, paddingOffset]);
     const {config} = useGlobalConfig();
     const t = useI18n();
@@ -143,7 +149,7 @@ export default function Term(props : TermProps) {
                     const filePaths = event.payload.paths.map(p =>
                         p.includes(' ') ? `"${p}"` : p
                     ).join(' ');
-                    invoke("write_to_terminal", {id, content: filePaths + ' '}).then();
+                    writeToTerminal(id, filePaths + ' ').then();
                 }
             } else if (event.payload.type === 'leave') {
                 setIsDragOver(false);
@@ -185,9 +191,11 @@ export default function Term(props : TermProps) {
             getCurrentWindow().setSize(new LogicalSize(windowSize)).then();
         }
 
-        parseProfileTheme(profile).then((theme) => {
-            term.current!.options.theme = theme;
-        });
+        // profile is already the product of parseProfile(), which resolved
+        // themePath into an inline theme and stripped it — no need to re-read.
+        if (profile.theme) {
+            term.current!.options.theme = profile.theme;
+        }
 
         const webLinksAddon = new WebLinksAddon((event, uri) => {
             if ((event.metaKey && isMacOS()) || event.ctrlKey) {
@@ -219,18 +227,18 @@ export default function Term(props : TermProps) {
         }
 
         // Load keybindings right after terminal is ready
-        loadBindings(term.current, parseBindings(config.bindings), (action, args) => {
+        loadBindings(term.current, bindings, (action, args) => {
             handleActionsRef.current(action, args);
         }, config.copyWithCtrl ?? false, (data) => {
-            invoke("write_to_terminal", {id, content: data}).then();
+            writeToTerminal(id, data).then();
         });
         info(`Bindings loaded for terminal with id ${id}`);
 
         term.current.onData((data) => {
-            invoke("write_to_terminal", {id, content: data}).then();
+            writeToTerminal(id, data).then();
         });
         term.current.onResize(({cols, rows}) => {
-            invoke("resize_terminal", {id, cols, rows}).then();
+            resizeTerminal(id, cols, rows).then();
         });
 
         // Chunked write: batch incoming PTY data and yield between chunks
@@ -282,17 +290,9 @@ export default function Term(props : TermProps) {
                 }
             }
         }).then(() => {
-            invoke("start_terminal", {
-                id,
-                exePath: profile.exePath,
-                cols: profile.cols,
-                rows: profile.rows,
-                profileType: profile.type ?? "local",
-                sshConfig: profile.type === "remote" ? profile.ssh : undefined,
-                cwd: profile.cwd || undefined,
-            }).then(() => {
+            startTerminal(id, profile).then(() => {
                 info(`Terminal started: id=${id} profile=${profile.name}`);
-                invoke("resize_terminal", {id, cols: term.current!.cols, rows: term.current!.rows}).then();
+                resizeTerminal(id, term.current!.cols, term.current!.rows).then();
             });
         });
 
@@ -315,13 +315,13 @@ export default function Term(props : TermProps) {
     // already-open terminals pick up the new bindings live without needing a tab restart.
     useEffect(() => {
         if (!isInitialized.current || !term.current) return;
-        loadBindings(term.current, parseBindings(config.bindings), (action, args) => {
+        loadBindings(term.current, bindings, (action, args) => {
             handleActionsRef.current(action, args);
         }, config.copyWithCtrl ?? false, (data) => {
-            invoke("write_to_terminal", {id, content: data}).then();
+            writeToTerminal(id, data).then();
         });
         debug(`Bindings hot-reloaded for terminal ${id}`);
-    }, [config.bindings, config.copyWithCtrl, id]);
+    }, [bindings, config.copyWithCtrl, id]);
 
     // Auto-focus xterm when this tab becomes active
     useEffect(() => {

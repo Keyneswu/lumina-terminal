@@ -3,7 +3,7 @@ import {languageNames, useI18n} from "../../hooks/i18n.tsx";
 import {useEffect, useMemo, useState} from "react";
 import {info} from "@tauri-apps/plugin-log";
 import {Button, Label, ListBox, Select, Switch} from "@heroui/react";
-import {isMacOS} from "../../lib/utils.ts";
+import {isMacOS} from "../../lib/platform.ts";
 
 export default function GeneralSettings({ borderColor, openAbout }: { borderColor: string, openAbout: () => void }) {
     const { config, updateConfig } = useGlobalConfig();

@@ -8,7 +8,7 @@ import {
 import {
     Search,
 } from "lucide-react";
-import { isMacOS } from "../lib/utils.ts";
+import { isMacOS } from "../lib/platform.ts";
 import { useI18n } from "../hooks/i18n.tsx";
 import { info, debug } from "@tauri-apps/plugin-log";
 

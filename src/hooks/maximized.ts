@@ -1,7 +1,7 @@
 import {useEffect, useState} from "react";
 import {getCurrentWindow} from "@tauri-apps/api/window";
 
-export function getMaximized() {
+export function useMaximized() {
     const [max, setMax] = useState(false);
 
     useEffect(() => {

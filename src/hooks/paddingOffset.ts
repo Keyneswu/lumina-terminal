@@ -1,9 +1,7 @@
 import {useEffect, useState} from "react";
-import {isMacOS} from "../lib/utils.ts";
-import {getMaximized} from "./maximized.ts";
+import {isMacOS} from "../lib/platform.ts";
 
-export function usePaddingOffset() {
-    const isMaximized = getMaximized()
+export function usePaddingOffset(isMaximized: boolean) {
     const [offset, setOffset] = useState(0);
 
     const loadDefaultPadding = () => {

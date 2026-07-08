@@ -6,8 +6,7 @@ import {useI18n} from "../../hooks/i18n.tsx";
 import {info} from "@tauri-apps/plugin-log";
 import {Actions, Binding, WithKeys} from "../../types/config.ts";
 import {DEFAULT_BINDINGS} from "../../constants.ts";
-import {bindingToShortcut} from "../../lib/bindings.ts";
-import {isMacOS} from "../../lib/utils.ts";
+import {actionSignature, bindingToShortcut, keySignature} from "../../lib/bindings.ts";
 
 // Key used in the "Add binding" action dropdown when no action is chosen yet.
 const NO_ACTION = "__none__";
@@ -57,26 +56,10 @@ function actionLabel(action: Actions, args: Record<string, string> | undefined, 
     }
 }
 
-// Signature used for conflict detection — mirrors keySignature in lib/bindings.ts.
-function keySignature(key: string, withKeys: WithKeys[]): string {
-    // Normalize CtrlOrCommand to its macOS form for stable comparison.
-    const norm = withKeys.map((w) => (w === "CtrlOrCommand" ? (isMacOS() ? "command" : "ctrl") : w));
-    return `${key.toLowerCase()}|${[...norm].sort().join(",")}`;
-}
-
-function bindingKeySignature(b: Binding): string {
-    return keySignature(b.key, b.with);
-}
-
 // An action signature (action + args) — used to detect default bindings so that
 // "delete" can restore the default instead of removing the row entirely.
-function actionSignature(b: Binding): string {
-    const args = b.args
-        ? JSON.stringify(Object.keys(b.args).sort().map((k) => [k, b.args![k]]))
-        : "";
-    return `${b.action}|${args}`;
-}
-
+// actionSignature and keySignature are imported from lib/bindings.ts so the
+// settings UI and the runtime matcher stay perfectly in sync.
 const DEFAULT_SIGNATURES = new Set(DEFAULT_BINDINGS.map(actionSignature));
 
 function isDefaultBinding(b: Binding): boolean {
@@ -116,12 +99,12 @@ export default function BindingsSettings({borderColor}: { borderColor: string })
     const conflicts = useMemo(() => {
         const counts = new Map<string, number>();
         for (const b of draft) {
-            const sig = bindingKeySignature(b);
+            const sig = keySignature(b.key, b.with);
             counts.set(sig, (counts.get(sig) ?? 0) + 1);
         }
         const set = new Set<number>();
         draft.forEach((b, i) => {
-            if ((counts.get(bindingKeySignature(b)) ?? 0) > 1) set.add(i);
+            if ((counts.get(keySignature(b.key, b.with)) ?? 0) > 1) set.add(i);
         });
         return set;
     }, [draft]);

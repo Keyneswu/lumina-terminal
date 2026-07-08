@@ -7,11 +7,10 @@ import WelcomePage from "./pages/WelcomePage.tsx";
 import {getCurrentWindow} from "@tauri-apps/api/window";
 import TitleBar from "./components/TitleBar.tsx";
 import TabBar from "./components/TabBar.tsx";
-import {ITheme} from "@xterm/xterm";
-import {parseProfile, parseProfileTheme} from "./lib/term.ts";
-import {invoke} from "@tauri-apps/api/core";
+import {parseProfile} from "./lib/term.ts";
+import {killTerminal} from "./lib/terminalApi.ts";
 import CommandPalette, {CommandAction} from "./components/CommandPalette.tsx";
-import {isColorDark, foregroundFor} from "./hooks/surfaceColors.ts";
+import {useEffectiveTheme} from "./hooks/useEffectiveTheme.ts";
 import {bindingToShortcut, findBinding, parseBindings, useKeyboardBindings, matchBinding} from "./lib/bindings.ts";
 import {Actions} from "./types/config.ts";
 import {X, PanelLeftClose, PanelLeftOpen, Terminal as TerminalIcon, Monitor, MonitorOff, Settings as SettingsIcon, Info} from "lucide-react";
@@ -20,9 +19,9 @@ import AboutPage from "./pages/AboutPage.tsx";
 import {SETTINGS_TAB_ID, ABOUT_TAB_ID} from "./constants.ts";
 import { info, debug, error } from "@tauri-apps/plugin-log";
 import {usePaddingOffset} from "./hooks/paddingOffset.ts";
-import {getMaximized} from "./hooks/maximized.ts";
+import {useMaximized} from "./hooks/maximized.ts";
 
-function InnerApp() {
+function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOffset: number}) {
     const {config, updateConfig} = useGlobalConfig();
     const t = useI18n();
     const [ids, setIds] = useState<string[]>([]);
@@ -35,29 +34,21 @@ function InnerApp() {
             return null;
         }
     }, [currentId, terminals]);
-    const [currentTheme, setCurrentTheme] = useState<ITheme | null>(null);
-    // Uniform background color sampled from the active terminal's outer ring
-    // (a fullscreen TUI's own bg). When set, the whole app follows it so the
-    // TUI bleeds seamlessly to the window edges; null => use theme.background.
-    const [edgeBg, setEdgeBg] = useState<string | null>(null);
-    // Effective background = TUI edge color if present, else terminal theme bg.
-    const effectiveBg = edgeBg ?? currentTheme?.background;
-    // Effective foreground: when a TUI overrides the background, pick a
-    // readable contrast color for it instead of trusting the terminal theme's
-    // foreground (which may clash, e.g. black text on a now-dark TUI bg).
-    const effectiveFg = edgeBg && effectiveBg
-        ? foregroundFor(effectiveBg)
-        : currentTheme?.foreground;
-    // Theme object with bg/fg overridden to the effective values, so children
-    // that read theme.background / theme.foreground stay consistent.
-    const effectiveTheme = currentTheme
-        ? {...currentTheme, background: effectiveBg ?? currentTheme.background, foreground: effectiveFg ?? currentTheme.foreground}
-        : currentTheme;
+    const {theme: effectiveTheme, bg: effectiveBg, fg: effectiveFg, setEdgeBg} = useEffectiveTheme(currentProfile, currentId);
     const tabBarVisible = config.showTabBar ?? false;
     const parsedBindings = useMemo(() => parseBindings(config.bindings), [config.bindings]);
     const defaultProfile = useMemo(() => {
         return config.profiles.find(p => p.default) || config.profiles[0];
     }, [config.profiles]);
+    // Resolve a profile by name, falling back to the default profile. Centralized
+    // so newTab handlers (command palette, keybinding, drag) all share one path.
+    const findProfile = useCallback((name?: string) => {
+        if (name) {
+            const found = config.profiles.find(p => p.name === name);
+            if (found) return found;
+        }
+        return defaultProfile;
+    }, [config.profiles, defaultProfile]);
     const isInitialized = useRef<boolean>(false);
     const closeOnLastTabRef = useRef(config.closeWindowOnLastTab);
     closeOnLastTabRef.current = config.closeWindowOnLastTab;
@@ -106,7 +97,7 @@ function InnerApp() {
             return;
         }
         // Kill the PTY process on the backend
-        invoke("kill_terminal", {id}).catch((e) =>
+        killTerminal(id).catch((e) =>
             error(`Failed to kill terminal: ${e}`)
         );
 
@@ -178,34 +169,6 @@ function InnerApp() {
         }
     }, [config]);
 
-    useEffect(() => {
-        if (currentProfile) {
-            parseProfileTheme(currentProfile).then((theme) => {
-                setCurrentTheme(theme);
-            });
-        }
-    }, [currentProfile]);
-
-    // Clear the sampled edge background whenever the active tab changes, so a
-    // previously fullscreen TUI's color doesn't bleed into the next tab. The
-    // active terminal will re-report its own value shortly after.
-    useEffect(() => {
-        setEdgeBg(null);
-    }, [currentId]);
-
-    // Sync HeroUI theme class with the effective background. When a fullscreen
-    // TUI sets its own background, the light/dark decision follows that color so
-    // text/icons stay legible against it.
-    useEffect(() => {
-        const bg = effectiveBg;
-        if (!bg) return;
-        const dark = isColorDark(bg);
-        const root = document.documentElement;
-        root.classList.toggle("dark", dark);
-        root.classList.toggle("light", !dark);
-        root.setAttribute("data-theme", dark ? "dark" : "light");
-    }, [effectiveBg]);
-
     // Keyboard bindings for non-terminal tabs (Settings, About, etc.)
     const isNonTerminalTab = currentId === SETTINGS_TAB_ID || currentId === ABOUT_TAB_ID;
     const handleNonTerminalAction = useCallback((action: Actions, args?: Record<string, string>) => {
@@ -215,15 +178,7 @@ function InnerApp() {
                 if (currentId) closeTerminal(currentId);
                 break;
             case "newTab": {
-                const profileName = args?.profileName;
-                if (profileName) {
-                    const profile = config.profiles.find(p => p.name === profileName);
-                    if (profile) {
-                        newTerminal(profile);
-                        break;
-                    }
-                }
-                newTerminal(defaultProfile);
+                newTerminal(findProfile(args?.profileName));
                 break;
             }
             case "openSettings":
@@ -242,7 +197,7 @@ function InnerApp() {
                 }
                 break;
         }
-    }, [currentId, config.profiles, openSettings, toTab, tabBarVisible, updateConfig]);
+    }, [currentId, findProfile, openSettings, toTab, tabBarVisible, updateConfig]);
     useKeyboardBindings(parsedBindings, handleNonTerminalAction, isNonTerminalTab);
 
     // Global: prevent browser defaults for configured shortcuts
@@ -414,6 +369,7 @@ function InnerApp() {
                         tabBarVisible={tabBarVisible}
                         onToggleTabBar={() => updateConfig({ showTabBar: !tabBarVisible })}
                         onOpenSettings={openSettings}
+                        isMaximized={isMaximized}
                     />
                     <div className="flex-1 relative overflow-hidden">
                         {currentId === SETTINGS_TAB_ID && (
@@ -445,19 +401,12 @@ function InnerApp() {
                                 <Term
                                     id={id}
                                     profile={terminals[id]}
+                                    paddingOffset={paddingOffset}
                                     isActive={id === currentId}
+                                    bindings={parsedBindings}
                                     onClose={() => closeTerminal(id)}
                                     onNewTab={(profileName?: string) => {
-                                        if (profileName) {
-                                            const profile = config.profiles.find(p => p.name === profileName);
-                                            if (profile) {
-                                                newTerminal(profile);
-                                            } else {
-                                                newTerminal(defaultProfile);
-                                            }
-                                        } else {
-                                            newTerminal(defaultProfile);
-                                        }
+                                        newTerminal(findProfile(profileName));
                                     }}
                                     onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
                                     onOpenSettings={openSettings}
@@ -483,8 +432,8 @@ function InnerApp() {
 }
 
 function App() {
-    const isMaximized = getMaximized();
-    const paddingOffset = usePaddingOffset();
+    const isMaximized = useMaximized();
+    const paddingOffset = usePaddingOffset(isMaximized);
 
     return (
         <div
@@ -497,7 +446,7 @@ function App() {
             <div
                 className={`w-full h-full overflow-hidden ${isMaximized ? "" : "rounded-lg"}`}
             >
-                <InnerApp/>
+                <InnerApp isMaximized={isMaximized} paddingOffset={paddingOffset}/>
             </div>
         </div>
     );

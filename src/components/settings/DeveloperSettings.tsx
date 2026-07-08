@@ -1,6 +1,6 @@
 import {useI18n} from "../../hooks/i18n.tsx";
 import {useEffect, useState} from "react";
-import {getConfigFilePath, openConfigFile} from "../../lib/utils.ts";
+import {getConfigFilePath, openConfigFile} from "../../lib/configFile.ts";
 import {invoke} from "@tauri-apps/api/core";
 import {Button, Label} from "@heroui/react";
 import {Bug, FolderOpen} from "lucide-react";

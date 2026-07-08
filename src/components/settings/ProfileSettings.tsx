@@ -1,16 +1,14 @@
 import {SSHConfig, TerminalProfile} from "../../types/terminal.ts";
 import {useGlobalConfig} from "../../hooks/config.tsx";
 import {useI18n} from "../../hooks/i18n.tsx";
-import {useShells} from "../../hooks/useShells.ts";
 import {useEffect, useMemo, useRef, useState} from "react";
 import {info} from "@tauri-apps/plugin-log";
-import {platform} from "@tauri-apps/plugin-os";
 import {open} from "@tauri-apps/plugin-dialog";
 import {Button, Input, Label, ListBox, Select} from "@heroui/react";
 import RenderSettings from "./RenderSettings.tsx";
+import ShellSelector from "./ShellSelector.tsx";
+import SshFields from "./SshFields.tsx";
 import {Trash2} from "lucide-react";
-
-const CUSTOM_EXE = "__custom__";
 
 export default function ProfileSettings({
     profile,
@@ -27,17 +25,13 @@ export default function ProfileSettings({
     const t = useI18n();
 
     const [draft, setDraft] = useState<TerminalProfile | null>(null);
-    const shells = useShells();
-    const [isCustomExe, setIsCustomExe] = useState(false);
 
     // Reset draft when profile identity changes
     useEffect(() => {
         if (profile) {
             setDraft({ ...profile });
-            setIsCustomExe(!!profile.exePath && !shells.includes(profile.exePath));
         } else {
             setDraft(null);
-            setIsCustomExe(false);
         }
     }, [profile?.name]);
 
@@ -67,13 +61,6 @@ export default function ProfileSettings({
             nameInputRef.current.select();
         }
     }, [isEditingName]);
-
-    const selectedShellKey = useMemo(() => {
-        if (isCustomExe) return CUSTOM_EXE;
-        if (!draft?.exePath) return "";
-        if (shells.includes(draft.exePath)) return draft.exePath;
-        return CUSTOM_EXE;
-    }, [draft?.exePath, shells, isCustomExe]);
 
     if (!profile || !draft) {
         return (
@@ -114,32 +101,6 @@ export default function ProfileSettings({
         updateConfig({ profiles: newProfiles });
         if (newName !== oldName) {
             onNameChange(newName);
-        }
-    };
-
-    const handleShellSelectionChange = (key: string) => {
-        if (key === CUSTOM_EXE) {
-            setIsCustomExe(true);
-            updateDraft({ exePath: "" });
-        } else if (key) {
-            setIsCustomExe(false);
-            updateDraft({ exePath: key });
-        }
-    };
-
-    const handleExePathBrowse = async () => {
-        const os = platform();
-        const exe = await open({
-            multiple: false,
-            directory: false,
-            filters:
-                os === "windows"
-                    ? [{ name: "Executable File", extensions: ["exe"] }]
-                    : [],
-        });
-        if (exe) {
-            info(`Profile exe path selected: ${exe}`);
-            updateDraft({ exePath: exe });
         }
     };
 
@@ -208,52 +169,11 @@ export default function ProfileSettings({
 
                     {/* Exe Path (only for local) */}
                     {profileType === "local" && (
-                    <div className="flex flex-col gap-1.5">
-                        <Label htmlFor="profile-exe-path" isRequired>{t["Exe Path"]}</Label>
-                        <Select
-                            selectedKey={selectedShellKey}
-                            onSelectionChange={(key) => handleShellSelectionChange(key as string)}
-                            className="max-w-sm"
-                        >
-                            <Select.Trigger>
-                                <Select.Value />
-                                <Select.Indicator />
-                            </Select.Trigger>
-                            <Select.Popover>
-                                <ListBox>
-                                    {shells.map((path) => {
-                                        const name = path.replace(/\\/g, "/").split("/").pop() || path;
-                                        return (
-                                            <ListBox.Item id={path} key={path} textValue={name}>
-                                                {name}
-                                                <span className="text-xs text-muted ml-2">{path}</span>
-                                            </ListBox.Item>
-                                        );
-                                    })}
-                                    <ListBox.Item id={CUSTOM_EXE} key={CUSTOM_EXE} textValue="Custom">
-                                        {t["Custom"]}
-                                    </ListBox.Item>
-                                </ListBox>
-                            </Select.Popover>
-                        </Select>
-                        {isCustomExe && (
-                            <div className="flex flex-row gap-2 items-center mt-1">
-                                <Input
-                                    id="profile-exe-path"
-                                    value={draft.exePath}
-                                    onChange={(e) => updateDraft({ exePath: e.target.value })}
-                                    className="flex-1 max-w-sm"
-                                />
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onPress={handleExePathBrowse}
-                                >
-                                    {t["Select"]}
-                                </Button>
-                            </div>
-                        )}
-                    </div>
+                        <ShellSelector
+                            exePath={draft.exePath}
+                            onChange={(path) => updateDraft({ exePath: path })}
+                            idPrefix="profile"
+                        />
                     )}
 
                     {/* Startup Directory */}
@@ -285,68 +205,11 @@ export default function ProfileSettings({
 
                     {/* SSH Config Fields */}
                     {profileType === "remote" && (
-                        <div className="flex flex-col gap-3">
-                            <div className="flex flex-col gap-1.5">
-                                <Label htmlFor="ssh-host" isRequired>{t["Host"]}</Label>
-                                <Input
-                                    id="ssh-host"
-                                    value={draft.ssh?.host ?? ""}
-                                    onChange={(e) => updateSsh({ host: e.target.value })}
-                                    className="max-w-sm"
-                                    placeholder="e.g. 192.168.1.100 or example.com"
-                                />
-                            </div>
-                            <div className="flex flex-row gap-4">
-                                <div className="flex flex-col gap-1.5">
-                                    <Label htmlFor="ssh-port">{t["Port"]}</Label>
-                                    <Input
-                                        id="ssh-port"
-                                        type="number"
-                                        min={1}
-                                        max={65535}
-                                        value={String(draft.ssh?.port ?? 22)}
-                                        onChange={(e) => updateSsh({ port: e.target.value ? Math.max(1, +e.target.value || 22) : undefined })}
-                                        className="w-28"
-                                    />
-                                </div>
-                                <div className="flex flex-col gap-1.5">
-                                    <Label htmlFor="ssh-user">{t["User"]}</Label>
-                                    <Input
-                                        id="ssh-user"
-                                        value={draft.ssh?.user ?? ""}
-                                        onChange={(e) => updateSsh({ user: e.target.value || undefined })}
-                                        className="w-48"
-                                        placeholder="e.g. root"
-                                    />
-                                </div>
-                            </div>
-                            <div className="flex flex-col gap-1.5">
-                                <Label htmlFor="ssh-identity-file">{t["Identity File"]}</Label>
-                                <div className="flex flex-row gap-2">
-                                    <Input
-                                        id="ssh-identity-file"
-                                        value={draft.ssh?.identityFile ?? ""}
-                                        onChange={(e) => updateSsh({ identityFile: e.target.value || undefined })}
-                                        className="flex-1 max-w-sm"
-                                        placeholder="e.g. ~/.ssh/id_ed25519"
-                                    />
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onPress={async () => {
-                                            const file = await open({
-                                                multiple: false,
-                                                directory: false,
-                                                filters: [{ name: "All Files", extensions: ["*"] }],
-                                            });
-                                            if (file) updateSsh({ identityFile: file });
-                                        }}
-                                    >
-                                        {t["Select"]}
-                                    </Button>
-                                </div>
-                            </div>
-                        </div>
+                        <SshFields
+                            ssh={draft.ssh}
+                            onChange={updateSsh}
+                            idPrefix="ssh"
+                        />
                     )}
 
                     <RenderSettings draft={draft} updateDraft={updateDraft} idPrefix="profile" defaultExpanded={false} />

@@ -1,15 +1,12 @@
 import {LucideMaximize, LucideMinimize, LucideMinus, LucideX, PanelLeftClose, PanelLeftOpen, Settings} from "lucide-react";
 import {Button} from "@heroui/react";
 import {getCurrentWindow} from "@tauri-apps/api/window";
-import {useEffect, useState} from "react";
 import {ITheme} from "@xterm/xterm";
-import {isMacOS} from "../lib/utils.ts";
+import {isMacOS} from "../lib/platform.ts";
 import {useSurfaceColors} from "../hooks/surfaceColors.ts";
 import { info } from "@tauri-apps/plugin-log";
 
-function WindowControl({size} : {size: number}) {
-    const [isMaximized, setIsMaximized] = useState(false);
-
+function WindowControl({size, isMaximized} : {size: number, isMaximized: boolean}) {
     const handleMinimize = () => {
         info("Window minimized");
         getCurrentWindow().minimize().then();
@@ -17,39 +14,18 @@ function WindowControl({size} : {size: number}) {
 
     const handleMaximize = () => {
         info("Window maximized");
-        getCurrentWindow().maximize().then(() => {
-            getIsMaximized();
-        });
+        getCurrentWindow().maximize().then();
     }
 
     const handleUnmaximize = () => {
         info("Window unmaximized");
-        getCurrentWindow().unmaximize().then(() => {
-            getIsMaximized();
-        });
+        getCurrentWindow().unmaximize().then();
     }
 
     const handleClose = () => {
         info("Window close requested");
         getCurrentWindow().close().then();
     }
-
-    const getIsMaximized = () => {
-        getCurrentWindow().isMaximized().then((m) => {
-            setIsMaximized(m);
-        });
-    }
-
-    useEffect(() => {
-        getIsMaximized();
-        const handleResize = () => {
-            getIsMaximized();
-        };
-        window.addEventListener("resize", handleResize);
-        return () => {
-            window.removeEventListener("resize", handleResize);
-        };
-    }, []);
 
     return (
         <div className="flex flex-row justify-end items-center" style={{height: size}}>
@@ -79,11 +55,13 @@ export default function TitleBar({
     tabBarVisible,
     onToggleTabBar,
     onOpenSettings,
+    isMaximized,
 } : {
     theme: ITheme | null,
     tabBarVisible: boolean,
     onToggleTabBar: () => void,
     onOpenSettings: () => void,
+    isMaximized: boolean,
 }) {
     const bg = theme?.background ?? "black";
     const fg = theme?.foreground ?? "white";
@@ -163,7 +141,7 @@ export default function TitleBar({
                     <Settings/>
                 </Button>
                 <div style={{ color: fg }}>
-                    <WindowControl size={size}/>
+                    <WindowControl size={size} isMaximized={isMaximized}/>
                 </div>
             </div>
         </div>

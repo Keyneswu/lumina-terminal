@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
 import {Button, Card, Modal} from "@heroui/react";
 import { Monitor, Cloud } from "lucide-react";
-import { SSHHostEntry, TerminalProfile } from "../../types/terminal.ts";
+import { TerminalProfile } from "../../types/terminal.ts";
 import { useI18n } from "../../hooks/i18n.tsx";
-import { invoke } from "@tauri-apps/api/core";
+import { useSshConfig } from "../../hooks/useSshConfig.ts";
+import { formatSshEntry } from "../../lib/ssh.ts";
 
 interface Props {
     isOpen: boolean;
@@ -14,11 +14,7 @@ interface Props {
 
 export default function AddProfileModal({ isOpen, onOpenChange, onCreate, borderColor }: Props) {
     const t = useI18n();
-    const [sshEntries, setSshEntries] = useState<SSHHostEntry[]>([]);
-
-    useEffect(() => {
-        invoke<SSHHostEntry[]>("parse_ssh_config").then(setSshEntries);
-    }, []);
+    const sshEntries = useSshConfig();
 
     return (
         <Modal.Backdrop
@@ -94,7 +90,7 @@ export default function AddProfileModal({ isOpen, onOpenChange, onCreate, border
                                                 <div className="flex flex-col min-w-0">
                                                     <span className="text-medium font-semibold">{entry.host}</span>
                                                     <span className="text-xs text-muted truncate">
-                                                        {entry.config.user ? `${entry.config.user}@` : ""}{entry.config.host}{entry.config.port ? `:${entry.config.port}` : ""}
+                                                        {formatSshEntry(entry)}
                                                     </span>
                                                 </div>
                                             </Card>

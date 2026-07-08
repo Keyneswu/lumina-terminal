@@ -1,6 +1,6 @@
 import { Plus, X, Settings } from "lucide-react";
 import Icon from "../assets/icon.svg";
-import { isMacOS } from "../lib/utils.ts";
+import { isMacOS } from "../lib/platform.ts";
 import { SETTINGS_TAB_ID } from "../constants.ts";
 import { useSurfaceColors } from "../hooks/surfaceColors.ts";
 import {useI18n} from "../hooks/i18n.tsx";
