@@ -8,6 +8,13 @@ use crate::utils::*;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(target_os = "linux")]
+    {
+        use std::env;
+        env::set_var("__NV_DISABLE_EXPLICIT_SYNC", "1");
+        log::info!("Set __NV_DISABLE_EXPLICIT_SYNC to 1 for Linux");
+    }
+
     log::info!("Lumina Terminal starting up");
 
     let state = TerminalState::default();

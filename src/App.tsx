@@ -11,7 +11,7 @@ import {ITheme} from "@xterm/xterm";
 import {parseProfile, parseProfileTheme} from "./lib/term.ts";
 import {invoke} from "@tauri-apps/api/core";
 import CommandPalette, {CommandAction} from "./components/CommandPalette.tsx";
-import {isColorDark} from "./hooks/surfaceColors.ts";
+import {isColorDark, foregroundFor} from "./hooks/surfaceColors.ts";
 import {bindingToShortcut, findBinding, parseBindings, useKeyboardBindings, matchBinding} from "./lib/bindings.ts";
 import {Actions} from "./types/config.ts";
 import {X, PanelLeftClose, PanelLeftOpen, Terminal as TerminalIcon, Monitor, MonitorOff, Settings as SettingsIcon, Info} from "lucide-react";
@@ -36,6 +36,23 @@ function InnerApp() {
         }
     }, [currentId, terminals]);
     const [currentTheme, setCurrentTheme] = useState<ITheme | null>(null);
+    // Uniform background color sampled from the active terminal's outer ring
+    // (a fullscreen TUI's own bg). When set, the whole app follows it so the
+    // TUI bleeds seamlessly to the window edges; null => use theme.background.
+    const [edgeBg, setEdgeBg] = useState<string | null>(null);
+    // Effective background = TUI edge color if present, else terminal theme bg.
+    const effectiveBg = edgeBg ?? currentTheme?.background;
+    // Effective foreground: when a TUI overrides the background, pick a
+    // readable contrast color for it instead of trusting the terminal theme's
+    // foreground (which may clash, e.g. black text on a now-dark TUI bg).
+    const effectiveFg = edgeBg && effectiveBg
+        ? foregroundFor(effectiveBg)
+        : currentTheme?.foreground;
+    // Theme object with bg/fg overridden to the effective values, so children
+    // that read theme.background / theme.foreground stay consistent.
+    const effectiveTheme = currentTheme
+        ? {...currentTheme, background: effectiveBg ?? currentTheme.background, foreground: effectiveFg ?? currentTheme.foreground}
+        : currentTheme;
     const tabBarVisible = config.showTabBar ?? false;
     const parsedBindings = useMemo(() => parseBindings(config.bindings), [config.bindings]);
     const defaultProfile = useMemo(() => {
@@ -169,16 +186,25 @@ function InnerApp() {
         }
     }, [currentProfile]);
 
-    // Sync HeroUI theme class with terminal theme
+    // Clear the sampled edge background whenever the active tab changes, so a
+    // previously fullscreen TUI's color doesn't bleed into the next tab. The
+    // active terminal will re-report its own value shortly after.
     useEffect(() => {
-        const bg = currentTheme?.background;
+        setEdgeBg(null);
+    }, [currentId]);
+
+    // Sync HeroUI theme class with the effective background. When a fullscreen
+    // TUI sets its own background, the light/dark decision follows that color so
+    // text/icons stay legible against it.
+    useEffect(() => {
+        const bg = effectiveBg;
         if (!bg) return;
         const dark = isColorDark(bg);
         const root = document.documentElement;
         root.classList.toggle("dark", dark);
         root.classList.toggle("light", !dark);
         root.setAttribute("data-theme", dark ? "dark" : "light");
-    }, [currentTheme?.background]);
+    }, [effectiveBg]);
 
     // Keyboard bindings for non-terminal tabs (Settings, About, etc.)
     const isNonTerminalTab = currentId === SETTINGS_TAB_ID || currentId === ABOUT_TAB_ID;
@@ -364,7 +390,7 @@ function InnerApp() {
         return (
             <div
                 className="w-full h-full overflow-hidden flex flex-row"
-                style={{background: currentTheme?.background ?? "black"}}
+                style={{background: effectiveBg ?? "black"}}
             >
                 <CommandPalette
                     isOpen={isCommandPaletteOpen}
@@ -377,14 +403,14 @@ function InnerApp() {
                     onSelect={switchTab}
                     onClose={closeTerminal}
                     onNew={() => newTerminal(defaultProfile)}
-                    backgroundColor={currentTheme?.background ?? "#000000"}
-                    foregroundColor={currentTheme?.foreground ?? "#ffffff"}
+                    backgroundColor={effectiveBg ?? "#000000"}
+                    foregroundColor={effectiveFg ?? "#ffffff"}
                     collapsed={!tabBarVisible}
                     defaultProfileName={defaultProfile?.name}
                 />
                 <div className="flex-1 flex flex-col min-w-0">
                     <TitleBar
-                        theme={currentTheme}
+                        theme={effectiveTheme}
                         tabBarVisible={tabBarVisible}
                         onToggleTabBar={() => updateConfig({ showTabBar: !tabBarVisible })}
                         onOpenSettings={openSettings}
@@ -395,7 +421,7 @@ function InnerApp() {
                                 className="absolute inset-0"
                                 style={{ zIndex: 1 }}
                             >
-                                <SettingsPage theme={currentTheme} openAbout={openAbout} />
+                                <SettingsPage theme={effectiveTheme} openAbout={openAbout} />
                             </div>
                         )}
                         {currentId === ABOUT_TAB_ID && (
@@ -403,7 +429,7 @@ function InnerApp() {
                                 className="absolute inset-0"
                                 style={{ zIndex: 1 }}
                             >
-                                <AboutPage theme={currentTheme} />
+                                <AboutPage theme={effectiveTheme} />
                             </div>
                         )}
                         {ids.filter((id) => id in terminals).map((id) => (
@@ -437,6 +463,11 @@ function InnerApp() {
                                     onOpenSettings={openSettings}
                                     onToTab={toTab}
                                     onToggleSidebar={() => updateConfig({ showTabBar: !tabBarVisible })}
+                                    onEdgeBackgroundChange={(color) => {
+                                        // Only the active tab's report is honored;
+                                        // inactive tabs report null and are ignored.
+                                        if (id === currentId) setEdgeBg(color);
+                                    }}
                                 />
                             </div>
                         ))}

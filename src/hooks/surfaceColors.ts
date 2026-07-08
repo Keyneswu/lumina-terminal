@@ -10,6 +10,15 @@ export function isColorDark(hex: string): boolean {
     return luminance < 0.5;
 }
 
+/**
+ * A readable foreground color for the given background: white on dark, black on
+ * light. Used so chrome text (tab titles, title bar, settings) follows the
+ * effective background even when a fullscreen TUI overrides it.
+ */
+export function foregroundFor(bg: string): string {
+    return isColorDark(bg) ? "#ffffff" : "#000000";
+}
+
 export function adjustColor(hex: string, amount: number): string {
     hex = hex.replace("#", "");
     const r = Math.max(0, Math.min(255, parseInt(hex.substring(0, 2), 16) + amount));

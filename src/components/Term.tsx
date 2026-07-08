@@ -7,6 +7,7 @@ import {FloatingFitAddon} from "../lib/FloatingFitAddon.ts";
 import {WebglAddon} from "@xterm/addon-webgl";
 import {getCurrentWindow, LogicalSize} from "@tauri-apps/api/window";
 import {parseProfilePadding, parseProfileTheme} from "../lib/term.ts";
+import {sampleEdgeBackground} from "../lib/edgeBackground.ts";
 import {loadBindings, parseBindings} from "../lib/bindings.ts";
 import {Actions} from "../types/config.ts";
 import {isMacOS, openConfigFile} from "../lib/utils.ts";
@@ -32,6 +33,10 @@ interface TermProps {
     onOpenSettings?: () => void;
     onToTab?: (index: number) => void;
     onToggleSidebar?: () => void;
+    // Reports the uniform background color sampled from the terminal's outer
+    // ring (a fullscreen TUI's own bg), or null when there is none. Only the
+    // active tab reports; inactive tabs report null.
+    onEdgeBackgroundChange?: (color: string | null) => void;
 }
 
 export default function Term(props : TermProps) {
@@ -324,6 +329,56 @@ export default function Term(props : TermProps) {
             term.current.focus();
         }
     }, [isActive]);
+
+    // Poll the outermost ring of the buffer. When it is a uniform explicit
+    // color (a fullscreen TUI's own bg), report it up so the whole app
+    // background can follow it, and sync the xterm-owned layers (.xterm and
+    // .xterm-viewport, which otherwise paint theme.background over the sub-cell
+    // gap to the right/bottom of the canvas). Only the active tab reports;
+    // inactive tabs clear it.
+    const onEdgeRef = useRef(props.onEdgeBackgroundChange);
+    onEdgeRef.current = props.onEdgeBackgroundChange;
+    useEffect(() => {
+        if (!term.current) return;
+        const xtermEl = termRef.current?.querySelector(".xterm") as HTMLElement | null;
+        const viewportEl = termRef.current?.querySelector(".xterm-viewport") as HTMLElement | null;
+
+        const apply = (next: string | null) => {
+            onEdgeRef.current?.(next);
+            // Clearing (empty string) lets the CSS default show through again.
+            const value = next ?? "";
+            if (xtermEl && xtermEl.style.backgroundColor !== value) {
+                xtermEl.style.backgroundColor = value;
+            }
+            if (viewportEl && viewportEl.style.backgroundColor !== value) {
+                viewportEl.style.backgroundColor = value;
+            }
+        };
+
+        let lastReported: string | null = null;
+        const tick = () => {
+            if (!term.current) return;
+            if (!isActiveRef.current) {
+                if (lastReported !== null) {
+                    lastReported = null;
+                    apply(null);
+                }
+                return;
+            }
+            const next = sampleEdgeBackground(term.current);
+            if (next !== lastReported) {
+                lastReported = next;
+                apply(next);
+            }
+        };
+        tick();
+        const handle = setInterval(tick, 200);
+        return () => {
+            clearInterval(handle);
+            if (xtermEl) xtermEl.style.backgroundColor = "";
+            if (viewportEl) viewportEl.style.backgroundColor = "";
+        };
+    }, [id]);
 
     return (
         <div className="w-full h-full overflow-hidden relative" style={{
