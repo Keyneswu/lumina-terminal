@@ -148,6 +148,7 @@ pub fn run() {
             kill_terminal,
             write_to_terminal,
             resize_terminal,
+            set_output_mode,
             find_shells,
             path_exist,
             read_file,

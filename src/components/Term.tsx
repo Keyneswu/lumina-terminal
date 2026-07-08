@@ -1,6 +1,7 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {Terminal} from "@xterm/xterm";
 import {listen} from "@tauri-apps/api/event";
+import {Channel} from "@tauri-apps/api/core";
 import {TerminalProfile, CurrentCommand} from "../types/terminal.ts";
 import {FloatingFitAddon} from "../lib/FloatingFitAddon.ts";
 import {WebglAddon} from "@xterm/addon-webgl";
@@ -14,6 +15,7 @@ import {isMacOS} from "../lib/platform.ts";
 import {openConfigFile} from "../lib/configFile.ts";
 import {useGlobalConfig} from "../hooks/config.tsx";
 import {useI18n} from "../hooks/i18n.tsx";
+import {useOutputMode} from "../hooks/useOutputMode.ts";
 import { info, debug } from "@tauri-apps/plugin-log";
 import {getCurrentWebview} from "@tauri-apps/api/webview";
 import {WebLinksAddon} from "@xterm/addon-web-links";
@@ -58,6 +60,7 @@ export default function Term(props : TermProps) {
     const padding = useMemo(() => parseProfilePadding(profile, paddingOffset), [profile, paddingOffset]);
     const {config} = useGlobalConfig();
     const t = useI18n();
+    const {markInteractive} = useOutputMode(id);
     const [isDragOver, setIsDragOver] = useState(false);
     const isActiveRef = useRef(isActive);
     isActiveRef.current = isActive;
@@ -172,6 +175,7 @@ export default function Term(props : TermProps) {
             } else if (event.payload.type === 'drop') {
                 setIsDragOver(false);
                 if (event.payload.paths.length > 0) {
+                    markInteractive();
                     const now = Date.now();
                     if (now - lastDropRef.current < 200) return;
                     lastDropRef.current = now;
@@ -265,16 +269,24 @@ export default function Term(props : TermProps) {
 
         term.current.onData((data) => {
             writeToTerminal(id, data).then();
+            markInteractive();
         });
         term.current.onResize(({cols, rows}) => {
             resizeTerminal(id, cols, rows).then();
+            markInteractive();
         });
 
-        // Chunked write: batch incoming PTY data and yield between chunks
-        // to avoid blocking the main thread during large output (e.g. cat bigfile)
+        // Chunked write: feed pending PTY data to xterm in bounded chunks, with a
+        // microtask gap between chunks so the main thread stays responsive during
+        // large output (e.g. cat bigfile).
+        //
+        // The chunk size is a trade-off: too large and one term.write() blocks the
+        // main thread for tens of ms while xterm parses thousands of lines (jank);
+        // too small and per-write overhead dominates. 16KB stays well under a frame
+        // while keeping the number of write() calls (and parse/render passes) low.
         const pendingWrites: string[] = [];
         let writeScheduled = false;
-        const CHUNK_SIZE = 1024 * 8;
+        const CHUNK_SIZE = 1024 * 16;
 
         function drainWrites(term: Terminal) {
             if (pendingWrites.length === 0) {
@@ -282,7 +294,7 @@ export default function Term(props : TermProps) {
                 return;
             }
 
-            // Build one chunk by consuming items from the front of the queue
+            // Build one chunk by consuming items from the front of the queue.
             let chunk = '';
             let taken = 0;
             while (pendingWrites.length > 0 && taken < CHUNK_SIZE) {
@@ -298,14 +310,16 @@ export default function Term(props : TermProps) {
                 }
             }
 
-            if (pendingWrites.length > 0) {
-                writeScheduled = true;
-                term.write(chunk, () => {
-                    queueMicrotask(() => drainWrites(term));
-                });
-            } else {
-                term.write(chunk);
-                writeScheduled = false;
+            // Drive the queue forward via microtask regardless of whether more
+            // data remains, instead of waiting for term.write()'s render callback.
+            // The callback model serialized writes behind xterm's render time,
+            // which throttled throughput to "one chunk per frame" and made large
+            // chunks *worse* (longer single write blocking). Microtask draining
+            // keeps the queue moving while still yielding between chunks.
+            term.write(chunk);
+            writeScheduled = pendingWrites.length > 0;
+            if (writeScheduled) {
+                queueMicrotask(() => drainWrites(term));
             }
         }
 
@@ -314,9 +328,13 @@ export default function Term(props : TermProps) {
             commandParserRef.current = new CurrentCommandParser();
         }
 
-        listen<string>(`term-write-${id}`, (event) => {
-            if (term.current && event.payload) {
-                const data = event.payload;
+        // Backend streams PTY output over this Channel (low-overhead,
+        // binary-safe UTF-8, with dynamic burst coalescing). The handler does
+        // the same OSC parse → pendingWrites → drainWrites the old
+        // `term-write` event listener did.
+        const outputChannel = new Channel<string>();
+        outputChannel.onmessage = (data) => {
+            if (term.current && data) {
                 // Parse shell-integration sequences BEFORE writing to xterm;
                 // xterm drops unknown OSC, so the visible output is unaffected.
                 const parsed = commandParserRef.current!.feed(data);
@@ -332,11 +350,11 @@ export default function Term(props : TermProps) {
                     queueMicrotask(() => drainWrites(term.current!));
                 }
             }
-        }).then(() => {
-            startTerminal(id, profile).then(() => {
-                info(`Terminal started: id=${id} profile=${profile.name}`);
-                resizeTerminal(id, term.current!.cols, term.current!.rows).then();
-            });
+        };
+
+        startTerminal(id, profile, outputChannel).then(() => {
+            info(`Terminal started: id=${id} profile=${profile.name}`);
+            resizeTerminal(id, term.current!.cols, term.current!.rows).then();
         });
 
         // Backend fallback: reports the foreground process-group command
@@ -440,7 +458,7 @@ export default function Term(props : TermProps) {
             paddingRight: padding.right,
             paddingTop: padding.top,
             paddingBottom: padding.bottom,
-        }}>
+        }} onPointerDown={markInteractive} onWheel={markInteractive}>
             <div ref={termRef} className="w-full h-full overflow-hidden" style={{
                 fontStyle: profile.fontStyle ?? "normal",
             }}/>

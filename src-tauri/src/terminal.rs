@@ -1,10 +1,10 @@
-use std::sync::Arc;
+use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use portable_pty::{CommandBuilder, PtySize};
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, State};
+use tauri::{ipc::Channel, AppHandle, Emitter, State};
 
 use crate::state::{CommandChild, SharedChild, TerminalEntry, TerminalState};
 
@@ -34,6 +34,7 @@ pub fn start_terminal(
     app: AppHandle,
     id: String,
     exe_path: String,
+    on_output: Channel<String>,
     state: State<TerminalState>,
     cols: Option<u16>,
     rows: Option<u16>,
@@ -118,6 +119,7 @@ pub fn start_terminal(
             .expect("Failed to lock child to read pid");
         guard.process_id()
     };
+    let force_low_latency = Arc::new(AtomicBool::new(false));
 
     // Store in state
     {
@@ -132,17 +134,57 @@ pub fn start_terminal(
                 child: shared_child.clone(),
                 writer,
                 shell_pid,
+                force_low_latency: force_low_latency.clone(),
             },
         );
     }
 
-    // Reader thread: forwards terminal output to frontend
-    let term_write_event_name = format!("term-write-{}", id);
-    let app_reader = app.clone();
+    // Reader thread: forwards terminal output to the frontend over a Channel,
+    // coalescing bursts into large chunks during high-throughput output (e.g.
+    // `cat bigfile`) and flushing immediately when output is sparse or the user
+    // is interacting. Output is also decoded streaming-UTF-8 safe: a multi-byte
+    // character split across two reads is never dropped (the previous code did
+    // `if let Ok(str::from_utf8(..))` which silently discarded the whole chunk
+    // on an unlucky split — invisible for ASCII/base64 but dropped CJK/emoji).
     let id_reader = id.clone();
     thread::spawn(move || {
         log::debug!("Reader thread started for {}", id_reader);
-        let mut buffer = [0u8; 1024*8];
+        // 64KB read buffer (was 8KB): fewer, larger reads for bursty output.
+        const READ_BUF_SIZE: usize = 1024 * 64;
+        // Enter HighThroughput (coalesce) after this many consecutive full reads.
+        const BURST_FULL_READS: u32 = 2;
+        // In HighThroughput, flush once pending reaches this size.
+        const HIGH_FLUSH_CAP: usize = 1024 * 64;
+        // Drop back to LowLatency when the gap between reads exceeds this.
+        const LOW_SPARSE_GAP: Duration = Duration::from_millis(100);
+
+        let mut buffer = vec![0u8; READ_BUF_SIZE];
+        // Accumulator holding decoded-pending bytes (also carries an unfinished
+        // UTF-8 character across a read boundary).
+        let mut pending: Vec<u8> = Vec::with_capacity(READ_BUF_SIZE * 2);
+        let mut full_read_streak: u32 = 0;
+        let mut last_read = Instant::now();
+
+        // Flush the longest valid UTF-8 prefix of `pending` over the channel.
+        // Any trailing incomplete multi-byte sequence is retained for the next
+        // read; nothing is ever dropped.
+        let flush = |pending: &mut Vec<u8>| {
+            if pending.is_empty() {
+                return;
+            }
+            let valid_len = match std::str::from_utf8(pending) {
+                Ok(_) => pending.len(),
+                Err(e) => e.valid_up_to(),
+            };
+            if valid_len > 0 {
+                let s = std::str::from_utf8(&pending[..valid_len])
+                    .expect("valid UTF-8 prefix verified above")
+                    .to_string();
+                let _ = on_output.send(s);
+                pending.drain(..valid_len);
+            }
+        };
+
         loop {
             match reader.read(&mut buffer) {
                 Ok(0) => {
@@ -150,9 +192,38 @@ pub fn start_terminal(
                     break;
                 }
                 Ok(n) => {
-                    let bytes = &buffer[..n];
-                    if let Ok(text) = std::str::from_utf8(bytes) {
-                        let _ = app_reader.emit(&term_write_event_name, text.to_string());
+                    pending.extend_from_slice(&buffer[..n]);
+
+                    let now = Instant::now();
+                    let gap = now - last_read;
+                    last_read = now;
+
+                    // Data-driven mode detection. `full_read_streak` counts
+                    // consecutive reads that returned a full buffer (the pipe
+                    // clearly has more waiting). A partial read usually means
+                    // the pipe drained, so we reset and treat it as sparse.
+                    if n == READ_BUF_SIZE {
+                        full_read_streak = full_read_streak.saturating_add(1);
+                    } else {
+                        full_read_streak = 0;
+                    }
+                    let data_driven_high =
+                        full_read_streak >= BURST_FULL_READS && gap < LOW_SPARSE_GAP;
+                    let force_low = force_low_latency.load(Ordering::Relaxed);
+                    let high_throughput = data_driven_high && !force_low;
+
+                    if high_throughput {
+                        // Coalesce: flush only once we've accumulated enough, or
+                        // when this read was partial (pipe likely drained →
+                        // finish the burst so the tail isn't delayed until the
+                        // next read, which may never come for an idle shell).
+                        if pending.len() >= HIGH_FLUSH_CAP || n < READ_BUF_SIZE {
+                            flush(&mut pending);
+                        }
+                    } else {
+                        // LowLatency (default / sparse / user interacting): flush
+                        // immediately for the lowest possible output delay.
+                        flush(&mut pending);
                     }
                 }
                 Err(e) => {
@@ -161,6 +232,9 @@ pub fn start_terminal(
                 }
             }
         }
+        // Flush any tail (including a stranded incomplete UTF-8 prefix, though
+        // in practice EOF means the stream ended cleanly).
+        flush(&mut pending);
         log::debug!("Reader thread ended for {}", id_reader);
     });
 
@@ -425,5 +499,23 @@ pub fn resize_terminal(id: String, cols: u16, rows: u16, state: State<TerminalSt
             .master
             .resize(size)
             .expect("Failed to resize terminal");
+    }
+}
+
+/// Toggle the per-terminal LowLatency override. While `low_latency` is true the
+/// reader thread flushes every read immediately instead of coalescing, so user
+/// interaction (typing / mouse / resize) sees the lowest possible output delay.
+/// Called by the frontend's `useOutputMode` hook, debounced so it only fires on
+/// boolean transitions — never per input event.
+#[tauri::command]
+pub fn set_output_mode(id: String, low_latency: bool, state: State<TerminalState>) {
+    let terminals = state
+        .terminals
+        .try_lock()
+        .expect("Failed to lock terminals");
+    if let Some(entry) = terminals.get(&id) {
+        entry.force_low_latency.store(low_latency, Ordering::Relaxed);
+    } else {
+        log::warn!("set_output_mode: terminal {} not found", id);
     }
 }

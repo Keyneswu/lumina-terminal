@@ -61,6 +61,7 @@ src/
 │   ├── surfaceColors.ts     # useSurfaceColors(bg) → derived border/overlay colors
 │   ├── useShells.ts         # useShells() — cached find_shells backend call
 │   ├── useSshConfig.ts      # useSshConfig() — cached parse_ssh_config backend call
+│   ├── useOutputMode.ts     # useOutputMode(id) → {markInteractive}: debounced LowLatency toggle
 │   └── useEffectiveTheme.ts # useEffectiveTheme(profile, currentId) → theme/bg/fg + HeroUI sync
 │
 ├── components/
@@ -92,8 +93,10 @@ src/
 src-tauri/src/
 ├── main.rs        # entry, calls lib::run()
 ├── lib.rs         # Tauri builder: plugins, state, invoke_handler registration
-├── state.rs       # TerminalState (HashMap of PTY pairs + writers)
-├── terminal.rs    # start/kill/write/resize_terminal commands
+├── state.rs       # TerminalState (HashMap of PTY pairs + writers + force_low_latency flags)
+├── terminal.rs    # start/kill/write/resize_terminal, set_output_mode commands;
+│                  #   reader thread streams output over a Channel<String> with
+│                  #   streaming-UTF-8 decoding + two-mode burst coalescing
 └── utils.rs       # find_shells, path_exist, read_file, parse_ssh_config, etc.
 ```
 

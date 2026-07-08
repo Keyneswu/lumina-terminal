@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
     io::Write,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, atomic::AtomicBool},
 };
 
 use portable_pty::{Child, PtyPair};
@@ -20,6 +20,11 @@ pub struct TerminalEntry {
     /// `Child::process_id()`. Used to distinguish "shell is the foreground
     /// process group" (= idle at prompt) from "a child command is running".
     pub shell_pid: Option<u32>,
+    /// Frontend-driven flag: when true, the reader thread flushes every read
+    /// immediately (LowLatency) instead of coalescing into large bursts. Set
+    /// by the `set_output_mode` command while the user is interacting
+    /// (typing / mouse / resize). Default `false`.
+    pub force_low_latency: Arc<AtomicBool>,
 }
 
 #[derive(Default, Clone)]
