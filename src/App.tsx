@@ -3,6 +3,7 @@ import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {TerminalProfile} from "./types/terminal.ts";
 import {useGlobalConfig} from "./hooks/config.tsx";
 import {useI18n} from "./hooks/i18n.tsx";
+import {listen} from "@tauri-apps/api/event";
 import WelcomePage from "./pages/WelcomePage.tsx";
 import {getCurrentWindow} from "@tauri-apps/api/window";
 import TitleBar from "./components/TitleBar.tsx";
@@ -159,6 +160,18 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
         setIds((prevState) => [...prevState, ABOUT_TAB_ID]);
         setCurrentId(ABOUT_TAB_ID);
     }, [ids]);
+
+    // macOS app menu "About" item → open our custom AboutPage tab instead of
+    // the native About window. Uses a ref so the listener doesn't re-register
+    // on every ids change.
+    const openAboutRef = useRef(openAbout);
+    openAboutRef.current = openAbout;
+    useEffect(() => {
+        const unlisten = listen("menu-about", () => {
+            openAboutRef.current();
+        });
+        return () => { unlisten.then((fn) => fn()); };
+    }, []);
 
     useEffect(() => {
         if (isInitialized.current) return;
