@@ -140,8 +140,12 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .manage(state)
         .setup(|app| {
+            // `app` is only used on macOS to build the native menu bar; on other
+            // platforms it's intentionally unused, so allow it.
             #[cfg(target_os = "macos")]
             configure_about_menu(app)?;
+            #[cfg(not(target_os = "macos"))]
+            let _ = app;
 
             Ok(())
         })
