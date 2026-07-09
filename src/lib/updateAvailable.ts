@@ -1,22 +1,66 @@
 /**
- * Module-level cache of the last update found by a startup check.
+ * Module-level store of the last update-check result.
  *
- * The startup check (useStartupUpdateCheck) runs once at boot. The About page
- * wants to reflect "an update is available" without re-checking, so it reads
- * this shared value. This is the only cross-hook coupling for the updater and
- * is intentionally tiny (no React here, per AGENTS.md layering).
+ * Both the startup check (useStartupUpdateCheck) and a manual check from the
+ * About page (useUpdater) write here, so the result survives the About tab
+ * being unmounted/remounted — the user checks once, and re-entering About
+ * still shows that result instead of resetting to "idle".
+ *
+ * This is the only cross-hook coupling for the updater and is intentionally
+ * tiny (no React here, per AGENTS.md layering). Implemented as a subscribable
+ * store (useSyncExternalStore-compatible).
  */
 
 import type { UpdateInfo } from "./updater.ts";
 
-let cached: UpdateInfo | null = null;
+/** The outcome of the last check that should persist across remounts. */
+export type StartupUpdateState =
+	| { status: "available"; info: UpdateInfo }
+	| { status: "upToDate" }
+	| { status: "error"; error: string }
+	| null; // no check has completed yet (idle)
 
-/** Record an update found by the startup check (or null when none). */
-export function setStartupUpdate(info: UpdateInfo | null): void {
-	cached = info;
+let cached: StartupUpdateState = null;
+const listeners = new Set<() => void>();
+
+function sameState(a: StartupUpdateState, b: StartupUpdateState): boolean {
+	if (a === b) return true;
+	if (!a || !b) return false;
+	if (a.status !== b.status) return false;
+	if (a.status === "available" && b.status === "available") {
+		return a.info.version === b.info.version;
+	}
+	if (a.status === "error" && b.status === "error") {
+		return a.error === b.error;
+	}
+	return true; // both upToDate
 }
 
-/** Read the update found at startup, if any. */
-export function getStartupUpdate(): UpdateInfo | null {
+function emit() {
+	for (const l of listeners) l();
+}
+
+/** Subscribe to changes. Returns an unsubscribe function. */
+export function subscribe(listener: () => void): () => void {
+	listeners.add(listener);
+	return () => {
+		listeners.delete(listener);
+	};
+}
+
+/** Read the current cached result (for useSyncExternalStore's getSnapshot). */
+export function getStartupUpdate(): StartupUpdateState {
 	return cached;
+}
+
+/** Convenience: the cached UpdateInfo, if the last result was "available". */
+export function getAvailableUpdateInfo(): UpdateInfo | null {
+	return cached?.status === "available" ? cached.info : null;
+}
+
+/** Record the outcome of a check (startup or manual), or null to reset. */
+export function setStartupUpdate(state: StartupUpdateState): void {
+	if (sameState(cached, state)) return;
+	cached = state;
+	emit();
 }

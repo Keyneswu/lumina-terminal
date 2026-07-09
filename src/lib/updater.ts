@@ -8,6 +8,7 @@
 
 import { check, type Update, type CheckOptions } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
+import { info, error } from "@tauri-apps/plugin-log";
 
 /** Lifecycle of a single update cycle. */
 export type UpdateStatus =
@@ -72,10 +73,19 @@ export async function checkForUpdate(
 ): Promise<CheckResult | UpdateError> {
 	// In debug/dev builds the app is unsigned, so the updater almost always
 	// errors. Catch and report rather than letting it throw in the UI.
+	const start = Date.now();
+	await info(`[updater] checkForUpdate: calling check()...`);
 	try {
 		const update = await check(options);
+		const elapsed = Date.now() - start;
+		await info(
+			`[updater] check() returned in ${elapsed}ms — available=${update?.available ?? false}`,
+		);
 		if (update?.available) {
 			pendingUpdate = update;
+			await info(
+				`[updater] update available: v${update.version} (date=${update.date ?? "n/a"})`,
+			);
 			return {
 				status: "available",
 				info: {
@@ -86,15 +96,17 @@ export async function checkForUpdate(
 			};
 		}
 		pendingUpdate = null;
+		await info(`[updater] up to date (current=${update?.currentVersion ?? "n/a"})`);
 		return { status: "upToDate" };
 	} catch (e) {
-		// dev builds have no updater endpoint that resolves; keep noise down.
-		if (!import.meta.env.DEV) {
-			console.error("Update check failed:", e);
-		}
+		const elapsed = Date.now() - start;
+		const msg = e instanceof Error ? e.message : String(e);
+		await error(`[updater] check() failed after ${elapsed}ms: ${msg}`);
+		// also dump the full error for stack traces / unexpected shapes
+		console.error("[updater] check failed:", e);
 		return {
 			status: "error",
-			error: e instanceof Error ? e.message : String(e),
+			error: msg,
 		};
 	}
 }
@@ -114,28 +126,45 @@ export async function downloadAndInstall(
 		throw new Error("No pending update — call checkForUpdate() first.");
 	}
 
+	await info("[updater] downloadAndInstall: starting download...");
+	const start = Date.now();
 	// Track total size across events: `Started` gives contentLength once,
 	// `Progress` gives per-chunk sizes we accumulate, `Finished` marks 100%.
 	let total = 0;
 	let downloaded = 0;
-	await pendingUpdate.downloadAndInstall((event) => {
-		if (!onProgress) return;
-		if (event.event === "Started" && event.data.contentLength) {
-			total = event.data.contentLength;
-		} else if (event.event === "Progress") {
-			downloaded += event.data.chunkLength;
-		}
-		if (event.event === "Finished") {
-			onProgress({ downloaded: total || downloaded, total, fraction: 1 });
-		} else if (total > 0) {
-			onProgress({ downloaded, total, fraction: downloaded / total });
-		} else {
-			onProgress({ downloaded, total: 0, fraction: undefined });
-		}
-	});
+	try {
+		await pendingUpdate.downloadAndInstall((event) => {
+			if (event.event === "Started") {
+				if (event.data.contentLength) total = event.data.contentLength;
+				info(
+					`[updater] download started, total=${total} bytes`,
+				).catch(() => {});
+			} else if (event.event === "Progress") {
+				downloaded += event.data.chunkLength;
+			} else if (event.event === "Finished") {
+				info(
+					`[updater] download finished in ${Date.now() - start}ms`,
+				).catch(() => {});
+			}
+			if (!onProgress) return;
+			if (event.event === "Finished") {
+				onProgress({ downloaded: total || downloaded, total, fraction: 1 });
+			} else if (total > 0) {
+				onProgress({ downloaded, total, fraction: downloaded / total });
+			} else {
+				onProgress({ downloaded, total: 0, fraction: undefined });
+			}
+		});
 
-	pendingUpdate = null;
-	await relaunch();
+		pendingUpdate = null;
+		await info("[updater] install complete, relaunching...");
+		await relaunch();
+	} catch (e) {
+		const msg = e instanceof Error ? e.message : String(e);
+		await error(`[updater] download/install failed after ${Date.now() - start}ms: ${msg}`);
+		console.error("[updater] download/install failed:", e);
+		throw e;
+	}
 }
 
 /** True when an update is currently pending (checked, not yet installed). */

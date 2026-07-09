@@ -14,7 +14,6 @@ import {
 	Download,
 	LoaderCircle,
 	RefreshCw,
-	RotateCw,
 } from "lucide-react";
 
 // Inline GitHub mark SVG; inherits text color via currentColor.
@@ -80,10 +79,10 @@ export default function AboutPage({ theme }: { theme: ITheme | null }) {
 
     return (
         <div
-            className="flex flex-col items-center justify-center h-full px-6 py-8"
+            className="flex flex-col items-center h-full overflow-y-auto px-6 py-8"
             style={{ background: bg, color: fg }}
         >
-            <div className="flex flex-col items-center gap-6 max-w-sm w-full overflow-y-auto">
+            <div className="flex flex-col items-center gap-6 max-w-sm w-full">
                 <img
                     src={iconSvg}
                     alt="Lumina Terminal"
@@ -111,44 +110,47 @@ export default function AboutPage({ theme }: { theme: ITheme | null }) {
                     >
                         <div className="flex items-center justify-between">
                             <span className="text-muted">{t["Updates"]}</span>
-                            <div className="flex items-center gap-2" style={{ color: fg }}>
-                                {updater.status === "idle" && (
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onPress={updater.check}
-                                    >
-                                        <RefreshCw size={14} />
-                                        {t["Check for Updates"]}
-                                    </Button>
-                                )}
-                                {updater.status === "checking" && (
+                            <div className="flex items-center" style={{ color: fg }}>
+                                {/* Status text (always present) */}
+                                {updater.status === "checking" ? (
                                     <span className="flex items-center gap-1.5 text-muted">
                                         <LoaderCircle size={14} className="animate-spin" />
                                         {t["Checking for updates..."]}
                                     </span>
-                                )}
-                                {updater.status === "upToDate" && (
+                                ) : updater.status === "upToDate" ? (
                                     <span className="flex items-center gap-1.5" style={{ color: "#22c55e" }}>
                                         <CheckCircle2 size={14} />
                                         {t["You're up to date"]}
                                     </span>
+                                ) : updater.status === "error" ? (
+                                    <span className="flex items-center gap-1.5" style={{ color: "#ef4444" }}>
+                                        <AlertCircle size={14} />
+                                        {t["Update check failed"]}
+                                    </span>
+                                ) : (
+                                    <span className="text-muted">
+                                        {t["Check for Updates"]}
+                                    </span>
                                 )}
-                                {updater.status === "error" && (
-                                    <>
-                                        <span className="flex items-center gap-1.5" style={{ color: "#ef4444" }}>
-                                            <AlertCircle size={14} />
-                                            {t["Update check failed"]}
-                                        </span>
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            onPress={updater.check}
-                                        >
-                                            <RotateCw size={14} />
-                                            {t["Retry"]}
-                                        </Button>
-                                    </>
+
+                                {/* Compact refresh/retry icon button — shown in every
+                                    non-busy state so the user can re-check regardless of
+                                    the current result. */}
+                                {updater.status !== "checking" && (
+                                    <button
+                                        type="button"
+                                        onClick={updater.check}
+                                        aria-label={t["Check for Updates"]}
+                                        title={t["Check for Updates"]}
+                                        // The row's height is set by the text line-height (~20px).
+                                        // A generous tap target is good UX, but it must not make this
+                                        // row taller than the text-only rows. So we fix the box to the
+                                        // line height and use negative vertical margin to keep the
+                                        // surrounding flex row's height driven by the text, not the button.
+                                        className="-my-2 flex items-center justify-center h-8 w-8 rounded transition-colors hover:bg-white/10 text-muted hover:text-current cursor-pointer"
+                                    >
+                                        <RefreshCw size={14} />
+                                    </button>
                                 )}
                             </div>
                         </div>
