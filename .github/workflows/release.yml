@@ -78,6 +78,9 @@ jobs:
         id: release_meta
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # Force bash on every OS: the command substitution + heredoc below are
+        # bash syntax, which the Windows runner's default shell (PowerShell) can't run.
+        shell: bash
         run: |
           # title (single line) → steps.release_meta.outputs.name
           name="$(gh release view '${{ github.ref_name }}' --json name --jq '.name')"
