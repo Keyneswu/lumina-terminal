@@ -77,7 +77,10 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: "Lumina Terminal v__VERSION__"
+          # Intentionally NOT setting releaseName / releaseBody: the action
+          # must not rewrite the release title or notes you wrote in the GitHub
+          # UI. It only uploads build assets and generates latest.json, whose
+          # `notes` field is read back from this release's body.
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
