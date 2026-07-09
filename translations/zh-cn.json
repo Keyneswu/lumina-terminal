@@ -111,5 +111,19 @@
     "Profile": "配置文件",
     "Open Profile": "打开配置文件",
     "Open Default Profile": "打开默认配置文件",
-    "Toggle Sidebar": "切换侧边栏"
+    "Toggle Sidebar": "切换侧边栏",
+    "Updates": "更新",
+    "Check for Updates": "检查更新",
+    "Auto-check for updates on startup": "启动时自动检查更新",
+    "Check for available updates when the app starts": "应用启动时检查是否有可用更新",
+    "Checking for updates...": "正在检查更新…",
+    "A new version is available": "发现新版本",
+    "You're up to date": "已是最新版本",
+    "Downloading update...": "正在下载更新…",
+    "Installing...": "正在安装…",
+    "Install and Restart": "安装并重启",
+    "Update available: v{version}": "有可用更新：v{version}",
+    "Update check failed": "更新检查失败",
+    "Release notes": "更新日志",
+    "Retry": "重试"
 }

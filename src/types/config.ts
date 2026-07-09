@@ -19,4 +19,5 @@ export interface GlobalConfig {
     bindings?: Binding[];
     closeWindowOnLastTab?: boolean;
     copyWithCtrl?: boolean;
+    autoUpdateOnStartup?: boolean;
 }

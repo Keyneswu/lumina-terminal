@@ -21,6 +21,7 @@ import {SETTINGS_TAB_ID, ABOUT_TAB_ID} from "./constants.ts";
 import { info, debug, error } from "@tauri-apps/plugin-log";
 import {usePaddingOffset} from "./hooks/paddingOffset.ts";
 import {useMaximized} from "./hooks/maximized.ts";
+import {useStartupUpdateCheck} from "./hooks/useStartupUpdateCheck.ts";
 import {listen} from "@tauri-apps/api/event";
 
 const OPEN_ABOUT_EVENT = "lumina-open-about";
@@ -50,6 +51,9 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
     );
     const tabBarVisible = config.showTabBar ?? false;
     const parsedBindings = useMemo(() => parseBindings(config.bindings), [config.bindings]);
+    // Check for updates once on startup unless the user opted out. Runs after
+    // config loads; only checks (never auto-installs).
+    useStartupUpdateCheck(config.autoUpdateOnStartup !== false);
     const defaultProfile = useMemo(() => {
         return config.profiles.find(p => p.default) || config.profiles[0];
     }, [config.profiles]);

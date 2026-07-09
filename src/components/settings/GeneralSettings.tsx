@@ -19,6 +19,7 @@ export default function GeneralSettings({ borderColor, openAbout }: { borderColo
         closeWindowOnLastTab: config.closeWindowOnLastTab !== false,
         defaultProfile: currentDefault,
         copyWithCtrl: config.copyWithCtrl ?? false,
+        autoUpdateOnStartup: config.autoUpdateOnStartup !== false,
     });
 
     // Reset draft when config changes externally
@@ -29,14 +30,16 @@ export default function GeneralSettings({ borderColor, openAbout }: { borderColo
             closeWindowOnLastTab: config.closeWindowOnLastTab !== false,
             defaultProfile: currentDefault,
             copyWithCtrl: config.copyWithCtrl ?? false,
+            autoUpdateOnStartup: config.autoUpdateOnStartup !== false,
         });
-    }, [config.language, config.showTabBar, config.closeWindowOnLastTab, config.copyWithCtrl, currentDefault]);
+    }, [config.language, config.showTabBar, config.closeWindowOnLastTab, config.copyWithCtrl, config.autoUpdateOnStartup, currentDefault]);
 
     const isDirty =
         draft.language !== config.language ||
         draft.showTabBar !== (config.showTabBar ?? false) ||
         draft.closeWindowOnLastTab !== (config.closeWindowOnLastTab !== false) ||
         draft.copyWithCtrl !== (config.copyWithCtrl ?? false) ||
+        draft.autoUpdateOnStartup !== (config.autoUpdateOnStartup !== false) ||
         draft.defaultProfile !== currentDefault;
 
     const handleSave = () => {
@@ -46,6 +49,7 @@ export default function GeneralSettings({ borderColor, openAbout }: { borderColo
             showTabBar: draft.showTabBar,
             closeWindowOnLastTab: draft.closeWindowOnLastTab,
             copyWithCtrl: draft.copyWithCtrl,
+            autoUpdateOnStartup: draft.autoUpdateOnStartup,
         };
         if (draft.defaultProfile !== currentDefault) {
             updated.profiles = config.profiles.map(p => ({
@@ -170,6 +174,26 @@ export default function GeneralSettings({ borderColor, openAbout }: { borderColo
                             </Switch>
                         </div>
                     )}
+
+                    {/* Auto-check for updates on startup */}
+                    <div className="flex flex-row items-center justify-between">
+                        <div className="flex flex-col gap-0.5">
+                            <Label className="cursor-pointer">
+                                {t["Auto-check for updates on startup"]}
+                            </Label>
+                            <p className="text-xs text-muted">
+                                {t["Check for available updates when the app starts"]}
+                            </p>
+                        </div>
+                        <Switch
+                            isSelected={draft.autoUpdateOnStartup}
+                            onChange={(v) => setDraft((prev) => ({ ...prev, autoUpdateOnStartup: v }))}
+                        >
+                            <Switch.Control>
+                                <Switch.Thumb />
+                            </Switch.Control>
+                        </Switch>
+                    </div>
                 </div>
             </div>
             {/* Fixed bottom: Save */}

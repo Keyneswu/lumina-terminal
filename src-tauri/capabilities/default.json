@@ -33,6 +33,8 @@
     "os:default",
     "core:window:allow-set-focus",
     "core:window:allow-set-decorations",
-    "log:default"
+    "log:default",
+    "updater:default",
+    "process:default"
   ]
 }

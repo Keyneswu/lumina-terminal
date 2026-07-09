@@ -111,5 +111,19 @@
     "Profile": "Profile",
     "Open Profile": "Open Profile",
     "Open Default Profile": "Open Default Profile",
-    "Toggle Sidebar": "Toggle Sidebar"
+    "Toggle Sidebar": "Toggle Sidebar",
+    "Updates": "Updates",
+    "Check for Updates": "Check for Updates",
+    "Auto-check for updates on startup": "Auto-check for updates on startup",
+    "Check for available updates when the app starts": "Check for available updates when the app starts",
+    "Checking for updates...": "Checking for updates...",
+    "A new version is available": "A new version is available",
+    "You're up to date": "You're up to date",
+    "Downloading update...": "Downloading update...",
+    "Installing...": "Installing...",
+    "Install and Restart": "Install and Restart",
+    "Update available: v{version}": "Update available: v{version}",
+    "Update check failed": "Update check failed",
+    "Release notes": "Release notes",
+    "Retry": "Retry"
 }

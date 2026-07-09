@@ -114,6 +114,7 @@ export const DEFAULT_CONFIG: GlobalConfig = {
     profiles: [],
     showTabBar: false,
     copyWithCtrl: false,
+    autoUpdateOnStartup: true,
 };
 
 export const SETTINGS_TAB_ID = "__lum__settings__";

@@ -2,10 +2,20 @@ import {useEffect, useMemo, useState} from "react";
 import { ITheme } from "@xterm/xterm";
 import { useI18n } from "../hooks/i18n.tsx";
 import { useSurfaceColors } from "../hooks/surfaceColors.ts";
+import { useUpdater } from "../hooks/useUpdater.ts";
 import iconSvg from "../assets/icon.svg";
 import readmeRaw from "../../README.md?raw";
 import {invoke} from "@tauri-apps/api/core";
 import {getVersion} from "@tauri-apps/api/app";
+import {Button} from "@heroui/react";
+import {
+	AlertCircle,
+	CheckCircle2,
+	Download,
+	LoaderCircle,
+	RefreshCw,
+	RotateCw,
+} from "lucide-react";
 
 // Inline GitHub mark SVG; inherits text color via currentColor.
 function GithubMark({ size = 14 }: { size?: number }) {
@@ -54,6 +64,11 @@ export default function AboutPage({ theme }: { theme: ITheme | null }) {
     const [commitHash, setCommitHash] = useState<string>("");
     const [version, setVersion] = useState<string>("");
 
+    // Updater state. useUpdater seeds from the startup-check cache, so if an
+    // update was found at boot this already shows "available".
+    const updater = useUpdater();
+    const [showNotes, setShowNotes] = useState(false);
+
     useEffect(() => {
         invoke<string>("get_commit_hash").then((hash) => {
             setCommitHash(hash);
@@ -87,6 +102,128 @@ export default function AboutPage({ theme }: { theme: ITheme | null }) {
                         <span style={{ color: fg }}>
                             {version} ({commitHash})
                         </span>
+                    </div>
+
+                    {/* Updates */}
+                    <div
+                        className="flex flex-col gap-2 py-2"
+                        style={{ borderBottom: `1px solid ${colors.borderColor}` }}
+                    >
+                        <div className="flex items-center justify-between">
+                            <span className="text-muted">{t["Updates"]}</span>
+                            <div className="flex items-center gap-2" style={{ color: fg }}>
+                                {updater.status === "idle" && (
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onPress={updater.check}
+                                    >
+                                        <RefreshCw size={14} />
+                                        {t["Check for Updates"]}
+                                    </Button>
+                                )}
+                                {updater.status === "checking" && (
+                                    <span className="flex items-center gap-1.5 text-muted">
+                                        <LoaderCircle size={14} className="animate-spin" />
+                                        {t["Checking for updates..."]}
+                                    </span>
+                                )}
+                                {updater.status === "upToDate" && (
+                                    <span className="flex items-center gap-1.5" style={{ color: "#22c55e" }}>
+                                        <CheckCircle2 size={14} />
+                                        {t["You're up to date"]}
+                                    </span>
+                                )}
+                                {updater.status === "error" && (
+                                    <>
+                                        <span className="flex items-center gap-1.5" style={{ color: "#ef4444" }}>
+                                            <AlertCircle size={14} />
+                                            {t["Update check failed"]}
+                                        </span>
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onPress={updater.check}
+                                        >
+                                            <RotateCw size={14} />
+                                            {t["Retry"]}
+                                        </Button>
+                                    </>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Available update: version + install + release notes */}
+                        {updater.status === "available" && updater.info && (
+                            <div className="flex flex-col gap-2 pl-1">
+                                <div className="flex items-center justify-between">
+                                    <span style={{ color: fg }}>
+                                        {t["Update available: v{version}"].replace("{version}", updater.info.version)}
+                                    </span>
+                                    <Button
+                                        variant="primary"
+                                        size="sm"
+                                        onPress={updater.install}
+                                    >
+                                        <Download size={14} />
+                                        {t["Install and Restart"]}
+                                    </Button>
+                                </div>
+                                {updater.info.body && (
+                                    <div className="flex flex-col gap-1">
+                                        <button
+                                            onClick={() => setShowNotes((v) => !v)}
+                                            className="text-xs text-muted hover:underline self-start"
+                                        >
+                                            {t["Release notes"]}
+                                        </button>
+                                        {showNotes && (
+                                            <pre
+                                                className="text-xs whitespace-pre-wrap break-words rounded-md p-2 max-h-40 overflow-y-auto"
+                                                style={{
+                                                    background: colors.hoverOverlay,
+                                                    color: fg,
+                                                }}
+                                            >
+                                                {updater.info.body}
+                                            </pre>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Downloading: progress bar */}
+                        {updater.status === "downloading" && (
+                            <div className="flex flex-col gap-1 pl-1" style={{ color: fg }}>
+                                <span className="text-xs text-muted">
+                                    {t["Downloading update..."]}
+                                    {updater.progress?.fraction !== undefined
+                                        ? ` ${Math.round(updater.progress.fraction * 100)}%`
+                                        : ""}
+                                </span>
+                                <div
+                                    className="h-1.5 w-full overflow-hidden rounded-full"
+                                    style={{ background: colors.hoverOverlay }}
+                                >
+                                    <div
+                                        className="h-full rounded-full transition-[width] duration-150"
+                                        style={{
+                                            width: `${Math.round((updater.progress?.fraction ?? 0) * 100)}%`,
+                                            background: fg,
+                                        }}
+                                    />
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Installing */}
+                        {updater.status === "installing" && (
+                            <span className="flex items-center gap-1.5 pl-1 text-muted">
+                                <LoaderCircle size={14} className="animate-spin" />
+                                {t["Installing..."]}
+                            </span>
+                        )}
                     </div>
 
                     {/* Author */}
