@@ -14,7 +14,10 @@
 # Supported platforms:
 #   • macOS           — downloads the .dmg and copies the app into /Applications
 #   • Debian & derivs — downloads the .deb and installs it (apt pulls deps)
+#   • Red Hat / CentOS / Fedora / Rocky / Alma & derivs
+#                     — downloads the .rpm and installs it (dnf/yum pulls deps)
 #   • Arch & derivs   — repackages the .deb via a generated PKGBUILD (makepkg -si)
+# Linux ARM64 (aarch64) is supported on all three Linux paths.
 #
 # Asset names are read dynamically from the GitHub Releases API, so this keeps
 # working even if the product-name punctuation or the tag/version scheme changes.
@@ -133,6 +136,24 @@ download() { # <url> <dest>
 	curl -fL --retry 3 -o "$2" "$1" || die "Download failed: $1"
 }
 
+# ---- Linux architecture mapping ---------------------------------------------
+# Asset suffixes differ by ecosystem:
+#   • deb filenames use dpkg arch names  → amd64 / arm64
+#   • rpm filenames use rpm arch names   → x86_64 / aarch64
+#   • pacman PKGBUILD uses Rust-style     → x86_64 / aarch64
+#   • macOS dmg uses Rust triple suffix   → x64 / aarch64
+# Resolve once from `uname -m` so each installer picks the right asset.
+LINUX_DEB_ARCH=""    # amd64 | arm64
+LINUX_RPM_ARCH=""    # x86_64 | aarch64
+LINUX_PACMAN_ARCH="" # x86_64 | aarch64
+resolve_linux_arch() {
+	case "$(uname -m)" in
+		x86_64)  LINUX_DEB_ARCH="amd64";  LINUX_RPM_ARCH="x86_64";  LINUX_PACMAN_ARCH="x86_64"  ;;
+		aarch64|arm64) LINUX_DEB_ARCH="arm64"; LINUX_RPM_ARCH="aarch64"; LINUX_PACMAN_ARCH="aarch64" ;;
+		*) die "Unsupported Linux architecture: $(uname -m). Supported: x86_64, aarch64/arm64." ;;
+	esac
+}
+
 # ============================================================================
 #  macOS
 # ============================================================================
@@ -197,11 +218,11 @@ cleanup_macos() { # <tmpdir> <mountpoint>
 #  Debian & derivatives
 # ============================================================================
 install_debian() {
-	log "Detected ${BOLD}Debian-based${C_RESET} Linux. Installing the .deb."
+	log "Detected ${BOLD}Debian-based${C_RESET} Linux (${LINUX_DEB_ARCH}). Installing the .deb."
 
 	local deb_url
-	deb_url="$(asset_url '_amd64\.deb$' | head -n1)"
-	[[ -n "$deb_url" ]] || die "No .deb asset found in the release."
+	deb_url="$(asset_url "_${LINUX_DEB_ARCH}\.deb\$" | head -n1)"
+	[[ -n "$deb_url" ]] || die "No .deb asset for ${LINUX_DEB_ARCH} found in the release."
 
 	local tmpdir
 	tmpdir="$(mktemp -d)"
@@ -231,10 +252,47 @@ install_debian() {
 }
 
 # ============================================================================
+#  Red Hat, CentOS, Fedora, Rocky, Alma & derivatives
+# ============================================================================
+install_redhat() {
+	log "Detected ${BOLD}RPM-based${C_RESET} Linux (${LINUX_RPM_ARCH}). Installing the .rpm."
+
+	local rpm_url
+	rpm_url="$(asset_url "\.${LINUX_RPM_ARCH}\.rpm\$" | head -n1)"
+	[[ -n "$rpm_url" ]] || die "No .rpm asset for ${LINUX_RPM_ARCH} found in the release."
+
+	local tmpdir
+	tmpdir="$(mktemp -d)"
+	# Capture the path into the trap string now; see install_arch for rationale.
+	trap "rm -rf '$tmpdir'" EXIT
+
+	local rpm="$tmpdir/lumina-terminal.rpm"
+	log "Downloading $rpm_url"
+	download "$rpm_url" "$rpm"
+
+	# `dnf install ./file.rpm` (and `yum install ./file.rpm`) resolve runtime
+	# deps from enabled repos automatically. Fall back to rpm directly on
+	# minimal systems where neither dnf nor yum is present.
+	if command -v dnf >/dev/null 2>&1; then
+		log "Installing with dnf (will pull runtime dependencies)…"
+		sudo dnf install -y "$rpm"
+	elif command -v yum >/dev/null 2>&1; then
+		log "Installing with yum (will pull runtime dependencies)…"
+		sudo yum install -y "$rpm"
+	else
+		log "dnf/yum not found — using rpm directly; dependencies may be missing…"
+		sudo rpm -Uvh --force "$rpm" || warn "rpm install failed. Install webkit2gtk4.1 / gtk3 manually and retry."
+	fi
+
+	printf "%s✓%s %s installed%s\n" "$C_GREEN" "$C_RESET" "$BOLD$APP_NAME$C_RESET" "$C_RESET"
+	echo "  Start it from your application menu, or run:  $APP_ID"
+}
+
+# ============================================================================
 #  Arch & derivatives — PKGBUILD repackaging of the .deb
 # ============================================================================
 install_arch() {
-	log "Detected ${BOLD}Arch-based${C_RESET} Linux. Building a pacman package from the .deb."
+	log "Detected ${BOLD}Arch-based${C_RESET} Linux (${LINUX_PACMAN_ARCH}). Building a pacman package from the .deb."
 
 	# makepkg must run unprivileged and refuses to operate in directories
 	# owned by root or with unsafe permissions. Use a clean user-owned dir.
@@ -247,13 +305,13 @@ install_arch() {
 	chmod 755 "$workdir"
 
 	local deb_url deb_name pkgver
-	deb_url="$(asset_url '_amd64\.deb$' | head -n1)"
+	deb_url="$(asset_url "_${LINUX_DEB_ARCH}\.deb\$" | head -n1)"
 	deb_name="$(basename "$deb_url")"
-	[[ -n "$deb_url" ]] || die "No .deb asset found in the release."
+	[[ -n "$deb_url" ]] || die "No .deb asset for ${LINUX_DEB_ARCH} found in the release."
 	# Package version = the version baked into the deb filename
 	# (e.g. Lumina.Terminal_0.1.1_amd64.deb -> 0.1.1), not the git tag,
 	# since the tag (v0.1.1-fix) and the app version can differ.
-	pkgver="$(printf '%s' "$deb_name" | sed -n 's/.*_\([0-9][^_]*\)_amd64\.deb/\1/p')"
+	pkgver="$(printf '%s' "$deb_name" | sed -n "s/.*_\([0-9][^_]*\)_${LINUX_DEB_ARCH}\.deb/\1/p")"
 	[[ -n "$pkgver" ]] || pkgver="$(json_get '.tag_name' | sed 's/^v//')"
 	log "Package version: $pkgver"
 
@@ -274,7 +332,7 @@ pkgname=$APP_ID
 pkgver=$pkgver
 pkgrel=1
 pkgdesc="A Tauri App — Lumina Terminal"
-arch=('x86_64')
+arch=('$LINUX_PACMAN_ARCH')
 url="https://github.com/$REPO"
 license=('MPL-2.0')
 # Deb Depends: libwebkit2gtk-4.1-0, libgtk-3-0  ->  translated to Arch:
@@ -352,6 +410,10 @@ detect_platform() {
 			elif command -v pacman >/dev/null 2>&1 && ! command -v apt >/dev/null 2>&1; then
 				# pacman present without apt: EndeavourOS, Manjaro, etc.
 				echo "arch"
+			elif [[ -f /etc/redhat-release || -f /etc/fedora-release ]] \
+				|| { command -v rpm >/dev/null 2>&1 && ! command -v dpkg >/dev/null 2>&1; }; then
+				# Red Hat / CentOS / Fedora / Rocky / Alma; rpm present without dpkg.
+				echo "redhat"
 			elif command -v dpkg >/dev/null 2>&1 || command -v apt-get >/dev/null 2>&1; then
 				echo "debian"
 			else
@@ -387,12 +449,16 @@ main() {
 	local platform
 	platform="$(detect_platform)"
 
+	# Resolve the Linux deb/pacman arch suffix once for the deb-based paths.
+	[[ "$platform" == "debian" || "$platform" == "arch" || "$platform" == "redhat" ]] && resolve_linux_arch
+
 	if [[ "$platform" == "unknown" ]]; then
 		cat >&2 <<EOF
 ${C_RED}Unsupported platform.${C_RESET}
 This installer supports:
   • macOS  (.dmg)
   • Debian / Ubuntu and derivatives  (.deb)
+  • Red Hat / CentOS / Fedora / Rocky / Alma and derivatives  (.rpm)
   • Arch / Manjaro / EndeavourOS and derivatives  (PKGBUILD from .deb)
 EOF
 		exit 1
@@ -421,11 +487,15 @@ EOF
 			asset_kind="disk image"
 			;;
 		debian)
-			target_file="$(asset_url '_amd64\.deb$' | head -n1 | sed 's#.*/##')"
+			target_file="$(asset_url "_${LINUX_DEB_ARCH}\.deb\$" | head -n1 | sed 's#.*/##')"
 			asset_kind=".deb package"
 			;;
+		redhat)
+			target_file="$(asset_url "\.${LINUX_RPM_ARCH}\.rpm\$" | head -n1 | sed 's#.*/##')"
+			asset_kind=".rpm package"
+			;;
 		arch)
-			target_file="$(asset_url '_amd64\.deb$' | head -n1 | sed 's#.*/##')"
+			target_file="$(asset_url "_${LINUX_DEB_ARCH}\.deb\$" | head -n1 | sed 's#.*/##')"
 			asset_kind=".deb → pacman package (rebuilt locally)"
 			;;
 	esac
@@ -447,6 +517,7 @@ EOF
 	case "$platform" in
 		macos) install_macos ;;
 		debian) install_debian ;;
+		redhat) install_redhat ;;
 		arch)   install_arch ;;
 	esac
 }
