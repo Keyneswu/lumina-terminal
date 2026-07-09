@@ -4,6 +4,8 @@ import { isMacOS } from "../lib/platform.ts";
 import { SETTINGS_TAB_ID, ABOUT_TAB_ID } from "../constants.ts";
 import { useSurfaceColors } from "../hooks/surfaceColors.ts";
 import {useI18n} from "../hooks/i18n.tsx";
+import ShellIcon from "./ShellIcon.tsx";
+import {ShellType} from "../lib/shellIcon.ts";
 
 export interface TabInfo {
     id: string;
@@ -13,6 +15,9 @@ export interface TabInfo {
     /** When true, the running command is a privileged/elevated operation
      * (sudo/su/doas/pkexec or root); a red dot is shown before it. */
     commandPrivileged?: boolean;
+    /** Shell category used to pick the leading tab icon. Falls back to the
+     * generic terminal icon when absent. Ignored for Settings/About tabs. */
+    shellType?: ShellType;
 }
 
 interface TabBarProps {
@@ -101,6 +106,13 @@ export default function TabBar(props: TabBarProps) {
                                 )}
                                 {tab.id === ABOUT_TAB_ID && (
                                     <Info size={14} className="shrink-0 mt-0.5" />
+                                )}
+                                {tab.id !== SETTINGS_TAB_ID && tab.id !== ABOUT_TAB_ID && (
+                                    <ShellIcon
+                                        shell={tab.shellType ?? "default"}
+                                        size={14}
+                                        className="shrink-0 mt-0.5"
+                                    />
                                 )}
                                 <div className="flex flex-col min-w-0">
                                     <span

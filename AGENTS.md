@@ -48,6 +48,7 @@ src/
 │   ├── ssh.ts               # formatSshAddress / formatSshEntry
 │   ├── term.ts              # parseProfile, parseProfileTheme, parseProfilePadding
 │   ├── terminalApi.ts       # invoke wrappers: writeToTerminal, resizeTerminal, ...
+│   ├── shellIcon.ts         # getShellType(profile) → "bash"|"zsh"|"fish"|"nu"|"pwsh"|"ssh"|"default"
 │   ├── bindings.ts          # parseBindings, matchBinding, loadBindings, useKeyboardBindings,
 │   │                        #   exported actionSignature / keySignature
 │   ├── edgeBackground.ts    # sampleEdgeBackground (xterm buffer edge inspection)
@@ -69,6 +70,7 @@ src/
 │   ├── TabBar.tsx           # Sidebar tab list
 │   ├── TitleBar.tsx         # Drag region + window controls (per-platform)
 │   ├── CommandPalette.tsx   # Ctrl+Shift+P modal
+│   ├── ShellIcon.tsx        # Per-shell tab icon (bash/zsh/fish/nu/pwsh/ssh/default)
 │   ├── ThemePreview.tsx     # 8-color ANSI swatch with tooltip
 │   └── settings/
 │       ├── GeneralSettings.tsx
@@ -140,6 +142,10 @@ categories that tend to duplicate:
   not call `invoke("parse_ssh_config")` directly.
 - **Shell discovery** → `hooks/useShells.ts` (module-level cached). Do not call
   `invoke("find_shells")` directly.
+- **Shell type / tab icon** → `lib/shellIcon.ts` (`getShellType`) is the single
+  source for mapping a `TerminalProfile` to its icon category; `components/
+  ShellIcon.tsx` renders it. Do not re-derive shell type from `exePath` in the
+  TabBar or elsewhere.
 - **Shared settings sub-forms** → `ShellSelector`, `SshFields`, `RenderSettings`.
   When a new settings page needs the same fields, reuse these components.
 

@@ -8,6 +8,7 @@ import {getCurrentWindow} from "@tauri-apps/api/window";
 import TitleBar from "./components/TitleBar.tsx";
 import TabBar, { type TabInfo } from "./components/TabBar.tsx";
 import {parseProfile} from "./lib/term.ts";
+import {getShellType} from "./lib/shellIcon.ts";
 import {killTerminal} from "./lib/terminalApi.ts";
 import {visibleRed} from "./lib/color.ts";
 import CommandPalette, {CommandAction} from "./components/CommandPalette.tsx";
@@ -380,6 +381,7 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
                         name: terminals[id].name,
                         subtitle: cmd ? cmd.command : undefined,
                         commandPrivileged: cmd ? cmd.privileged : false,
+                        shellType: getShellType(terminals[id]),
                     };
                 }
                 return null;
