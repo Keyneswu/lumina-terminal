@@ -125,5 +125,15 @@
     "Update available: v{version}": "Update available: v{version}",
     "Update check failed": "Update check failed",
     "Release notes": "Release notes",
-    "Retry": "Retry"
+    "Retry": "Retry",
+    "New version available: v{version}": "New version v{version} available",
+    "What's New": "What's New",
+    "Update to v{version}": "Update to v{version}",
+    "Later": "Later",
+    "Mock Update State": "Mock Update State",
+    "Simulate an update-check result for testing the update UI": "Simulate an update-check result for testing the update UI",
+    "None": "None",
+    "Available": "Available",
+    "Up to Date": "Up to Date",
+    "Error": "Error"
 }

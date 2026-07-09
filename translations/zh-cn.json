@@ -125,5 +125,15 @@
     "Update available: v{version}": "有可用更新：v{version}",
     "Update check failed": "更新检查失败",
     "Release notes": "更新日志",
-    "Retry": "重试"
+    "Retry": "重试",
+    "New version available: v{version}": "发现新版本 v{version}",
+    "What's New": "更新内容",
+    "Update to v{version}": "更新到 v{version}",
+    "Later": "以后再说",
+    "Mock Update State": "模拟更新状态",
+    "Simulate an update-check result for testing the update UI": "模拟更新检查结果，用于测试更新界面",
+    "None": "无",
+    "Available": "有新版本",
+    "Up to Date": "最新版",
+    "Error": "错误"
 }

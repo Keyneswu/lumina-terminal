@@ -23,6 +23,8 @@ import { info, debug, error } from "@tauri-apps/plugin-log";
 import {usePaddingOffset} from "./hooks/paddingOffset.ts";
 import {useMaximized} from "./hooks/maximized.ts";
 import {useStartupUpdateCheck} from "./hooks/useStartupUpdateCheck.ts";
+import {useUpdater} from "./hooks/useUpdater.ts";
+import UpdateModal from "./components/UpdateModal.tsx";
 import {listen} from "@tauri-apps/api/event";
 
 const OPEN_ABOUT_EVENT = "lumina-open-about";
@@ -55,6 +57,10 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
     // Check for updates once on startup unless the user opted out. Runs after
     // config loads; only checks (never auto-installs).
     useStartupUpdateCheck(config.autoUpdateOnStartup !== false);
+    // Single updater instance for the whole app — owned here so the sidebar
+    // banner, the update modal, and the About page all share one state machine.
+    const updater = useUpdater();
+    const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
     const defaultProfile = useMemo(() => {
         return config.profiles.find(p => p.default) || config.profiles[0];
     }, [config.profiles]);
@@ -398,6 +404,16 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
                     onOpenChange={handleCommandPaletteOpenChange}
                     actions={commandActions}
                 />
+                <UpdateModal
+                    isOpen={isUpdateModalOpen}
+                    onOpenChange={setIsUpdateModalOpen}
+                    info={updater.info}
+                    status={updater.status}
+                    progress={updater.progress}
+                    error={updater.error}
+                    onInstall={updater.install}
+                    theme={effectiveTheme}
+                />
                 <TabBar
                     tabs={tabs}
                     activeId={currentId}
@@ -409,6 +425,8 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
                     dangerColor={dangerColor}
                     collapsed={!tabBarVisible}
                     defaultProfileName={defaultProfile?.name}
+                    updateVersion={updater.status === "available" && updater.info ? updater.info.version : null}
+                    onUpdateClick={() => setIsUpdateModalOpen(true)}
                 />
                 <div className="flex-1 flex flex-col min-w-0">
                     <TitleBar
@@ -432,7 +450,11 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
                                 className="absolute inset-0"
                                 style={{ zIndex: 1 }}
                             >
-                                <AboutPage theme={effectiveTheme} />
+                                <AboutPage
+                                    theme={effectiveTheme}
+                                    updater={updater}
+                                    onShowUpdateModal={() => setIsUpdateModalOpen(true)}
+                                />
                             </div>
                         )}
                         {ids.filter((id) => id in terminals).map((id) => (

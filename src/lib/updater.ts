@@ -67,10 +67,56 @@ let pendingUpdate: Update | null = null;
  * show a friendly message instead of throwing.
  *
  * Pass `options` to forward headers / timeout to the underlying `check()`.
+ *
+ * --- DEV MOCK ---
+ * To test the update UI without a real release, set this in the devtools
+ * console before clicking "Check for Updates":
+ *   localStorage.setItem("LUMINA_MOCK_UPDATE", "available")   // fake new version
+ *   localStorage.setItem("LUMINA_MOCK_UPDATE", "upToDate")    // force up-to-date
+ *   localStorage.setItem("LUMINA_MOCK_UPDATE", "error")       // force error
+ *   localStorage.removeItem("LUMINA_MOCK_UPDATE")             // back to normal
+ * Only honored in dev builds (import.meta.env.DEV).
  */
 export async function checkForUpdate(
 	options?: CheckOptions,
 ): Promise<CheckResult | UpdateError> {
+	// DEV MOCK: short-circuit the real check so the UI flow can be exercised
+	// without publishing a release. See the doc comment above.
+	if (import.meta.env.DEV) {
+		const mock = (typeof localStorage !== "undefined"
+			? localStorage.getItem("LUMINA_MOCK_UPDATE")
+			: null) as "available" | "upToDate" | "error" | null;
+		if (mock === "available") {
+			await info("[updater] DEV MOCK: returning fake available update");
+			pendingUpdate = null; // install won't work in mock mode — that's expected
+			return {
+				status: "available",
+				info: {
+					version: "99.0.0",
+					date: new Date().toISOString().slice(0, 10),
+					body: [
+						"## What's New in 99.0.0 (DEV MOCK)",
+						"",
+						"- This is a fake update for testing the UI",
+						"- Double-click 'You're up to date' on a real latest version to see real notes",
+						"- The install button will fail in mock mode (no real package)",
+						"",
+						"Toggle the mock from devtools console:",
+						'  localStorage.setItem("LUMINA_MOCK_UPDATE", "upToDate")',
+					].join("\n"),
+				},
+			};
+		}
+		if (mock === "upToDate") {
+			await info("[updater] DEV MOCK: returning up-to-date");
+			return { status: "upToDate" };
+		}
+		if (mock === "error") {
+			await info("[updater] DEV MOCK: returning fake error");
+			return { status: "error", error: "DEV MOCK: simulated update check failure" };
+		}
+	}
+
 	// In debug/dev builds the app is unsigned, so the updater almost always
 	// errors. Catch and report rather than letting it throw in the UI.
 	const start = Date.now();

@@ -1,4 +1,4 @@
-import { Plus, X, Settings, Info } from "lucide-react";
+import { Plus, X, Settings, Info, Sparkles } from "lucide-react";
 import Icon from "../assets/icon.svg";
 import { isMacOS } from "../lib/platform.ts";
 import { SETTINGS_TAB_ID, ABOUT_TAB_ID } from "../constants.ts";
@@ -32,10 +32,13 @@ interface TabBarProps {
     dangerColor: string;
     collapsed: boolean;
     defaultProfileName?: string;
+    /** When set, an update is available — show a banner above "New Tab". */
+    updateVersion?: string | null;
+    onUpdateClick?: () => void;
 }
 
 export default function TabBar(props: TabBarProps) {
-    const { tabs, activeId, onSelect, onClose, onNew, backgroundColor, foregroundColor, dangerColor, collapsed, defaultProfileName } = props;
+    const { tabs, activeId, onSelect, onClose, onNew, backgroundColor, foregroundColor, dangerColor, collapsed, defaultProfileName, updateVersion, onUpdateClick } = props;
     const t = useI18n();
 
     const colors = useSurfaceColors(backgroundColor);
@@ -167,16 +170,49 @@ export default function TabBar(props: TabBarProps) {
             </div>
 
             <div
-                className="border-t shrink-0"
+                className="shrink-0"
                 style={{
-                    borderColor: colors.borderColor,
                     borderRight: borderStyle,
                 }}
             >
+                {/* Update-available banner: shows above "New Tab" when an update
+                    is available. Hidden when the sidebar is collapsed (no room).
+                    The background borrows the app icon's blue→purple gradient
+                    (#8CD5FF → #A668C3, see src/assets/icon.svg) as a subtle brand
+                    accent so it stands out from the neutral tab chrome. */}
+                {!collapsed && updateVersion && (
+                    <div
+                        style={{
+                            // Static brand gradient (blue→purple from the app icon)
+                            // lives on this wrapper. The hover highlight is layered ON
+                            // TOP by the inner button, so it stays visible and smooth.
+                            // Opacity is high enough that the button's white wash
+                            // (0.5 → 0.3 on hover) reads as a clear brightness shift.
+                            background:
+                                "linear-gradient(135deg, rgba(140,213,255,0.55), rgba(166,104,195,0.55))",
+                        }}
+                    >
+                        <button
+                            className="flex flex-row items-center gap-2 w-full px-3 py-2 cursor-pointer transition-color duration-200 bg-[rgba(255,255,255,0.5)] hover:bg-[rgba(255,255,255,0.3)]"
+                            style={{
+                                color: foregroundColor,
+                            }}
+                            onClick={onUpdateClick}
+                            title={t["New version available: v{version}"].replace("{version}", updateVersion)}
+                        >
+                            <Sparkles size={14} className="shrink-0" style={{ color: "#A668C3" }} />
+                            <span className="text-xs truncate">
+                                {t["New version available: v{version}"].replace("{version}", updateVersion)}
+                            </span>
+                        </button>
+                    </div>
+                )}
+
                 <button
-                    className="flex flex-row items-center gap-2 w-full px-3 py-2.5 transition-colors cursor-pointer"
+                    className="flex flex-row items-center gap-2 w-full px-3 py-2.5 transition-colors cursor-pointer border-t"
                     style={{
                         color: colors.inactiveText,
+                        borderColor: colors.borderColor,
                     }}
                     onClick={onNew}
                     onMouseEnter={(e) => (e.currentTarget.style.background = colors.hoverOverlay)}

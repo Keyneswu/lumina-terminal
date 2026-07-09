@@ -2,12 +2,13 @@ import {useEffect, useMemo, useState} from "react";
 import { ITheme } from "@xterm/xterm";
 import { useI18n } from "../hooks/i18n.tsx";
 import { useSurfaceColors } from "../hooks/surfaceColors.ts";
-import { useUpdater } from "../hooks/useUpdater.ts";
+import type { UpdaterState } from "../hooks/useUpdater.ts";
+import { fetchReleaseNotes } from "../lib/releaseNotes.ts";
 import iconSvg from "../assets/icon.svg";
 import readmeRaw from "../../README.md?raw";
 import {invoke} from "@tauri-apps/api/core";
 import {getVersion} from "@tauri-apps/api/app";
-import {Button} from "@heroui/react";
+import {Button, Modal} from "@heroui/react";
 import {
 	AlertCircle,
 	CheckCircle2,
@@ -15,6 +16,14 @@ import {
 	LoaderCircle,
 	RefreshCw,
 } from "lucide-react";
+
+interface AboutPageProps {
+	theme: ITheme | null;
+	/** Shared updater state (owned by App so the sidebar/modal stay in sync). */
+	updater: UpdaterState;
+	/** Open the update-detail modal (About never installs directly). */
+	onShowUpdateModal: () => void;
+}
 
 // Inline GitHub mark SVG; inherits text color via currentColor.
 function GithubMark({ size = 14 }: { size?: number }) {
@@ -53,7 +62,7 @@ function parseTechStack(readme: string): TechItem[] {
     return items;
 }
 
-export default function AboutPage({ theme }: { theme: ITheme | null }) {
+export default function AboutPage({ theme, updater, onShowUpdateModal }: AboutPageProps) {
     const t = useI18n();
     const bg = theme?.background ?? "#000000";
     const fg = theme?.foreground ?? "#ffffff";
@@ -63,10 +72,24 @@ export default function AboutPage({ theme }: { theme: ITheme | null }) {
     const [commitHash, setCommitHash] = useState<string>("");
     const [version, setVersion] = useState<string>("");
 
-    // Updater state. useUpdater seeds from the startup-check cache, so if an
-    // update was found at boot this already shows "available".
-    const updater = useUpdater();
-    const [showNotes, setShowNotes] = useState(false);
+    // Updater state comes from props (owned by App). The About page only reads
+    // it; installing is gated behind the update modal (onShowUpdateModal).
+
+    // Easter-egg: double-click "You're up to date" to view the CURRENT version's
+    // release notes (fetched on demand from the GitHub Releases API).
+    const [currentNotes, setCurrentNotes] = useState<string | null>(null);
+    const [notesLoading, setNotesLoading] = useState(false);
+    const [isNotesModalOpen, setIsNotesModalOpen] = useState(false);
+
+    const openCurrentReleaseNotes = () => {
+        if (!version) return;
+        setIsNotesModalOpen(true);
+        setNotesLoading(true);
+        setCurrentNotes(null);
+        fetchReleaseNotes(version)
+            .then((body) => setCurrentNotes(body))
+            .finally(() => setNotesLoading(false));
+    };
 
     useEffect(() => {
         invoke<string>("get_commit_hash").then((hash) => {
@@ -105,127 +128,83 @@ export default function AboutPage({ theme }: { theme: ITheme | null }) {
 
                     {/* Updates */}
                     <div
-                        className="flex flex-col gap-2 py-2"
+                        className="flex items-center justify-between py-2"
                         style={{ borderBottom: `1px solid ${colors.borderColor}` }}
                     >
-                        <div className="flex items-center justify-between">
-                            <span className="text-muted">{t["Updates"]}</span>
-                            <div className="flex items-center" style={{ color: fg }}>
-                                {/* Status text (always present) */}
-                                {updater.status === "checking" ? (
-                                    <span className="flex items-center gap-1.5 text-muted">
-                                        <LoaderCircle size={14} className="animate-spin" />
-                                        {t["Checking for updates..."]}
-                                    </span>
-                                ) : updater.status === "upToDate" ? (
-                                    <span className="flex items-center gap-1.5" style={{ color: "#22c55e" }}>
-                                        <CheckCircle2 size={14} />
-                                        {t["You're up to date"]}
-                                    </span>
-                                ) : updater.status === "error" ? (
-                                    <span className="flex items-center gap-1.5" style={{ color: "#ef4444" }}>
-                                        <AlertCircle size={14} />
-                                        {t["Update check failed"]}
-                                    </span>
-                                ) : (
-                                    <span className="text-muted">
-                                        {t["Check for Updates"]}
-                                    </span>
-                                )}
-
-                                {/* Compact refresh/retry icon button — shown in every
-                                    non-busy state so the user can re-check regardless of
-                                    the current result. */}
-                                {updater.status !== "checking" && (
-                                    <button
-                                        type="button"
-                                        onClick={updater.check}
-                                        aria-label={t["Check for Updates"]}
-                                        title={t["Check for Updates"]}
-                                        // The row's height is set by the text line-height (~20px).
-                                        // A generous tap target is good UX, but it must not make this
-                                        // row taller than the text-only rows. So we fix the box to the
-                                        // line height and use negative vertical margin to keep the
-                                        // surrounding flex row's height driven by the text, not the button.
-                                        className="-my-2 flex items-center justify-center h-8 w-8 rounded transition-colors hover:bg-white/10 text-muted hover:text-current cursor-pointer"
-                                    >
-                                        <RefreshCw size={14} />
-                                    </button>
-                                )}
-                            </div>
-                        </div>
-
-                        {/* Available update: version + install + release notes */}
-                        {updater.status === "available" && updater.info && (
-                            <div className="flex flex-col gap-2 pl-1">
-                                <div className="flex items-center justify-between">
-                                    <span style={{ color: fg }}>
-                                        {t["Update available: v{version}"].replace("{version}", updater.info.version)}
-                                    </span>
-                                    <Button
-                                        variant="primary"
-                                        size="sm"
-                                        onPress={updater.install}
-                                    >
-                                        <Download size={14} />
-                                        {t["Install and Restart"]}
-                                    </Button>
-                                </div>
-                                {updater.info.body && (
-                                    <div className="flex flex-col gap-1">
-                                        <button
-                                            onClick={() => setShowNotes((v) => !v)}
-                                            className="text-xs text-muted hover:underline self-start"
-                                        >
-                                            {t["Release notes"]}
-                                        </button>
-                                        {showNotes && (
-                                            <pre
-                                                className="text-xs whitespace-pre-wrap break-words rounded-md p-2 max-h-40 overflow-y-auto"
-                                                style={{
-                                                    background: colors.hoverOverlay,
-                                                    color: fg,
-                                                }}
-                                            >
-                                                {updater.info.body}
-                                            </pre>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
-                        )}
-
-                        {/* Downloading: progress bar */}
-                        {updater.status === "downloading" && (
-                            <div className="flex flex-col gap-1 pl-1" style={{ color: fg }}>
-                                <span className="text-xs text-muted">
+                        <span className="text-muted">{t["Updates"]}</span>
+                        <div className="flex items-center" style={{ color: fg }}>
+                            {/* Status text (always present) */}
+                            {updater.status === "checking" ? (
+                                <span className="flex items-center gap-1.5 text-muted">
+                                    <LoaderCircle size={14} className="animate-spin translate-y-px" />
+                                    {t["Checking for updates..."]}
+                                </span>
+                            ) : updater.status === "downloading" ? (
+                                <span className="flex items-center gap-1.5 text-muted">
+                                    <LoaderCircle size={14} className="animate-spin" />
                                     {t["Downloading update..."]}
                                     {updater.progress?.fraction !== undefined
                                         ? ` ${Math.round(updater.progress.fraction * 100)}%`
                                         : ""}
                                 </span>
-                                <div
-                                    className="h-1.5 w-full overflow-hidden rounded-full"
-                                    style={{ background: colors.hoverOverlay }}
+                            ) : updater.status === "installing" ? (
+                                <span className="flex items-center gap-1.5 text-muted">
+                                    <LoaderCircle size={14} className="animate-spin" />
+                                    {t["Installing..."]}
+                                </span>
+                            ) : updater.status === "available" ? (
+                                <span
+                                    className="flex items-center gap-1.5 cursor-pointer hover:underline -translate-y-px"
+                                    style={{ color: fg }}
+                                    title={t["What's New"]}
+                                    onClick={onShowUpdateModal}
                                 >
-                                    <div
-                                        className="h-full rounded-full transition-[width] duration-150"
-                                        style={{
-                                            width: `${Math.round((updater.progress?.fraction ?? 0) * 100)}%`,
-                                            background: fg,
-                                        }}
-                                    />
-                                </div>
-                            </div>
-                        )}
+                                    <Download size={14} className="translate-y-px" />
+                                    {updater.info
+                                        ? t["Update available: v{version}"].replace("{version}", updater.info.version)
+                                        : t["A new version is available"]}
+                                </span>
+                            ) : updater.status === "upToDate" ? (
+                                <span
+                                    className="flex items-center gap-1.5 cursor-pointer select-none"
+                                    style={{ color: "#22c55e" }}
+                                    title={t["What's New"]}
+                                    onDoubleClick={openCurrentReleaseNotes}
+                                >
+                                    <CheckCircle2 size={14} className="translate-y-px" />
+                                    {t["You're up to date"]}
+                                </span>
+                            ) : updater.status === "error" ? (
+                                <span className="flex items-center gap-1.5" style={{ color: "#ef4444" }}>
+                                    <AlertCircle size={14} className="translate-y-px" />
+                                    {t["Update check failed"]}
+                                </span>
+                            ) : (
+                                <span className="text-muted -translate-y-px">
+                                    {t["Check for Updates"]}
+                                </span>
+                            )}
 
-                        {/* Installing */}
-                        {updater.status === "installing" && (
-                            <span className="flex items-center gap-1.5 pl-1 text-muted">
-                                <LoaderCircle size={14} className="animate-spin" />
-                                {t["Installing..."]}
-                            </span>
-                        )}
+                            {/* Compact refresh/retry icon button — shown in every
+                                non-busy state so the user can re-check regardless of
+                                the current result. */}
+                            {updater.status !== "checking" && (
+                                <button
+                                    type="button"
+                                    onClick={updater.check}
+                                    aria-label={t["Check for Updates"]}
+                                    title={t["Check for Updates"]}
+                                    // The row's height is set by the text line-height (~20px).
+                                    // A generous tap target is good UX, but it must not make this
+                                    // row taller than the text-only rows. So we fix the box to the
+                                    // line height and use negative vertical margin to keep the
+                                    // surrounding flex row's height driven by the text, not the button.
+                                    className="-my-2 flex items-center justify-center h-8 w-8 rounded transition-colors hover:bg-white/10 text-muted hover:text-current cursor-pointer"
+                                >
+                                    <RefreshCw size={14} />
+                                </button>
+                            )}
+                        </div>
                     </div>
 
                     {/* Author */}
@@ -321,6 +300,50 @@ export default function AboutPage({ theme }: { theme: ITheme | null }) {
                     </div>
                 </div>
             </div>
+
+            {/* Current-version release notes (double-click "You're up to date") */}
+            <Modal.Backdrop
+                isOpen={isNotesModalOpen}
+                onOpenChange={setIsNotesModalOpen}
+                isDismissable={true}
+                variant="blur"
+            >
+                <Modal.Container placement="center">
+                    <Modal.Dialog className="sm:max-w-lg w-full">
+                        <Modal.Header>
+                            <h2 className="text-lg font-semibold">
+                                {t["What's New"]}
+                                {version && (
+                                    <span className="text-sm font-normal text-muted ml-2">v{version}</span>
+                                )}
+                            </h2>
+                        </Modal.Header>
+                        <Modal.Body className="max-h-96 overflow-y-auto">
+                            {notesLoading ? (
+                                <div className="flex items-center justify-center py-8 text-muted">
+                                    <LoaderCircle size={18} className="animate-spin" />
+                                </div>
+                            ) : currentNotes ? (
+                                <pre
+                                    className="text-sm whitespace-pre-wrap break-words rounded-md p-3 overflow-y-auto"
+                                    style={{ background: colors.hoverOverlay, color: fg }}
+                                >
+                                    {currentNotes}
+                                </pre>
+                            ) : (
+                                <p className="text-sm text-muted text-center py-8">
+                                    {t["Release notes"]}
+                                </p>
+                            )}
+                        </Modal.Body>
+                        <Modal.Footer>
+                            <Button variant="outline" onPress={() => setIsNotesModalOpen(false)}>
+                                {t["Close"]}
+                            </Button>
+                        </Modal.Footer>
+                    </Modal.Dialog>
+                </Modal.Container>
+            </Modal.Backdrop>
         </div>
     );
 }
