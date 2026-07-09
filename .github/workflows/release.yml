@@ -67,20 +67,45 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
+      # Snapshot the hand-written release title and body BEFORE tauri-action
+      # runs. We feed them straight back to tauri-action (releaseName /
+      # releaseBody) so whatever it writes back is identical to what we read —
+      # the notes you wrote in the GitHub UI are preserved, and latest.json's
+      # `notes` field (which tauri-action reads from this release body) carries
+      # the same text. Reading is idempotent across the concurrent matrix jobs
+      # since every job re-reads the same values up front.
+      - name: Read existing release title and notes
+        id: release_meta
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # title (single line) → steps.release_meta.outputs.name
+          name="$(gh release view '${{ github.ref_name }}' --json name --jq '.name')"
+          # body (multiline) → steps.release_meta.outputs.body
+          body="$(gh release view '${{ github.ref_name }}' --json body --jq '.body')"
+          {
+            echo "name=$name"
+            # multiline value: use the delimiter form so newlines survive
+            echo "body<<BODY_EOF"
+            echo "$body"
+            echo "BODY_EOF"
+          } >> "$GITHUB_OUTPUT"
+
       # Publishes signed updater bundles (.tar.gz / .nsis + .sig) and the
       # `latest.json` manifest the Tauri updater downloads. The signing key
       # comes from repo secrets (see docs/UPDATES.md).
-      - uses: tauri-apps/tauri-action@v1
+      - name: Build tauri app and upload artifacts
+        uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
-          # Intentionally NOT setting releaseName / releaseBody: the action
-          # must not rewrite the release title or notes you wrote in the GitHub
-          # UI. It only uploads build assets and generates latest.json, whose
-          # `notes` field is read back from this release's body.
+          # Echo back the exact title/notes we snapshotted above so the action's
+          # internal release update is a no-op on metadata — only assets change.
+          releaseName: ${{ steps.release_meta.outputs.name }}
+          releaseBody: ${{ steps.release_meta.outputs.body }}
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
