@@ -36,16 +36,22 @@ export class FloatingFitAddon extends FitAddon {
 
     public override fit(): void {
         super.fit();
+        // Anchor the terminal canvas to the top-left of the padding box instead
+        // of centering the sub-cell remainder.
+        //
+        // Centering made the terminal's left/top edges jitter as the window was
+        // resized: the remainder cycles through 0..cellWidth while cols/rows stay
+        // constant, so marginLeft/Top swung by up to half a cell each step and the
+        // whole render area appeared to jump around (especially the top-left).
+        //
+        // Anchoring top-left keeps the position stable across resizes. The
+        // leftover sub-cell space (always < one cell) simply falls to the
+        // right/bottom as background, so the configured left/right padding stays
+        // fixed and consistent instead of being traded off against position.
         const terminal: any = (this as any)._terminal;
         const element = terminal?.element as HTMLElement | undefined;
-        const parent = element?.parentElement;
-        if (!element || !parent) return;
-        const dims = terminal._core?._renderService?.dimensions;
-        if (!dims?.css?.cell?.width || !dims?.css?.cell?.height) return;
-
-        const remainderH = parent.clientWidth - terminal.cols * dims.css.cell.width;
-        const remainderV = parent.clientHeight - terminal.rows * dims.css.cell.height;
-        element.style.marginLeft = `${Math.max(0, Math.floor(remainderH / 2))}px`;
-        element.style.marginTop = `${Math.max(0, Math.floor(remainderV / 2))}px`;
+        if (!element) return;
+        element.style.marginLeft = "0px";
+        element.style.marginTop = "0px";
     }
 }
