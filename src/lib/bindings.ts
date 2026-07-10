@@ -113,20 +113,23 @@ export function loadBindings(
 
         debug(`XTerm Custom Key with key ${event.key} and type ${event.type}`);
 
-        // Swap Ctrl+C / Ctrl+Shift+C behavior on non-macOS when copyWithCtrl is enabled
-        if (!isMacOS() && copyWithCtrl && event.ctrlKey && !event.altKey && !event.metaKey && event.key.toLowerCase() === "c") {
-            if (!event.shiftKey) {
-                // Ctrl+C → copy selection
+        // Copy handling for Ctrl+C / Ctrl+Shift+C on non-macOS.
+        // Default: Ctrl+Shift+C copies the selection, Ctrl+C sends SIGINT.
+        // When copyWithCtrl is enabled the two are swapped (Ctrl+C copies).
+        if (!isMacOS() && event.ctrlKey && !event.altKey && !event.metaKey && event.key.toLowerCase() === "c") {
+            const shouldCopy = copyWithCtrl ? !event.shiftKey : event.shiftKey;
+            if (shouldCopy) {
                 const selection = term.getSelection();
                 if (selection) {
-                    navigator.clipboard.writeText(selection).catch(() => {});
+                    navigator.clipboard.writeText(selection).catch((e) => console.error("clipboard write failed", e));
                 }
                 return false;
-            } else {
-                // Ctrl+Shift+C → send SIGINT
+            } else if (copyWithCtrl && event.shiftKey) {
+                // Swapped mode: Ctrl+Shift+C sends SIGINT instead.
                 onWrite?.("\x03");
                 return false;
             }
+            // Default mode, plain Ctrl+C: fall through so xterm emits ETX (SIGINT) naturally.
         }
 
         for (const binding of bindings) {
