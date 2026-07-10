@@ -39,7 +39,6 @@
         "updater": {
             "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDVFM0E3MjQ2ODkxNTJBRUQKUldUdEtoV0pSbkk2WGt2dzRURWZSL2h2eTIxS1c2aDVuR2s2MURVTzU5QzVWUm5hZG9sb2sxelEK",
             "endpoints": [
-                "https://gitee.com/ricky-tap/lumina-terminal/releases/download/latest/latest-cn.json",
                 "https://github.com/iewnfod/lumina-terminal/releases/latest/download/latest.json"
             ]
         }
