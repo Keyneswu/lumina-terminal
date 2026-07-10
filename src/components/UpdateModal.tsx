@@ -4,6 +4,7 @@ import { ITheme } from "@xterm/xterm";
 import { useI18n } from "../hooks/i18n.tsx";
 import { useSurfaceColors } from "../hooks/surfaceColors.ts";
 import type { DownloadProgress, UpdateInfo, UpdateStatus } from "../lib/updater.ts";
+import Markdown from "./Markdown.tsx";
 
 interface UpdateModalProps {
 	isOpen: boolean;
@@ -69,12 +70,12 @@ export default function UpdateModal({
 								<span className="text-xs font-medium text-muted uppercase tracking-wider">
 									{t["What's New"]}
 								</span>
-								<pre
-									className="text-sm whitespace-pre-wrap break-words rounded-md p-3 overflow-y-auto"
+								<div
+									className="rounded-md p-3 overflow-y-auto"
 									style={{ background: colors.hoverOverlay, color: fg }}
 								>
-									{info.body}
-								</pre>
+									<Markdown>{info.body}</Markdown>
+								</div>
 							</div>
 						) : (
 							<p className="text-sm text-muted">{t["A new version is available"]}</p>

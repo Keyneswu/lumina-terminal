@@ -16,6 +16,7 @@ import {
 	LoaderCircle,
 	RefreshCw,
 } from "lucide-react";
+import Markdown from "../components/Markdown.tsx";
 
 interface AboutPageProps {
 	theme: ITheme | null;
@@ -324,12 +325,12 @@ export default function AboutPage({ theme, updater, onShowUpdateModal }: AboutPa
                                     <LoaderCircle size={18} className="animate-spin" />
                                 </div>
                             ) : currentNotes ? (
-                                <pre
-                                    className="text-sm whitespace-pre-wrap break-words rounded-md p-3 overflow-y-auto"
+                                <div
+                                    className="rounded-md p-3 overflow-y-auto"
                                     style={{ background: colors.hoverOverlay, color: fg }}
                                 >
-                                    {currentNotes}
-                                </pre>
+                                    <Markdown>{currentNotes}</Markdown>
+                                </div>
                             ) : (
                                 <p className="text-sm text-muted text-center py-8">
                                     {t["Release notes"]}
