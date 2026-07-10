@@ -103,21 +103,22 @@ export default function TabBar(props: TabBarProps) {
                             }}
                             title={tab.name}
                         >
-                            <div className="flex items-start gap-2 flex-1 min-w-0">
-                                {tab.id === SETTINGS_TAB_ID && (
-                                    <Settings size={14} className="shrink-0 mt-0.5" />
-                                )}
-                                {tab.id === ABOUT_TAB_ID && (
-                                    <Info size={14} className="shrink-0 mt-0.5" />
-                                )}
-                                {tab.id !== SETTINGS_TAB_ID && tab.id !== ABOUT_TAB_ID && (
-                                    <ShellIcon
-                                        shell={tab.shellType ?? "default"}
-                                        size={14}
-                                        className="shrink-0 mt-0.5"
-                                    />
-                                )}
-                                <div className="flex flex-col min-w-0">
+                            <div className="flex flex-col items-start flex-1 w-[70%] overflow-hidden">
+                                <div className="flex items-start gap-2 w-full">
+                                    {tab.id === SETTINGS_TAB_ID && (
+                                        <Settings size={14} className="shrink-0 mt-0.5" />
+                                    )}
+                                    {tab.id === ABOUT_TAB_ID && (
+                                        <Info size={14} className="shrink-0 mt-0.5" />
+                                    )}
+                                    {tab.id !== SETTINGS_TAB_ID && tab.id !== ABOUT_TAB_ID && (
+                                        <ShellIcon
+                                            shell={tab.shellType ?? "default"}
+                                            size={14}
+                                            className="shrink-0 mt-0.5"
+                                        />
+                                    )}
+                                    <div className="flex flex-col min-w-0">
                                     <span
                                         className="text-sm truncate leading-tight"
                                         style={{
@@ -126,25 +127,26 @@ export default function TabBar(props: TabBarProps) {
                                     >
                                         {tab.name}
                                     </span>
-                                    {tab.subtitle && (
-                                        <div
-                                            className="text-xs leading-tight flex items-center gap-1.5 min-w-0 overflow-hidden"
-                                            style={{
-                                                color: colors.inactiveText,
-                                                opacity: 0.6,
-                                            }}
-                                        >
-                                            {tab.commandPrivileged && (
-                                                <span
-                                                    className="inline-block w-2 h-2 rounded-full shrink-0 translate-y-0.5"
-                                                    style={{ backgroundColor: dangerColor }}
-                                                    title="Privileged / elevated command"
-                                                />
-                                            )}
-                                            <span className="truncate min-w-0">{tab.subtitle}</span>
-                                        </div>
-                                    )}
+                                    </div>
                                 </div>
+                                {tab.subtitle && (
+                                    <div
+                                        className="text-xs leading-tight flex items-center gap-1.5 min-w-0 overflow-hidden max-w-full"
+                                        style={{
+                                            color: colors.inactiveText,
+                                            opacity: 0.6,
+                                        }}
+                                    >
+                                        {tab.commandPrivileged && (
+                                            <span
+                                                className="inline-block w-2 h-2 rounded-full shrink-0 translate-y-0.5"
+                                                style={{ backgroundColor: dangerColor }}
+                                                title="Privileged / elevated command"
+                                            />
+                                        )}
+                                        <span className="truncate min-w-0 w-full">{tab.subtitle}</span>
+                                    </div>
+                                )}
                             </div>
                             <button
                                 className="opacity-0 group-hover:opacity-100 rounded p-0.5 shrink-0 transition-all ml-1"
