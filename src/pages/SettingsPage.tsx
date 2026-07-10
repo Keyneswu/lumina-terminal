@@ -25,6 +25,10 @@ import BindingsSettings from "../components/settings/BindingsSettings.tsx";
 
 type SettingsSection = "general" | "globalProfile" | "bindings" | "developer" | string;
 
+// Remember the last-viewed settings section across remounts (leaving the
+// Settings tab and coming back). In-memory only — resets on app restart.
+let lastSettingsSection: SettingsSection = "general";
+
 function SidebarItem({
     children,
     isSelected,
@@ -64,12 +68,13 @@ function SidebarItem({
 export default function SettingsPage({ theme, openAbout }: { theme: ITheme | null, openAbout: () => void }) {
     const { config, updateConfig, newProfile } = useGlobalConfig();
     const t = useI18n();
-    const [selectedSection, setSelectedSection] = useState<SettingsSection>("general");
+    const [selectedSection, setSelectedSection] = useState<SettingsSection>(lastSettingsSection);
     const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
     const [showAddModal, setShowAddModal] = useState(false);
 
     const handleSectionChange = (section: SettingsSection) => {
         debug(`Settings section changed to: ${section}`);
+        lastSettingsSection = section;
         setSelectedSection(section);
     };
 
@@ -83,6 +88,7 @@ export default function SettingsPage({ theme, openAbout }: { theme: ITheme | nul
             const newProfiles = config.profiles.filter((p) => p.name !== name);
             updateConfig({ profiles: newProfiles });
             if (selectedSection === name) {
+                lastSettingsSection = "general";
                 setSelectedSection("general");
             }
             setDeleteTarget(null);
@@ -105,6 +111,7 @@ export default function SettingsPage({ theme, openAbout }: { theme: ITheme | nul
         const finalProfile = { ...profile, name };
         info(`Profile added: ${name}`);
         newProfile(finalProfile);
+        lastSettingsSection = name;
         setSelectedSection(name);
         setShowAddModal(false);
     }, [config.profiles, newProfile, t]);
@@ -230,7 +237,7 @@ export default function SettingsPage({ theme, openAbout }: { theme: ITheme | nul
                     <ProfileSettings
                         profile={config.profiles.find((p) => p.name === selectedSection)}
                         onRequestDelete={() => setDeleteTarget(selectedSection)}
-                        onNameChange={(newName) => setSelectedSection(newName)}
+                        onNameChange={(newName) => handleSectionChange(newName)}
                         borderColor={colors.borderColor}
                     />
                 )}
