@@ -63,7 +63,7 @@ export default function GeneralSettings({ borderColor, openAbout }: { borderColo
     return (
         <div className="flex flex-col h-full">
             {/* Scrollable content */}
-            <div className="flex-1 overflow-y-auto pb-4 px-1 w-full">
+            <div className="flex-1 overflow-y-auto pb-4 pl-1 pr-6 w-full">
                 <h2 className="text-lg font-semibold mb-6">{t["General"]}</h2>
 
                 <div className="flex flex-col gap-5">
@@ -197,7 +197,7 @@ export default function GeneralSettings({ borderColor, openAbout }: { borderColo
                 </div>
             </div>
             {/* Fixed bottom: Save */}
-            <div className="shrink-0 border-t pt-3" style={{ borderColor: borderColor }}>
+            <div className="shrink-0 border-t pt-3 pr-6" style={{ borderColor: borderColor }}>
                 <div className="flex items-center gap-3 justify-between">
                     <div className="flex items-center gap-3">
                         <Button

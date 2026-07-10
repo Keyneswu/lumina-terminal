@@ -107,7 +107,7 @@ export default function ProfileSettings({
     return (
         <div className="flex flex-col h-full">
             {/* Scrollable content */}
-            <div className="flex-1 overflow-y-auto pb-4 px-1">
+            <div className="flex-1 overflow-y-auto pb-4 pl-1 pr-6">
                 {isEditingName ? (
                     <input
                         ref={nameInputRef}
@@ -217,7 +217,7 @@ export default function ProfileSettings({
             </div>
 
             {/* Fixed bottom: Save + Delete */}
-            <div className="shrink-0 border-t pt-3" style={{ borderColor: borderColor }}>
+            <div className="shrink-0 border-t pt-3 pr-6" style={{ borderColor: borderColor }}>
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                         <Button

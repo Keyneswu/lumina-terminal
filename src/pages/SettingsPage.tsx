@@ -214,8 +214,10 @@ export default function SettingsPage({ theme, openAbout }: { theme: ITheme | nul
                 </div>
             </div>
 
-            {/* Content Area */}
-            <div className="flex-1 p-6">
+            {/* Content Area. Right padding is 0 so the inner scroll container's
+                scrollbar sits flush at the window's right edge; each settings
+                component re-adds right padding for its content/footer. */}
+            <div className="flex-1 pt-6 pb-6 pl-6">
                 {selectedSection === "general" ? (
                     <GeneralSettings borderColor={colors.borderColor} openAbout={openAbout} />
                 ) : selectedSection === "globalProfile" ? (

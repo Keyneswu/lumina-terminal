@@ -36,7 +36,7 @@ export default function DeveloperSettings() {
 
     return (
         <div className="flex flex-col h-full">
-            <div className="flex-1 overflow-y-auto pb-4 px-1">
+            <div className="flex-1 overflow-y-auto pb-4 pl-1 pr-6">
                 <h2 className="text-lg font-semibold mb-6">{t["Developer"]}</h2>
 
                 <div className="flex flex-col gap-5">

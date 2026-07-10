@@ -46,11 +46,11 @@ export default function GlobalProfileSettings({ borderColor }: { borderColor: st
 
     return (
         <div className="flex flex-col h-full">
-            <div className="flex-1 overflow-y-auto pb-4 px-1">
+            <div className="flex-1 overflow-y-auto pb-4 pl-1 pr-6">
                 <h2 className="text-lg font-semibold mb-6">{t["Global Profile"]}</h2>
                 <RenderSettings draft={draft} updateDraft={updateDraft} idPrefix="gp" />
             </div>
-            <div className="shrink-0 border-t pt-3" style={{ borderColor: borderColor }}>
+            <div className="shrink-0 border-t pt-3 pr-6" style={{ borderColor: borderColor }}>
                 <div className="flex items-center gap-3">
                     <Button
                         variant="primary"

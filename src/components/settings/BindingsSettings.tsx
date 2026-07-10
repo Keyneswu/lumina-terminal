@@ -231,7 +231,7 @@ export default function BindingsSettings({borderColor}: { borderColor: string })
     return (
         <div className="flex flex-col h-full">
             {/* Scrollable content */}
-            <div className="flex-1 overflow-y-auto pb-4 px-1 w-full">
+            <div className="flex-1 overflow-y-auto pb-4 pl-1 pr-6 w-full">
                 <h2 className="text-lg font-semibold mb-2">{t["Keyboard Shortcuts"]}</h2>
                 <p className="text-xs text-muted mb-5">
                     {t["Click a shortcut and press the keys you want to use."]}
@@ -443,7 +443,7 @@ export default function BindingsSettings({borderColor}: { borderColor: string })
             </div>
 
             {/* Fixed footer: Save + Reset */}
-            <div className="shrink-0 border-t pt-3" style={{borderColor}}>
+            <div className="shrink-0 border-t pt-3 pr-6" style={{borderColor}}>
                 <div className="flex items-center gap-3 justify-between">
                     <div className="flex items-center gap-3">
                         <Button
