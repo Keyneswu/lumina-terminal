@@ -125,10 +125,11 @@ pnpm tauri dev
 * [Vite](https://cn.vite.dev/)
 * [HeroUI](https://heroui.com/)
 * [portable-pty](https://docs.rs/portable-pty/latest/portable_pty/)
+* [log](https://docs.rs/log/latest/log/)
 * [Xterm.js & Addons](https://xtermjs.org/)
 * [Tailwind CSS](https://tailwindcss.com/)
 * [Lucide Icons](https://lucide.dev/)
-* [log](https://docs.rs/log/latest/log/)
+* [react-markdown](https://github.com/remarkjs/react-markdown)
 
 ## 开源协议
 [Mozilla Public License Version 2.0](./LICENSE)

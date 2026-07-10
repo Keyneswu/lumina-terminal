@@ -222,6 +222,8 @@ If `App.tsx` grows past ~400 lines of real logic again, extract a hook
    stable — the Rust backend and frontend are coupled by these strings.
 10. **Document significant new modules** here in §2 (Source Map) so the next
     contributor knows they exist.
+11. If you add new dependencies, add them into README with a link to its
+    official website or repo.
 
 ---
 
