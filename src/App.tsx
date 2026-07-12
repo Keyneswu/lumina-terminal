@@ -112,7 +112,9 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
                     newCurrentId = newIds[newIds.length - 1];
                 } else if (closeOnLastTabRef.current !== false) {
                     info("No tabs left, closing window");
-                    getCurrentWindow().close().then();
+                    getCurrentWindow().close().catch((e) =>
+                        error(`Failed to close window on last tab: ${e}`)
+                    );
                     return;
                 }
             }
@@ -137,7 +139,9 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
             } else if (closeOnLastTabRef.current !== false) {
                 // No tabs left, close the window (default behavior)
                 info("No tabs left after close, closing window");
-                getCurrentWindow().close().then();
+                getCurrentWindow().close().catch((e) =>
+                    error(`Failed to close window on last tab: ${e}`)
+                );
                 return;
             }
             // If closeWindowOnLastTab is false, fall through to clear state
@@ -209,8 +213,12 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
         if (isInitialized.current) return;
         if (config.profiles.length && ids.length === 0) {
             isInitialized.current = true;
-            getCurrentWindow().setResizable(true).then();
-            newTerminal(defaultProfile);
+            getCurrentWindow().setResizable(true).catch((e) =>
+                error(`Failed to set window resizable: ${e}`)
+            );
+            newTerminal(defaultProfile).catch((e) =>
+                error(`Failed to create initial terminal: ${e}`)
+            );
         }
     }, [config]);
 

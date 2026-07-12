@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { error } from "@tauri-apps/plugin-log";
 import {SSHHostEntry} from "../types/terminal.ts";
 
 // Module-level cache so the SSH config is parsed once per session, no matter
@@ -21,7 +22,8 @@ export function useSshConfig(): SSHHostEntry[] {
                     cached = result;
                     return result;
                 })
-                .catch(() => {
+                .catch((e) => {
+                    error(`Failed to parse SSH config: ${e}`).catch(() => {});
                     cached = [];
                     return [];
                 });

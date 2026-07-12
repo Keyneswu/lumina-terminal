@@ -4,7 +4,7 @@ import {getConfigFilePath} from "../../lib/configFile.ts";
 import {invoke} from "@tauri-apps/api/core";
 import {Button, Label, ListBox, Select} from "@heroui/react";
 import {Bug, FolderOpen} from "lucide-react";
-import {debug} from "@tauri-apps/plugin-log";
+import {warn, error} from "@tauri-apps/plugin-log";
 
 // localStorage key + values kept in sync with the dev mock in lib/updater.ts.
 const MOCK_KEY = "LUMINA_MOCK_UPDATE";
@@ -19,9 +19,18 @@ export default function DeveloperSettings() {
     const [mockUpdate, setMockUpdate] = useState<MockValue>("");
 
     useEffect(() => {
-        getConfigFilePath().then(setConfigPath).catch(() => setConfigPath(""));
-        invoke<string>("get_log_dir").then(setLogDir).catch(() => setLogDir(""));
-        invoke<boolean>("is_debug").then(setIsDebug).catch(() => setIsDebug(false));
+        getConfigFilePath().then(setConfigPath).catch((e) => {
+            error(`Failed to resolve config file path: ${e}`).catch(() => {});
+            setConfigPath("");
+        });
+        invoke<string>("get_log_dir").then(setLogDir).catch((e) => {
+            error(`Failed to resolve log directory: ${e}`).catch(() => {});
+            setLogDir("");
+        });
+        invoke<boolean>("is_debug").then(setIsDebug).catch((e) => {
+            error(`Failed to check debug mode: ${e}`).catch(() => {});
+            setIsDebug(false);
+        });
         setMockUpdate((localStorage.getItem(MOCK_KEY) ?? "") as MockValue);
     }, []);
 
@@ -55,7 +64,7 @@ export default function DeveloperSettings() {
                             onPress={() => {
                                 if (configPath) {
                                     invoke("open_in_file_manager", {path: configPath}).catch((e) => {
-                                        debug(`Failed to open config file: ${e}`);
+                                        warn(`Failed to open config file: ${e}`).catch(() => {});
                                     });
                                 }
                             }}
@@ -80,7 +89,7 @@ export default function DeveloperSettings() {
                             onPress={() => {
                                 if (logDir) {
                                     invoke("open_in_file_manager", {path: logDir}).catch((e) => {
-                                        debug(`Failed to open log directory: ${e}`);
+                                        warn(`Failed to open log directory: ${e}`).catch(() => {});
                                     });
                                 }
                             }}
@@ -103,7 +112,7 @@ export default function DeveloperSettings() {
                             size="sm"
                             isDisabled={!isDebug}
                             onPress={() => invoke("open_devtools").catch(() => {
-                                console.log("DevTools command not available, use Ctrl+Shift+I");
+                                warn("DevTools command not available, use Ctrl+Shift+I").catch(() => {});
                             })}
                         >
                             <Bug size={15} />

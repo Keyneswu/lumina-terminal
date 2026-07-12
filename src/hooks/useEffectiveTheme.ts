@@ -3,6 +3,7 @@ import {ITheme} from "@xterm/xterm";
 import {TerminalProfile} from "../types/terminal.ts";
 import {parseProfileTheme} from "../lib/term.ts";
 import {foregroundFor, isColorDark} from "../lib/color.ts";
+import {error} from "@tauri-apps/plugin-log";
 
 export interface EffectiveTheme {
     // The ITheme with bg/fg overridden to the effective values (TUI edge color
@@ -43,6 +44,8 @@ export function useEffectiveTheme(
         if (currentProfile) {
             parseProfileTheme(currentProfile).then((theme) => {
                 setCurrentTheme(theme);
+            }).catch((e) => {
+                error(`Failed to resolve profile theme: ${e}`).catch(() => {});
             });
         }
     }, [currentProfile]);

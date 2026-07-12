@@ -139,6 +139,7 @@ export function useUpdater(): UpdaterState {
 				inFlight.current = false;
 				setError(e instanceof Error ? e.message : String(e));
 				setStatus("error");
+				logError(`[updater][useUpdater] install error: ${e instanceof Error ? e.message : String(e)}`).catch(() => {});
 			});
 	}, []);
 

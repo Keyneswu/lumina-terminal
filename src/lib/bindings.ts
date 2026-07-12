@@ -2,7 +2,7 @@ import {Terminal} from "@xterm/xterm";
 import {Actions, Binding, WithKeys} from "../types/config.ts";
 import {DEFAULT_BINDINGS} from "../constants.ts";
 import {isMacOS} from "./platform.ts";
-import {debug} from "@tauri-apps/plugin-log";
+import {debug, error} from "@tauri-apps/plugin-log";
 import {useEffect} from "react";
 
 export function actionSignature(b: Binding): string {
@@ -121,7 +121,7 @@ export function loadBindings(
             if (shouldCopy) {
                 const selection = term.getSelection();
                 if (selection) {
-                    navigator.clipboard.writeText(selection).catch((e) => console.error("clipboard write failed", e));
+                    navigator.clipboard.writeText(selection).catch((e) => error(`Clipboard write failed: ${e}`).catch(() => {}));
                 }
                 return false;
             } else if (copyWithCtrl && event.shiftKey) {

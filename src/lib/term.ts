@@ -3,6 +3,7 @@ import {ITheme} from "@xterm/xterm";
 import {DEFAULT_TERMINAL_THEME} from "../constants.ts";
 import {invoke} from "@tauri-apps/api/core";
 import {appDataDir, join} from "@tauri-apps/api/path";
+import {error} from "@tauri-apps/plugin-log";
 
 export function parseProfilePadding(profile: TerminalProfile, paddingOffset: number) {
     let paddingLeft = 0, paddingRight = 0, paddingTop = 0, paddingBottom = 0;
@@ -49,7 +50,7 @@ export async function parseProfileTheme(profile: TerminalRenderOptions, defaultT
                         const t = JSON.parse(readTheme);
                         theme = {...theme, ...t};
                     } catch (e) {
-                        console.error("Failed to parse theme", e);
+                        error(`Failed to parse theme at ${path}: ${e}`).catch(() => {});
                     }
                 }
                 break;

@@ -4,7 +4,7 @@ import {LazyStore} from "@tauri-apps/plugin-store";
 import {TerminalProfile} from "../types/terminal.ts";
 import {getCurrentWindow} from "@tauri-apps/api/window";
 import {CONFIG_SAVE_PATH, DEFAULT_CONFIG} from "../constants.ts";
-import { info, debug } from "@tauri-apps/plugin-log";
+import { info, debug, error } from "@tauri-apps/plugin-log";
 
 const store = new LazyStore(CONFIG_SAVE_PATH);
 
@@ -42,12 +42,19 @@ export function GlobalConfigProvider({ children }: { children: ReactNode }) {
             info(`Config loaded: language=${loadedConfig.language}, profiles=${loadedConfig.profiles.length}`);
             setIsLoading(false);
         };
-        loadConfig().then();
+        loadConfig().catch((e) => {
+            error(`Failed to load config: ${e}`).catch(() => {});
+            setIsLoading(false);
+        });
     }, []);
 
     const saveConfig = (newConfig: GlobalConfig) => {
         store.set("config", newConfig).then(() => {
-            store.save().then();
+            store.save().then(undefined, (e: unknown) => {
+                error(`Failed to persist config to disk: ${e}`).catch(() => {});
+            });
+        }).catch((e: unknown) => {
+            error(`Failed to save config: ${e}`).catch(() => {});
         });
     };
 
@@ -75,8 +82,12 @@ export function GlobalConfigProvider({ children }: { children: ReactNode }) {
         if (!isLoading) {
             const window = getCurrentWindow();
             window.show().then(() => {
-                window.setFocus().then();
+                window.setFocus().then(undefined, (e: unknown) => {
+                    error(`Failed to set window focus: ${e}`).catch(() => {});
+                });
                 info("Window shown, config loaded");
+            }).catch((e: unknown) => {
+                error(`Failed to show window: ${e}`).catch(() => {});
             });
         }
     }, [isLoading]);

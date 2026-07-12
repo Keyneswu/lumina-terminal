@@ -16,7 +16,7 @@ import {openConfigFile} from "../lib/configFile.ts";
 import {useGlobalConfig} from "../hooks/config.tsx";
 import {useI18n} from "../hooks/i18n.tsx";
 import {useOutputMode} from "../hooks/useOutputMode.ts";
-import { info, debug } from "@tauri-apps/plugin-log";
+import { info, debug, error } from "@tauri-apps/plugin-log";
 import {getCurrentWebview} from "@tauri-apps/api/webview";
 import {WebLinksAddon} from "@xterm/addon-web-links";
 import {openUrl} from "@tauri-apps/plugin-opener";
@@ -189,6 +189,8 @@ export default function Term(props : TermProps) {
             }
         }).then((fn) => {
             unlistenFn = fn;
+        }).catch((e) => {
+            error(`Failed to attach drag-drop listener for terminal ${id}: ${e}`).catch(() => {});
         });
 
         return () => {
@@ -355,6 +357,8 @@ export default function Term(props : TermProps) {
         startTerminal(id, profile, outputChannel).then(() => {
             info(`Terminal started: id=${id} profile=${profile.name}`);
             resizeTerminal(id, term.current!.cols, term.current!.rows).then();
+        }).catch((e) => {
+            error(`Failed to start terminal id=${id} (profile=${profile.name}): ${e}`).catch(() => {});
         });
 
         // Backend fallback: reports the foreground process-group command
@@ -366,11 +370,15 @@ export default function Term(props : TermProps) {
             const info = event.payload;
             const cmd = (info?.command ?? "").trim();
             reportCommand(cmd === "" ? null : { command: cmd, privileged: !!info?.privileged });
+        }).catch((e) => {
+            error(`Failed to listen for term-command-${id}: ${e}`).catch(() => {});
         });
 
         listen(`term-exit-${id}`, () => {
             info(`Terminal exited: id=${id}`);
             onCloseRef.current?.();
+        }).catch((e) => {
+            error(`Failed to listen for term-exit-${id}: ${e}`).catch(() => {});
         });
 
         const handleResize = () => {

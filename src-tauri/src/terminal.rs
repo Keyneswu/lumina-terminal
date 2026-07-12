@@ -43,10 +43,10 @@ pub fn start_terminal(
     cwd: Option<String>,
 ) {
     {
-        let terminals = state
-            .terminals
-            .try_lock()
-            .expect("Failed to lock terminals");
+        let terminals = state.terminals.try_lock().unwrap_or_else(|e| {
+            log::error!("Failed to lock terminals for start {}: {}", id, e);
+            panic!("Failed to lock terminals: {}", e);
+        });
         if terminals.contains_key(&id) {
             log::warn!("Terminal with id {} already exists", id);
             return;
@@ -60,7 +60,10 @@ pub fn start_terminal(
         pixel_width: 0,
         pixel_height: 0,
     };
-    let pty_pair = pty_system.openpty(size).unwrap();
+    let pty_pair = pty_system.openpty(size).unwrap_or_else(|e| {
+        log::error!("Failed to open pty for terminal {}: {}", id, e);
+        panic!("Failed to open pty: {}", e);
+    });
 
     let cmd = if profile_type.as_deref() == Some("remote") {
         let ssh = ssh_config.as_ref().expect("SSH config required for remote profile");
@@ -96,37 +99,41 @@ pub fn start_terminal(
         log::debug!("Creating terminal {:?} with cwd {:?}", exe_path, c.get_cwd());
         c
     };
-    let child: CommandChild = pty_pair
-        .slave
-        .spawn_command(cmd)
-        .expect("Failed to spawn terminal");
+    let child: CommandChild = pty_pair.slave.spawn_command(cmd).unwrap_or_else(|e| {
+        log::error!("Failed to spawn terminal {}: {}", id, e);
+        panic!("Failed to spawn terminal: {}", e);
+    });
 
-    pty_pair.master.resize(size).expect("Failed to resize pty");
+    pty_pair.master.resize(size).unwrap_or_else(|e| {
+        log::error!("Failed to resize pty for terminal {}: {}", id, e);
+        panic!("Failed to resize pty: {}", e);
+    });
 
-    let mut reader = pty_pair
-        .master
-        .try_clone_reader()
-        .expect("Failed to clone reader");
-    let writer = pty_pair
-        .master
-        .take_writer()
-        .expect("Failed to clone writer");
+    let mut reader = pty_pair.master.try_clone_reader().unwrap_or_else(|e| {
+        log::error!("Failed to clone reader for terminal {}: {}", id, e);
+        panic!("Failed to clone reader: {}", e);
+    });
+    let writer = pty_pair.master.take_writer().unwrap_or_else(|e| {
+        log::error!("Failed to clone writer for terminal {}: {}", id, e);
+        panic!("Failed to clone writer: {}", e);
+    });
 
     let shared_child: SharedChild = Arc::new(std::sync::Mutex::new(child));
     let shell_pid = {
-        let guard = shared_child
-            .try_lock()
-            .expect("Failed to lock child to read pid");
+        let guard = shared_child.try_lock().unwrap_or_else(|e| {
+            log::error!("Failed to lock child for terminal {}: {}", id, e);
+            panic!("Failed to lock child: {}", e);
+        });
         guard.process_id()
     };
     let force_low_latency = Arc::new(AtomicBool::new(false));
 
     // Store in state
     {
-        let mut terminals = state
-            .terminals
-            .try_lock()
-            .expect("Failed to lock terminals");
+        let mut terminals = state.terminals.try_lock().unwrap_or_else(|e| {
+            log::error!("Failed to lock terminals for state insert {}: {}", id, e);
+            panic!("Failed to lock terminals: {}", e);
+        });
         terminals.insert(
             id.clone(),
             TerminalEntry {
@@ -180,7 +187,9 @@ pub fn start_terminal(
                 let s = std::str::from_utf8(&pending[..valid_len])
                     .expect("valid UTF-8 prefix verified above")
                     .to_string();
-                let _ = on_output.send(s);
+                if let Err(e) = on_output.send(s) {
+                    log::warn!("Terminal {} output channel send failed: {}", id_reader, e);
+                }
                 pending.drain(..valid_len);
             }
         };
@@ -255,9 +264,10 @@ pub fn start_terminal(
         let mut tick: u32 = 0;
         loop {
             let exited = {
-                let mut child_guard = shared_child
-                    .try_lock()
-                    .expect("Failed to lock child in watcher");
+                let mut child_guard = shared_child.try_lock().unwrap_or_else(|e| {
+                    log::error!("Failed to lock child in watcher {}: {}", id_watcher, e);
+                    panic!("Failed to lock child in watcher: {}", e);
+                });
                 match child_guard.try_wait() {
                     Ok(Some(status)) => {
                         log::info!(
@@ -293,7 +303,9 @@ pub fn start_terminal(
                     };
                     if Some(&next) != last_command.as_ref() {
                         last_command = Some(next.clone());
-                        let _ = app_watcher.emit(&term_command_event_name, next);
+                        if let Err(e) = app_watcher.emit(&term_command_event_name, next) {
+                            log::warn!("Failed to emit term-command for {}: {}", id_watcher, e);
+                        }
                     }
                 }
             }
@@ -304,10 +316,10 @@ pub fn start_terminal(
         // Clean up terminal state
         log::debug!("Cleaning up state for terminal {}", id_watcher);
         {
-            let mut terminals = state_watcher
-                .terminals
-                .try_lock()
-                .expect("Failed to lock terminals in watcher");
+            let mut terminals = state_watcher.terminals.try_lock().unwrap_or_else(|e| {
+                log::error!("Failed to lock terminals in watcher {}: {}", id_watcher, e);
+                panic!("Failed to lock terminals in watcher: {}", e);
+            });
             let removed = terminals.remove(&id_watcher);
             log::debug!(
                 "Terminal {} removed from state: {:?}",
@@ -318,9 +330,9 @@ pub fn start_terminal(
 
         // Notify frontend
         log::debug!("Emitting term-exit event for {}", id_watcher);
-        app_watcher
-            .emit(&term_exit_event_name, ())
-            .expect("Failed to emit exit event");
+        app_watcher.emit(&term_exit_event_name, ()).unwrap_or_else(|e| {
+            log::error!("Failed to emit term-exit event for {}: {}", id_watcher, e);
+        });
         log::debug!("term-exit event emitted for {}", id_watcher);
     });
 }
@@ -450,17 +462,19 @@ fn proc_euid_is_root(pid: u32) -> bool {
 
 #[tauri::command]
 pub fn kill_terminal(id: String, state: State<TerminalState>) {
-    let mut terminals = state
-        .terminals
-        .try_lock()
-        .expect("Failed to lock terminals");
+    let mut terminals = state.terminals.try_lock().unwrap_or_else(|e| {
+        log::error!("Failed to lock terminals for kill {}: {}", id, e);
+        panic!("Failed to lock terminals: {}", e);
+    });
     if let Some(entry) = terminals.remove(&id) {
         log::info!("Killing terminal {}", id);
-        let mut child = entry
-            .child
-            .try_lock()
-            .expect("Failed to lock child in kill_terminal");
-        let _ = child.kill();
+        let mut child = entry.child.try_lock().unwrap_or_else(|e| {
+            log::error!("Failed to lock child for kill {}: {}", id, e);
+            panic!("Failed to lock child: {}", e);
+        });
+        if let Err(e) = child.kill() {
+            log::error!("Failed to kill child process {}: {}", id, e);
+        }
     } else {
         log::warn!("Terminal with id {} not found", id);
     }
@@ -468,25 +482,30 @@ pub fn kill_terminal(id: String, state: State<TerminalState>) {
 
 #[tauri::command]
 pub fn write_to_terminal(id: String, content: &[u8], state: State<TerminalState>) {
-    let mut terminals = state
-        .terminals
-        .try_lock()
-        .expect("Failed to lock terminals");
+    let mut terminals = state.terminals.try_lock().unwrap_or_else(|e| {
+        log::error!("Failed to lock terminals for write {}: {}", id, e);
+        panic!("Failed to lock terminals: {}", e);
+    });
     if let Some(entry) = terminals.get_mut(&id) {
-        entry
-            .writer
-            .write_all(content)
-            .expect("Failed to write to terminal");
-        entry.writer.flush().expect("Failed to flush writer");
+        entry.writer.write_all(content).unwrap_or_else(|e| {
+            log::error!("Failed to write to terminal {}: {}", id, e);
+            panic!("Failed to write to terminal: {}", e);
+        });
+        entry.writer.flush().unwrap_or_else(|e| {
+            log::error!("Failed to flush writer for terminal {}: {}", id, e);
+            panic!("Failed to flush writer: {}", e);
+        });
+    } else {
+        log::warn!("write_to_terminal: terminal {} not found", id);
     }
 }
 
 #[tauri::command]
 pub fn resize_terminal(id: String, cols: u16, rows: u16, state: State<TerminalState>) {
-    let mut terminals = state
-        .terminals
-        .try_lock()
-        .expect("Failed to lock terminals");
+    let mut terminals = state.terminals.try_lock().unwrap_or_else(|e| {
+        log::error!("Failed to lock terminals for resize {}: {}", id, e);
+        panic!("Failed to lock terminals: {}", e);
+    });
     if let Some(entry) = terminals.get_mut(&id) {
         let size = PtySize {
             rows,
@@ -494,11 +513,12 @@ pub fn resize_terminal(id: String, cols: u16, rows: u16, state: State<TerminalSt
             pixel_width: 0,
             pixel_height: 0,
         };
-        entry
-            .pty_pair
-            .master
-            .resize(size)
-            .expect("Failed to resize terminal");
+        entry.pty_pair.master.resize(size).unwrap_or_else(|e| {
+            log::error!("Failed to resize terminal {}: {}", id, e);
+            panic!("Failed to resize terminal: {}", e);
+        });
+    } else {
+        log::warn!("resize_terminal: terminal {} not found", id);
     }
 }
 
@@ -509,10 +529,10 @@ pub fn resize_terminal(id: String, cols: u16, rows: u16, state: State<TerminalSt
 /// boolean transitions — never per input event.
 #[tauri::command]
 pub fn set_output_mode(id: String, low_latency: bool, state: State<TerminalState>) {
-    let terminals = state
-        .terminals
-        .try_lock()
-        .expect("Failed to lock terminals");
+    let terminals = state.terminals.try_lock().unwrap_or_else(|e| {
+        log::error!("Failed to lock terminals for set_output_mode {}: {}", id, e);
+        panic!("Failed to lock terminals: {}", e);
+    });
     if let Some(entry) = terminals.get(&id) {
         entry.force_low_latency.store(low_latency, Ordering::Relaxed);
     } else {

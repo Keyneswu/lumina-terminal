@@ -189,7 +189,84 @@ action list, and wiring props to children. It must NOT contain:
 If `App.tsx` grows past ~400 lines of real logic again, extract a hook
 (e.g. `useTerminalManager`) rather than letting it balloon.
 
+### 3.6 Logging conventions
+
+The app has **one logger**: the Rust `tauri-plugin-log` writes to a rotating
+log file in the app log dir, and its `Webview` target forwards the same stream
+to the frontend. The frontend `@tauri-apps/plugin-log` (`info`/`debug`/`warn`/
+`error`) feeds back into that same file, so logs from both layers end up in
+**one place** — the file `DeveloperSettings` exposes via "Log Directory → Open".
+
+**Rule: every async operation, backend call, and error path must log its
+outcome.** Silent failures (`let _ =`, `.then()` with no `.catch`, `.catch(() => [])`)
+are forbidden. When you add a new `invoke`/`listen`/async call, wire its failure
+path to the logger.
+
+#### Where each log belongs
+
+| Layer | Mechanism |
+|-------|-----------|
+| Rust backend | `log::{debug, info, warn, error}` — already initialized in `lib.rs` (Info by default, Debug for `lumina_terminal_lib`). |
+| Frontend | `import { debug, info, warn, error } from "@tauri-apps/plugin-log"`. **Never** use `console.log`/`console.error` — those do NOT reach the log file. |
+
+#### Backend (Rust) rules
+
+1. **Log before panicking.** Do NOT use bare `.expect("...")` — it bypasses the
+   log framework, so the failure never reaches the file. Use the established
+   pattern: `.unwrap_or_else(|e| { log::error!("...: {}", e); panic!("...: {}", e); })`.
+2. **Panics are a last resort.** Prefer returning a `Result`/`Option` and
+   logging at `warn!`/`error!`. Only panic for truly unrecoverable state
+   (corrupted mutex, pty spawn failure).
+3. **Every `#[tauri::command]` handler logs its error/edge paths.** A missing
+   terminal, a failed read, or a rejected operation must produce a log line.
+   Be consistent: `kill_terminal`, `write_to_terminal`, `resize_terminal`, and
+   `set_output_mode` all `warn!` on a missing id — keep new handlers the same.
+4. **Never drop a `Result` silently.** `let _ = foo();` hides failures. Use
+   `if let Err(e) = foo() { log::warn!(...) }` (or `.unwrap_or_else` per rule 1
+   when the failure is fatal).
+5. **Log level by intent:**
+   - `error!` — operation failed and could not recover (spawn, kill, emit exit).
+   - `warn!` — operation failed but degraded gracefully (missing terminal, bad
+     input, optional feature disabled).
+   - `info!` — significant lifecycle event the user could correlate with
+     behavior (app startup, terminal start/exit, child process exit).
+   - `debug!` — diagnostic detail for development (thread start/stop, lock
+     contention, speculative reads like theme probing).
+
+#### Frontend (TypeScript/React) rules
+
+1. **Use `@tauri-apps/plugin-log`, never `console.*`.** `console.log` only
+   prints to the webview devtools, not the file users actually open.
+2. **Every `invoke()` / `listen()` / fire-and-forget promise needs a failure
+   path.** `.then()` with no `.catch` swallows rejections silently. Attach a
+   `.catch((e) => error(\`...\`).catch(() => {}))`.
+3. **Backend `invoke` calls go through `lib/terminalApi.ts`** (or a sibling
+   `lib/<domain>Api.ts`). These wrappers centralize the log-on-reject logic via
+   `invokeWithLog`, so new commands get error logging for free. Do not call
+   `invoke("...")` directly in a component — and never add a second parallel
+   invoke helper; extend the existing one.
+4. **Guard logger calls themselves.** The plugin-log functions return promises
+   that can reject; chain `.catch(() => {})` so a logging failure never breaks
+   app flow. The `invokeWithLog` helper shows the pattern.
+5. **Log level mirrors the backend:** `error` for unrecoverable, `warn` for
+   degraded fallbacks, `info` for lifecycle, `debug` for detail. Reserve `info`
+   for events a user could correlate with what they did (tab opened, settings
+   saved), not for routine internal transitions.
+6. **Do not log on hot paths.** Edge-background polling, per-keystroke writes,
+   and per-tick reader flushes are too frequent to log per iteration. Log the
+   lifecycle (start/stop, first failure) once, not every cycle.
+
+#### What to log vs. what not to log
+
+- **Always log:** backend command failures, PTY spawn/kill, listener
+  registration failures, config load/save failures, promise rejections that
+  would otherwise vanish, panics (before they happen).
+- **Never log:** routine success of hot operations, raw user keystrokes/output
+  (privacy + volume), per-render state, unmodified values passed through.
+
 ---
+
+## 4. Rules for AI Contributors
 
 ## 4. Rules for AI Contributors
 
@@ -202,27 +279,32 @@ If `App.tsx` grows past ~400 lines of real logic again, extract a hook
    wrap it in `lib/terminalApi.ts` (or a new `lib/<domain>Api.ts`) and import
    the wrapper everywhere. If you add a new derived value shared across
    components, make it a hook in `hooks/`.
-4. **Props over re-derivation.** If a value is already computed in a parent
+4. **Every async operation and error path must log.** See §3.6 for the full
+   rules. In short: never use bare `.expect()`/`console.*` or a `.then()` with
+   no `.catch` — log via the plugin logger before panicking and on every
+   rejection. New `invoke` commands go through the `invokeWithLog` wrapper so
+   they get error logging for free.
+5. **Props over re-derivation.** If a value is already computed in a parent
    (theme, maximize, padding, parsed bindings), pass it down. Do not
    re-compute it in the child.
-5. **No dead code.** If you remove the last consumer of a file, delete the
+6. **No dead code.** If you remove the last consumer of a file, delete the
    file. Do not leave unused components (the old `ResizeHandle.tsx` was dead
    for a long time before removal).
-6. **Keep `lib/` React-free** (except the existing `useKeyboardBindings`
+7. **Keep `lib/` React-free** (except the existing `useKeyboardBindings`
    exception). Pure functions are easier to test and reuse.
-7. **Match existing style.** Tabs for indentation, double quotes for JSX
+8. **Match existing style.** Tabs for indentation, double quotes for JSX
   attribute strings where the file already uses them, `import ... from
   "...ts"` with explicit extensions (bundler resolution). Follow the
   surrounding code's conventions.
-8. **Verify with `pnpm build`** after changes. The tsconfig is strict
-  (`noUnusedLocals`, `noUnusedParameters`, `noFallthroughCasesInSwitch`) —
-  unused imports/vars will fail the build. Use this as a guardrail.
-9. **Behavior-preserving refactors only** unless explicitly asked. Keep
+9. **Verify with `pnpm build`** after changes. The tsconfig is strict
+   (`noUnusedLocals`, `noUnusedParameters`, `noFallthroughCasesInSwitch`) —
+   unused imports/vars will fail the build. Use this as a guardrail.
+10. **Behavior-preserving refactors only** unless explicitly asked. Keep
    props, command names, and event names (`term-write-${id}`, `term-exit-${id}`)
    stable — the Rust backend and frontend are coupled by these strings.
-10. **Document significant new modules** here in §2 (Source Map) so the next
+11. **Document significant new modules** here in §2 (Source Map) so the next
     contributor knows they exist.
-11. If you add new dependencies, add them into README with a link to its
+12. If you add new dependencies, add them into README with a link to its
     official website or repo.
 
 ---
@@ -238,3 +320,7 @@ If `App.tsx` grows past ~400 lines of real logic again, extract a hook
   value, compute once at their nearest common ancestor and pass via props.
 - **Can I change a backend command/event name?** Only if you update both
   `src-tauri/src/` and `src/` together. These are coupled by string.
+- **Where does a log/error go?** See §3.6. Rust → `log::{debug,info,warn,error}`;
+  frontend → `@tauri-apps/plugin-log` (`never console.*`). Log before panicking,
+  and attach `.catch` to every promise — never leave a silent `let _ =` or
+  bare `.then()`.

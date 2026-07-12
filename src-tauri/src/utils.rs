@@ -16,7 +16,12 @@ pub fn parse_ssh_config() -> Vec<SshHostEntry> {
     let config_path = PathBuf::from(&home).join(".ssh").join("config");
     let content = match std::fs::read_to_string(&config_path) {
         Ok(c) => c,
-        Err(_) => return vec![],
+        Err(e) => {
+            // Missing/unreadable ~/.ssh/config is common; log at debug so it's
+            // diagnosable without being noisy on every fresh install.
+            log::debug!("No SSH config at {}: {}", config_path.display(), e);
+            return vec![];
+        }
     };
     let mut entries: Vec<SshHostEntry> = vec![];
     let mut current_hosts: Vec<String> = vec![];
@@ -65,7 +70,10 @@ pub fn parse_ssh_config() -> Vec<SshHostEntry> {
                 current_hostname = Some(value);
             }
             "port" => {
-                current_port = value.parse().ok();
+                match value.parse() {
+                    Ok(p) => current_port = Some(p),
+                    Err(_) => log::warn!("Invalid port in SSH config: {}", value),
+                }
             }
             "user" => {
                 current_user = Some(value);
@@ -118,6 +126,8 @@ pub fn find_shells() -> Vec<String> {
                     }
                 }
             }
+        } else {
+            log::warn!("PATH env var not set; Windows shell discovery limited to known dirs");
         }
         // Also check known install directories
         let extra_dirs = [
@@ -192,6 +202,8 @@ pub fn find_shells() -> Vec<String> {
                     }
                 }
             }
+        } else {
+            log::warn!("PATH env var not set; shell discovery limited to known dirs");
         }
         // Also check common install directories
         let extra_dirs = [
@@ -212,6 +224,7 @@ pub fn find_shells() -> Vec<String> {
         }
     }
 
+    log::debug!("find_shells: discovered {} shell(s)", shells.len());
     shells
 }
 
@@ -222,7 +235,14 @@ pub fn path_exist(path: String) -> bool {
 
 #[tauri::command]
 pub fn read_file(path: String) -> String {
-    std::fs::read_to_string(&path).unwrap_or_default()
+    match std::fs::read_to_string(&path) {
+        Ok(s) => s,
+        Err(e) => {
+            // Often called speculatively (theme probing), so debug-level.
+            log::debug!("read_file failed for {}: {}", path, e);
+            String::new()
+        }
+    }
 }
 
 #[tauri::command]
@@ -283,11 +303,17 @@ pub fn open_in_file_manager(path: String) -> Result<(), String> {
         // in the right folder. (File selection isn't broadly supported via
         // xdg-open, so we just open the containing directory.)
         let _ = file_name;
-        Command::new("xdg-open")
-            .arg(&dir)
-            .status()
-            .map(|_| ())
-            .map_err(|e| format!("Failed to open: {}", e))
+        match Command::new("xdg-open").arg(&dir).status() {
+            Ok(status) if status.success() => Ok(()),
+            Ok(status) => {
+                // xdg-open returned a non-zero exit code (e.g. no default app,
+                // missing desktop file). Report it rather than hiding as success.
+                let msg = format!("xdg-open exited with {}", status);
+                log::warn!("{}", msg);
+                Err(msg)
+            }
+            Err(e) => Err(format!("Failed to open: {}", e)),
+        }
     }
 
     #[cfg(target_os = "macos")]

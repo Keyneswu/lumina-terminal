@@ -167,5 +167,8 @@ pub fn run() {
             open_devtools,
         ])
         .run(tauri::generate_context!())
-        .expect("Failed to startup Lumina Terminal");
+        .unwrap_or_else(|e| {
+            log::error!("Failed to startup Lumina Terminal: {}", e);
+            panic!("Failed to startup Lumina Terminal: {}", e);
+        });
 }

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { error } from "@tauri-apps/plugin-log";
 
 let cached: string[] | null = null;
 let pending: Promise<string[]> | null = null;
@@ -18,7 +19,8 @@ export function useShells(): string[] {
                     cached = result;
                     return result;
                 })
-                .catch(() => {
+                .catch((e) => {
+                    error(`Failed to discover shells: ${e}`).catch(() => {});
                     cached = [];
                     return [];
                 });
