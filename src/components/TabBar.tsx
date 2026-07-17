@@ -179,19 +179,19 @@ export default function TabBar(props: TabBarProps) {
             >
                 {/* Update-available banner: shows above "New Tab" when an update
                     is available. Hidden when the sidebar is collapsed (no room).
-                    The background borrows the app icon's blue→purple gradient
-                    (#8CD5FF → #A668C3, see src/assets/icon.svg) as a subtle brand
+                    The background borrows the app icon's cinnabar→lavender gradient
+                    (#FF461F → #A892C7, see src/assets/icon.svg) as a subtle brand
                     accent so it stands out from the neutral tab chrome. */}
                 {!collapsed && updateVersion && (
                     <div
                         style={{
-                            // Static brand gradient (blue→purple from the app icon)
+                            // Static brand gradient (cinnabar→lavender from the app icon)
                             // lives on this wrapper. The hover highlight is layered ON
                             // TOP by the inner button, so it stays visible and smooth.
                             // Opacity is high enough that the button's white wash
                             // (0.5 → 0.3 on hover) reads as a clear brightness shift.
                             background:
-                                "linear-gradient(135deg, rgba(140,213,255,0.55), rgba(166,104,195,0.55))",
+                                "linear-gradient(135deg, rgba(255,70,31,0.55), rgba(168,146,199,0.55))",
                         }}
                     >
                         <button
@@ -202,7 +202,7 @@ export default function TabBar(props: TabBarProps) {
                             onClick={onUpdateClick}
                             title={t["New version available: v{version}"].replace("{version}", updateVersion)}
                         >
-                            <Sparkles size={14} className="shrink-0" style={{ color: "#A668C3" }} />
+                            <Sparkles size={14} className="shrink-0" style={{ color: "#A892C7" }} />
                             <span className="text-xs truncate">
                                 {t["New version available: v{version}"].replace("{version}", updateVersion)}
                             </span>
