@@ -67,6 +67,14 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
     // (last ~300ms) means the cursor is currently there. TabBar's dragend reads
     // this to pick merge vs. new-window vs. cancel.
     const mergeTargetRef = useRef<{label: string; time: number} | null>(null);
+    // Last-known screen position (CSS px = logical px under Tauri) of the
+    // cursor during a tab drag from THIS window, refreshed by our own dragover.
+    // Used to position a torn-off window at the release point. Wayland forbids
+    // reading the global cursor, so we can only track it while it's over a
+    // webview — the last in-window position is the best approximation for a
+    // drop on the desktop (the tab is "thrown out" anyway, so small error is
+    // fine). Held at the App layer so TabBar reads + App's tearOffTab consumes.
+    const dragScreenPosRef = useRef<{x: number; y: number} | null>(null);
     // Per-terminal currently-running command (subtitle under the tab title).
     // null/undefined = idle at the shell prompt; an object = a command is running.
     const [commands, setCommands] = useState<Record<string, CurrentCommand | null>>({});
@@ -204,7 +212,7 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
      * Any failure is logged; the tab stays put if stashing or (for merge) the
      * ack times out.
      */
-    const tearOffTab = useCallback(async (id: string, opts?: {mergeTarget?: string}) => {
+    const tearOffTab = useCallback(async (id: string, opts?: {mergeTarget?: string; position?: {x: number; y: number}}) => {
         const profile = terminals[id];
         if (!profile) {
             warn(`tearOffTab: no profile for id=${id} (not a terminal tab)`);
@@ -313,7 +321,7 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
             height: window.innerHeight,
         };
         try {
-            await createTearoffWindow(label, sourceInnerSize);
+            await createTearoffWindow(label, sourceInnerSize, opts?.position);
         } catch (e) {
             error(`tearOffTab: window creation failed for ${label}: ${e}`).catch(() => {});
             // Leave the tab in place — the new window never came up.
@@ -717,6 +725,7 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
                     onNew={() => newTerminal(defaultProfile)}
                     onTearOff={tearOffTab}
                     mergeTargetRef={mergeTargetRef}
+                    dragScreenPosRef={dragScreenPosRef}
                     backgroundColor={effectiveBg ?? "#000000"}
                     foregroundColor={effectiveFg ?? "#ffffff"}
                     dangerColor={dangerColor}

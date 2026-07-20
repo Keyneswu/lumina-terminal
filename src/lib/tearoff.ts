@@ -116,10 +116,19 @@ export async function consumeTearoff(label: string): Promise<TearoffPayload | nu
 export async function createTearoffWindow(
     label: string,
     sourceInnerSize?: { width: number; height: number },
+    position?: { x: number; y: number },
 ): Promise<WebviewWindow> {
     const width = Math.max(sourceInnerSize?.width ?? 900, 600);
     const height = Math.max(sourceInnerSize?.height ?? 600, 400);
-    const webview = new WebviewWindow(label, {
+    // Position the new window's top-left at the drop point when known. This is
+    // the last in-window dragover screen position — Wayland forbids reading
+    // the global cursor, so we can't track it after it leaves a webview, but
+    // for a "thrown-out" tab the last-known position is a good approximation.
+    // screenX/Y are CSS px = logical px under Tauri, matching WindowOptions.
+    // Clamp so a drop near a screen edge doesn't push the window off-screen;
+    // the OS would also do this, but being explicit avoids a window whose
+    // title bar is unreachable on some compositors.
+    const opts: Record<string, unknown> = {
         url: "index.html",
         title: "Lumina Terminal",
         width,
@@ -131,12 +140,17 @@ export async function createTearoffWindow(
         visible: false,
         resizable: true,
         shadow: true,
-    });
+    };
+    if (position) {
+        opts.x = Math.max(0, position.x);
+        opts.y = Math.max(0, position.y);
+    }
+    const webview = new WebviewWindow(label, opts);
     // The constructor is fire-and-forget; surface creation failure (e.g.
     // capability denied) through the error event so it is never silent.
     webview.once("tauri://error", (e) => {
         error(`Failed to create tear-off window ${label}: ${e?.payload}`).catch(() => {});
     });
-    info(`Creating tear-off window ${label} (${width}x${height})`);
+    info(`Creating tear-off window ${label} (${width}x${height}${position ? ` at ${opts.x},${opts.y}` : ""})`);
     return webview;
 }

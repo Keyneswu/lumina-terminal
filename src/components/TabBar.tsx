@@ -37,13 +37,19 @@ interface TabBarProps {
     onNew: () => void;
     /** Called when the user drags a terminal tab out of the window and
      * releases it. `opts.mergeTarget` (another window's label) → merge into
-     * that window; absent → spawn a new window. Ignored for Settings/About. */
-    onTearOff?: (id: string, opts?: {mergeTarget?: string}) => void;
+     * that window; `opts.position` (screen CSS px) → place a new window's
+     * top-left there; absent → spawn a new window at the OS default. Ignored
+     * for Settings/About. */
+    onTearOff?: (id: string, opts?: {mergeTarget?: string; position?: {x: number; y: number}}) => void;
     /** App-owned ref tracking the last hover heartbeat from another window
      * during a drag from this window ({label, time}). dragend reads it, with a
      * freshness check, to pick merge vs. new-window. Passed down so TabBar
      * doesn't re-derive it. */
     mergeTargetRef?: RefObject<{label: string; time: number} | null>;
+    /** App-owned ref where the last in-window cursor screen position (CSS px)
+     * during a drag is recorded. dragend reads it to position a torn-off window
+     * at the release point. Passed down so TabBar doesn't re-derive it. */
+    dragScreenPosRef?: RefObject<{x: number; y: number} | null>;
     backgroundColor: string;
     foregroundColor: string;
     /** Theme-aware red used for danger indicators (privileged-command dot). */
@@ -56,7 +62,7 @@ interface TabBarProps {
 }
 
 export default function TabBar(props: TabBarProps) {
-    const { tabs, activeId, onSelect, onClose, onNew, onTearOff, mergeTargetRef, backgroundColor, foregroundColor, dangerColor, collapsed, defaultProfileName, updateVersion, onUpdateClick } = props;
+    const { tabs, activeId, onSelect, onClose, onNew, onTearOff, mergeTargetRef, dragScreenPosRef, backgroundColor, foregroundColor, dangerColor, collapsed, defaultProfileName, updateVersion, onUpdateClick } = props;
     const t = useI18n();
 
     // Cleanup function for the document-level drag listeners attached during a
@@ -216,6 +222,7 @@ export default function TabBar(props: TabBarProps) {
                                 // Clear any stale merge target from a previous
                                 // drag — only heartbeats during THIS drag count.
                                 if (mergeTargetRef) mergeTargetRef.current = null;
+                                if (dragScreenPosRef) dragScreenPosRef.current = null;
                                 // If a previous drag's cleanup is still around
                                 // (e.g. dragend never fired), clear it first so
                                 // we don't stack listeners.
@@ -231,10 +238,15 @@ export default function TabBar(props: TabBarProps) {
                                 // distinguishes "on some Lumina window" (cancel or
                                 // merge) from "off-window" (new window), and the
                                 // label distinguishes merge-target from self.
+                                // We also cache screenX/Y for positioning a torn-off
+                                // window at the release point (see dragScreenPosRef).
                                 const myLabel = getCurrentWindow().label;
-                                const onDragOver = () => {
+                                const onDragOver = (ev: DragEvent) => {
                                     if (mergeTargetRef) {
                                         mergeTargetRef.current = {label: myLabel, time: Date.now()};
+                                    }
+                                    if (dragScreenPosRef && ev != null) {
+                                        dragScreenPosRef.current = {x: ev.screenX, y: ev.screenY};
                                     }
                                 };
                                 document.addEventListener("dragover", onDragOver);
@@ -286,14 +298,16 @@ export default function TabBar(props: TabBarProps) {
                                     action = "new";
                                 }
                                 if (mergeTargetRef) mergeTargetRef.current = null;
+                                const dropPos = dragScreenPosRef?.current ?? null;
+                                if (dragScreenPosRef) dragScreenPosRef.current = null;
                                 // DIAGNOSTIC: demote once verified.
-                                info(`dragend dispatch: action=${action} mergeTarget=${mergeTarget} lastHeartbeatMs=${mt ? now - mt.time : -1} lastLabel=${mt?.label ?? "<none>"} myLabel=${myLabel}`);
+                                info(`dragend dispatch: action=${action} mergeTarget=${mergeTarget} lastHeartbeatMs=${mt ? now - mt.time : -1} lastLabel=${mt?.label ?? "<none>"} myLabel=${myLabel} dropPos=${dropPos ? `${dropPos.x},${dropPos.y}` : "<none>"}`);
                                 if (action === "merge" && mergeTarget) {
                                     info(`Drag → merge tab ${tab.id} into ${mergeTarget}`);
                                     onTearOff(tab.id, {mergeTarget});
                                 } else if (action === "new") {
-                                    info(`Drag → tear off tab ${tab.id} into new window`);
-                                    onTearOff(tab.id);
+                                    info(`Drag → tear off tab ${tab.id} into new window at ${dropPos ? `${dropPos.x},${dropPos.y}` : "default"}`);
+                                    onTearOff(tab.id, dropPos ? {position: dropPos} : undefined);
                                 }
                                 // action === "cancel": no-op.
                             }}
