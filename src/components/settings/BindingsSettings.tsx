@@ -28,12 +28,16 @@ const ALL_ACTIONS: Actions[] = [
 
 type TranslationDict = ReturnType<typeof useI18n>;
 
-function actionLabel(action: Actions, args: Record<string, string> | undefined, t: TranslationDict): string {
+function actionLabel(action: Actions, args: Record<string, string> | undefined, t: TranslationDict, preview?: boolean): string {
     switch (action) {
         case "newTab": {
             const name = args?.profileName;
             if (name) return `${t["Open Profile"]}: ${name}`;
-            return t["Open Default Profile"];
+            if (preview) {
+                return t["Open Profile"];
+            } else {
+                return `${t["Open Profile"]}: ${t["Default"]}`;
+            }
         }
         case "closeTab":
             return t["Close Tab"];
@@ -365,7 +369,7 @@ export default function BindingsSettings({borderColor}: { borderColor: string })
                                 <ListBox>
                                     {ALL_ACTIONS.map((a) => (
                                         <ListBox.Item id={a} key={a} textValue={a}>
-                                            {actionLabel(a, undefined, t)}
+                                            {actionLabel(a, undefined, t, true)}
                                         </ListBox.Item>
                                     ))}
                                 </ListBox>
