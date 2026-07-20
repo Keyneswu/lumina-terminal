@@ -160,6 +160,7 @@ pub fn run() {
             path_exist,
             read_file,
             is_debug,
+            is_wayland,
             get_log_dir,
             get_commit_hash,
             parse_ssh_config,

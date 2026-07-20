@@ -4,7 +4,7 @@ import {TerminalProfile, CurrentCommand} from "./types/terminal.ts";
 import {useGlobalConfig} from "./hooks/config.tsx";
 import {useI18n} from "./hooks/i18n.tsx";
 import WelcomePage from "./pages/WelcomePage.tsx";
-import {getCurrentWindow} from "@tauri-apps/api/window";
+import {getCurrentWindow, PhysicalPosition, PhysicalSize} from "@tauri-apps/api/window";
 import TitleBar from "./components/TitleBar.tsx";
 import TabBar, { type TabInfo } from "./components/TabBar.tsx";
 import {parseProfile} from "./lib/term.ts";
@@ -27,6 +27,7 @@ import {useUpdater} from "./hooks/useUpdater.ts";
 import UpdateModal from "./components/UpdateModal.tsx";
 import {emitTo, listen} from "@tauri-apps/api/event";
 import {useTearoffSession} from "./hooks/useTearoffSession.ts";
+import {useIsWayland} from "./hooks/useIsWayland.ts";
 import {
     consumeTearoff,
     createTearoffWindow,
@@ -49,6 +50,10 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
     // = still resolving; `"no"` = this is the main window (or a tear-off
     // window with no payload). Drives initial tab seeding below.
     const tearoff = useTearoffSession();
+    // Wayland forbids knowing/setting absolute window position, so the position
+    // restore + persist paths are short-circuited there (they'd only ever
+    // read and write 0,0). Size is unaffected.
+    const isWayland = useIsWayland();
     const [ids, setIds] = useState<string[]>([]);
     const [terminals, setTerminals] = useState<Record<string, TerminalProfile>>({});
     const [currentId, setCurrentId] = useState<string | null>(null);
@@ -75,6 +80,13 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
     // drop on the desktop (the tab is "thrown out" anyway, so small error is
     // fine). Held at the App layer so TabBar reads + App's tearOffTab consumes.
     const dragScreenPosRef = useRef<{x: number; y: number} | null>(null);
+    // True while the startup geometry restore is applying setPosition/setSize.
+    // The onMoved/onResized listeners skip while this is set, so restoring the
+    // saved geometry doesn't get written straight back (feedback loop). Cleared
+    // on a short timeout after the restore calls return.
+    const applyingRestoredGeometryRef = useRef(false);
+    // Guards the restore effect to run at most once per window lifetime.
+    const restoredGeometryOnceRef = useRef(false);
     // Per-terminal currently-running command (subtitle under the tab title).
     // null/undefined = idle at the shell prompt; an object = a command is running.
     const [commands, setCommands] = useState<Record<string, CurrentCommand | null>>({});
@@ -494,6 +506,114 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
         setReattachTabs({[ptyId]: {ptyId, scrollback: tearoff.payload.scrollback}});
         info(`Tear-off window seeded with ptyId=${ptyId}`);
     }, [config, tearoff, defaultProfile]);
+
+    // ---- Main-window geometry: restore on startup, persist on move/resize ----
+    // Only the main window participates — tear-off windows are positioned by
+    // createTearoffWindow and are transient, so remembering them is pointless.
+    const isMainWindow = getCurrentWindow().label === "main";
+
+    // One-shot restore: when config has loaded and either toggle is on, apply
+    // the saved position/size before the user sees the window (the show() in
+    // hooks/config.tsx races with this; setPosition/setSize are fast and idempotent).
+    // Gated by restoredGeometryOnceRef so toggling the settings later does NOT
+    // re-jump the window — restore is strictly a startup behavior.
+    useEffect(() => {
+        if (!isMainWindow) return;
+        if (restoredGeometryOnceRef.current) return;
+        // Wait until config has actually loaded (it loads in GlobalConfigProvider;
+        // we can't read isLoading here, but config fields beyond DEFAULT_CONFIG
+        // only become meaningful once the store read resolves. The config object
+        // identity changes on load, so depending on `config` is sufficient.)
+        restoredGeometryOnceRef.current = true;
+
+        const wantPos = !isWayland && config.rememberWindowPosition && config.rememberedWindowPosition;
+        const wantSize = config.rememberWindowSize && config.rememberedWindowSize;
+        if (!wantPos && !wantSize) return;
+
+        applyingRestoredGeometryRef.current = true;
+        const win = getCurrentWindow();
+        const tasks: Promise<unknown>[] = [];
+        if (wantPos) {
+            const {x, y} = config.rememberedWindowPosition!;
+            tasks.push(win.setPosition(new PhysicalPosition(x, y)));
+            info(`Restoring main window position: ${x},${y}`);
+        }
+        if (wantSize) {
+            const {width, height} = config.rememberedWindowSize!;
+            tasks.push(win.setSize(new PhysicalSize(width, height)));
+            info(`Restoring main window size: ${width}x${height}`);
+        }
+        Promise.all(tasks).catch((e) =>
+            error(`Failed to restore main window geometry: ${e}`).catch(() => {})
+        ).finally(() => {
+            // Release the feedback-lock after the OS has settled the move/resize
+            // events our calls produced. 200ms is generous for compositor dispatch.
+            setTimeout(() => {
+                applyingRestoredGeometryRef.current = false;
+            }, 200);
+        });
+    }, [config, isMainWindow, isWayland]);
+
+    // Runtime persistence: while either toggle is on, write position/size back
+    // to config on move/resize. Skips writes during the startup restore
+    // (applyingRestoredGeometryRef) and when the value hasn't changed (avoid
+    // spurious writes + secondary feedback). Re-arms only when the toggles
+    // flip — the last-known geometry is read via refs so a write doesn't re-arm
+    // (which would churn listeners on every move tick).
+    const lastPosRef = useRef(config.rememberedWindowPosition);
+    lastPosRef.current = config.rememberedWindowPosition;
+    const lastSizeRef = useRef(config.rememberedWindowSize);
+    lastSizeRef.current = config.rememberedWindowSize;
+    useEffect(() => {
+        if (!isMainWindow) return;
+        // Position is untrackable on Wayland (onMoved yields 0,0), so never
+        // arm the move listener there — otherwise it'd persist garbage.
+        const rememberPos = !isWayland && config.rememberWindowPosition;
+        const rememberSize = config.rememberWindowSize;
+        if (!rememberPos && !rememberSize) return;
+
+        const win = getCurrentWindow();
+        let unlistenMoved: (() => void) | undefined;
+        let unlistenResized: (() => void) | undefined;
+        let cancelled = false;
+
+        if (rememberPos) {
+            win.onMoved(({payload}) => {
+                if (applyingRestoredGeometryRef.current) return;
+                const next = {x: payload.x, y: payload.y};
+                const prev = lastPosRef.current;
+                if (prev && prev.x === next.x && prev.y === next.y) return;
+                updateConfig({rememberedWindowPosition: next});
+                debug(`Persisted main window position: ${next.x},${next.y}`);
+            }).then((un) => {
+                if (cancelled) un();
+                else unlistenMoved = un;
+            }).catch((e) =>
+                error(`Failed to listen for window move: ${e}`).catch(() => {})
+            );
+        }
+        if (rememberSize) {
+            win.onResized(({payload}) => {
+                if (applyingRestoredGeometryRef.current) return;
+                const next = {width: payload.width, height: payload.height};
+                const prev = lastSizeRef.current;
+                if (prev && prev.width === next.width && prev.height === next.height) return;
+                updateConfig({rememberedWindowSize: next});
+                debug(`Persisted main window size: ${next.width}x${next.height}`);
+            }).then((un) => {
+                if (cancelled) un();
+                else unlistenResized = un;
+            }).catch((e) =>
+                error(`Failed to listen for window resize: ${e}`).catch(() => {})
+            );
+        }
+
+        return () => {
+            cancelled = true;
+            unlistenMoved?.();
+            unlistenResized?.();
+        };
+    }, [config.rememberWindowPosition, config.rememberWindowSize, isMainWindow, isWayland, updateConfig]);
 
     // Keyboard bindings for non-terminal tabs (Settings, About, etc.)
     const isNonTerminalTab = currentId === SETTINGS_TAB_ID || currentId === ABOUT_TAB_ID;

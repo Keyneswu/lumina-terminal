@@ -120,6 +120,8 @@ export const DEFAULT_CONFIG: GlobalConfig = {
     showTabBar: false,
     copyWithCtrl: false,
     autoUpdateOnStartup: true,
+    rememberWindowPosition: false,
+    rememberWindowSize: false,
 };
 
 export const SETTINGS_TAB_ID = "__lum__settings__";

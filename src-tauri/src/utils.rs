@@ -264,6 +264,24 @@ pub fn is_debug() -> bool {
     cfg!(debug_assertions)
 }
 
+/// Whether the app is running under a Wayland session. Used by the frontend to
+/// hide UI for features Wayland forbids — notably "remember window position",
+/// since Wayland's security model prevents clients from knowing or setting
+/// their absolute screen position (`outerPosition()` always returns 0,0 and
+/// `setPosition` is a no-op). Size is still knowable/controllable, so
+/// "remember window size" stays available. Non-Linux always returns false.
+#[tauri::command]
+pub fn is_wayland() -> bool {
+    if cfg!(target_os = "linux") {
+        // XDG_SESSION_TYPE is the canonical signal; WAYLAND_DISPLAY is a fallback
+        // for compositors that don't set the session type.
+        std::env::var("XDG_SESSION_TYPE").map(|v| v == "wayland").unwrap_or(false)
+            || std::env::var("WAYLAND_DISPLAY").is_ok()
+    } else {
+        false
+    }
+}
+
 #[tauri::command]
 pub fn get_commit_hash() -> String {
     env!("GIT_HASH").to_string()

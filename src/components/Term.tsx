@@ -251,10 +251,18 @@ export default function Term(props : TermProps) {
         // initial OS window size. Torn-off windows keep whatever size the
         // source window handed them (createTearoffWindow), so a tab torn out
         // of a 120x40 window doesn't snap back to 80x24 on mount.
-        if (!hasAppliedInitialWindowSize && getCurrentWindow().label === "main") {
+        // Skip when "remember window size" is on with a saved size — App.tsx's
+        // restore effect has already applied the remembered size, and applying
+        // the profile rows/cols here would clobber it.
+        const skipForRemembered = !!(config.rememberWindowSize && config.rememberedWindowSize);
+        if (!hasAppliedInitialWindowSize && getCurrentWindow().label === "main" && !skipForRemembered) {
             hasAppliedInitialWindowSize = true;
             const windowSize = getWindowSizeFromRowsAndColumns();
             getCurrentWindow().setSize(new LogicalSize(windowSize)).then();
+        } else if (!hasAppliedInitialWindowSize) {
+            // Mark as applied even when we skipped, so a later profile change
+            // doesn't suddenly resize the window.
+            hasAppliedInitialWindowSize = true;
         }
 
         // profile is already the product of parseProfile(), which resolved

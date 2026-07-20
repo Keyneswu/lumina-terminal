@@ -20,4 +20,17 @@ export interface GlobalConfig {
     closeWindowOnLastTab?: boolean;
     copyWithCtrl?: boolean;
     autoUpdateOnStartup?: boolean;
+    /** When true, restore the main window to its last position on startup
+     * (main window only; tear-off windows are positioned by their spawner). */
+    rememberWindowPosition?: boolean;
+    /** When true, restore the main window to its last size on startup. */
+    rememberWindowSize?: boolean;
+    /** Persisted main-window outer position in physical pixels. Written by
+     * the runtime move listener while rememberWindowPosition is on; read once
+     * at startup to restore. */
+    rememberedWindowPosition?: {x: number; y: number};
+    /** Persisted main-window inner size in physical pixels. Written by the
+     * runtime resize listener while rememberWindowSize is on; read once at
+     * startup to restore. */
+    rememberedWindowSize?: {width: number; height: number};
 }

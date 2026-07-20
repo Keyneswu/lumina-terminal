@@ -4,10 +4,15 @@ import {useEffect, useMemo, useState} from "react";
 import {info} from "@tauri-apps/plugin-log";
 import {Button, Label, ListBox, Select, Switch} from "@heroui/react";
 import {isMacOS} from "../../lib/platform.ts";
+import {useIsWayland} from "../../hooks/useIsWayland.ts";
 
 export default function GeneralSettings({ borderColor, openAbout }: { borderColor: string, openAbout: () => void }) {
     const { config, updateConfig } = useGlobalConfig();
     const t = useI18n();
+    // Wayland can't know or set absolute window position, so the "remember
+    // window position" toggle is hidden there (it would be a no-op that
+    // confuses users). Size still works on every platform.
+    const isWayland = useIsWayland();
 
     const currentDefault = useMemo(() => {
         return config.profiles.find(p => p.default)?.name ?? config.profiles[0]?.name ?? "";
@@ -20,6 +25,8 @@ export default function GeneralSettings({ borderColor, openAbout }: { borderColo
         defaultProfile: currentDefault,
         copyWithCtrl: config.copyWithCtrl ?? false,
         autoUpdateOnStartup: config.autoUpdateOnStartup !== false,
+        rememberWindowPosition: config.rememberWindowPosition ?? false,
+        rememberWindowSize: config.rememberWindowSize ?? false,
     });
 
     // Reset draft when config changes externally
@@ -31,8 +38,10 @@ export default function GeneralSettings({ borderColor, openAbout }: { borderColo
             defaultProfile: currentDefault,
             copyWithCtrl: config.copyWithCtrl ?? false,
             autoUpdateOnStartup: config.autoUpdateOnStartup !== false,
+            rememberWindowPosition: config.rememberWindowPosition ?? false,
+            rememberWindowSize: config.rememberWindowSize ?? false,
         });
-    }, [config.language, config.showTabBar, config.closeWindowOnLastTab, config.copyWithCtrl, config.autoUpdateOnStartup, currentDefault]);
+    }, [config.language, config.showTabBar, config.closeWindowOnLastTab, config.copyWithCtrl, config.autoUpdateOnStartup, config.rememberWindowPosition, config.rememberWindowSize, currentDefault]);
 
     const isDirty =
         draft.language !== config.language ||
@@ -40,6 +49,8 @@ export default function GeneralSettings({ borderColor, openAbout }: { borderColo
         draft.closeWindowOnLastTab !== (config.closeWindowOnLastTab !== false) ||
         draft.copyWithCtrl !== (config.copyWithCtrl ?? false) ||
         draft.autoUpdateOnStartup !== (config.autoUpdateOnStartup !== false) ||
+        draft.rememberWindowPosition !== (config.rememberWindowPosition ?? false) ||
+        draft.rememberWindowSize !== (config.rememberWindowSize ?? false) ||
         draft.defaultProfile !== currentDefault;
 
     const handleSave = () => {
@@ -50,6 +61,8 @@ export default function GeneralSettings({ borderColor, openAbout }: { borderColo
             closeWindowOnLastTab: draft.closeWindowOnLastTab,
             copyWithCtrl: draft.copyWithCtrl,
             autoUpdateOnStartup: draft.autoUpdateOnStartup,
+            rememberWindowPosition: draft.rememberWindowPosition,
+            rememberWindowSize: draft.rememberWindowSize,
         };
         if (draft.defaultProfile !== currentDefault) {
             updated.profiles = config.profiles.map(p => ({
@@ -146,6 +159,50 @@ export default function GeneralSettings({ borderColor, openAbout }: { borderColo
                         <Switch
                             isSelected={draft.closeWindowOnLastTab}
                             onChange={(v) => setDraft((prev) => ({ ...prev, closeWindowOnLastTab: v }))}
+                        >
+                            <Switch.Control>
+                                <Switch.Thumb />
+                            </Switch.Control>
+                        </Switch>
+                    </div>
+
+                    {/* Remember Window Position (hidden on Wayland — compositor
+                        forbids knowing/setting absolute position, so it'd be
+                        a no-op that only confuses users). */}
+                    {!isWayland && (
+                        <div className="flex flex-row items-center justify-between">
+                            <div className="flex flex-col gap-0.5">
+                                <Label className="cursor-pointer">
+                                    {t["Remember Window Position"]}
+                                </Label>
+                                <p className="text-xs text-muted">
+                                    {t["Restore the window to its last position on startup"]}
+                                </p>
+                            </div>
+                            <Switch
+                                isSelected={draft.rememberWindowPosition}
+                                onChange={(v) => setDraft((prev) => ({ ...prev, rememberWindowPosition: v }))}
+                            >
+                                <Switch.Control>
+                                    <Switch.Thumb />
+                                </Switch.Control>
+                            </Switch>
+                        </div>
+                    )}
+
+                    {/* Remember Window Size */}
+                    <div className="flex flex-row items-center justify-between">
+                        <div className="flex flex-col gap-0.5">
+                            <Label className="cursor-pointer">
+                                {t["Remember Window Size"]}
+                            </Label>
+                            <p className="text-xs text-muted">
+                                {t["Restore the window to its last size on startup"]}
+                            </p>
+                        </div>
+                        <Switch
+                            isSelected={draft.rememberWindowSize}
+                            onChange={(v) => setDraft((prev) => ({ ...prev, rememberWindowSize: v }))}
                         >
                             <Switch.Control>
                                 <Switch.Thumb />
