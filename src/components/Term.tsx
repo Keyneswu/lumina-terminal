@@ -517,6 +517,31 @@ export default function Term(props : TermProps) {
         }
     }, [isActive]);
 
+    // Re-focus xterm when the OS window itself regains focus and this tab is
+    // the active one — so clicking into the window (or alt-tabbing back) puts
+    // keyboard input straight into the terminal without an extra click. Each
+    // Term registers its own listener; only the active one's `isActive` gate
+    // fires the focus(). Cleanup on unmount.
+    useEffect(() => {
+        if (!isActive) return;
+        let unlisten: (() => void) | undefined;
+        let cancelled = false;
+        getCurrentWindow().onFocusChanged(({payload: focused}) => {
+            if (focused && isActiveRef.current && term.current) {
+                term.current.focus();
+            }
+        }).then((un) => {
+            if (cancelled) un();
+            else unlisten = un;
+        }).catch((e) => {
+            error(`Failed to listen for window focus for terminal ${id}: ${e}`).catch(() => {});
+        });
+        return () => {
+            cancelled = true;
+            unlisten?.();
+        };
+    }, [id, isActive]);
+
     // Poll the outermost ring of the buffer. When it is a uniform explicit
     // color (a fullscreen TUI's own bg), report it up so the whole app
     // background can follow it, and sync the xterm-owned layers (.xterm and
