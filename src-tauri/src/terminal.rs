@@ -6,7 +6,7 @@ use portable_pty::{CommandBuilder, PtySize};
 use serde::{Deserialize, Serialize};
 use tauri::{ipc::Channel, AppHandle, Emitter, State};
 
-use crate::state::{CommandChild, SharedChild, TerminalEntry, TerminalState};
+use crate::state::{CommandChild, OutputChannel, SharedChild, TerminalEntry, TerminalState};
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -127,6 +127,10 @@ pub fn start_terminal(
         guard.process_id()
     };
     let force_low_latency = Arc::new(AtomicBool::new(false));
+    // Output channel shared with the reader thread. Stored as a swappable
+    // Option so `reattach_terminal` (tab tear-off) can redirect the live PTY
+    // stream to a different window without respawning the process.
+    let output_channel: OutputChannel = Arc::new(std::sync::Mutex::new(Some(on_output)));
 
     // Store in state
     {
@@ -142,6 +146,7 @@ pub fn start_terminal(
                 writer,
                 shell_pid,
                 force_low_latency: force_low_latency.clone(),
+                output_channel: output_channel.clone(),
             },
         );
     }
@@ -175,6 +180,12 @@ pub fn start_terminal(
         // Flush the longest valid UTF-8 prefix of `pending` over the channel.
         // Any trailing incomplete multi-byte sequence is retained for the next
         // read; nothing is ever dropped.
+        //
+        // The channel is read from the shared `output_channel` field on every
+        // flush rather than captured by value, so `reattach_terminal` (tab
+        // tear-off) can swap it atomically: the reader picks up the new
+        // channel on the next flush and the old window stops receiving.
+        let output_channel_reader = output_channel.clone();
         let flush = |pending: &mut Vec<u8>| {
             if pending.is_empty() {
                 return;
@@ -187,9 +198,20 @@ pub fn start_terminal(
                 let s = std::str::from_utf8(&pending[..valid_len])
                     .expect("valid UTF-8 prefix verified above")
                     .to_string();
-                if let Err(e) = on_output.send(s) {
-                    log::warn!("Terminal {} output channel send failed: {}", id_reader, e);
+                // Hold the channel lock only long enough to send. If no window
+                // is attached (`None`, e.g. mid-tear-off), drop the bytes but
+                // keep draining the PTY so the child never blocks on a full
+                // pipe.
+                let channel_guard = output_channel_reader.lock().unwrap_or_else(|e| {
+                    log::error!("Failed to lock output channel for terminal {}: {}", id_reader, e);
+                    panic!("Failed to lock output channel: {}", e);
+                });
+                if let Some(ch) = channel_guard.as_ref() {
+                    if let Err(e) = ch.send(s) {
+                        log::warn!("Terminal {} output channel send failed: {}", id_reader, e);
+                    }
                 }
+                drop(channel_guard);
                 pending.drain(..valid_len);
             }
         };
@@ -458,6 +480,35 @@ fn proc_euid_is_root(pid: u32) -> bool {
         }
     }
     false
+}
+
+/// Atomically redirect a terminal's PTY output stream to a new channel.
+///
+/// This is the backend half of "tear off tab into a new window": the original
+/// window keeps the PTY process alive (it does NOT call `kill_terminal`), and
+/// the new window — after replaying the serialized scrollback into its own
+/// xterm — calls this with a fresh `Channel` owned by its webview. The reader
+/// thread reads the channel from the shared `output_channel` field on every
+/// flush, so this in-place swap takes effect on the very next flush: the old
+/// window stops receiving immediately and the new window picks up the live
+/// stream. There is no separate "detach" call — replacing the channel IS the
+/// detach for the previous holder.
+#[tauri::command]
+pub fn reattach_terminal(id: String, on_output: Channel<String>, state: State<TerminalState>) {
+    let terminals = state.terminals.try_lock().unwrap_or_else(|e| {
+        log::error!("Failed to lock terminals for reattach {}: {}", id, e);
+        panic!("Failed to lock terminals: {}", e);
+    });
+    if let Some(entry) = terminals.get(&id) {
+        let mut guard = entry.output_channel.lock().unwrap_or_else(|e| {
+            log::error!("Failed to lock output channel for reattach {}: {}", id, e);
+            panic!("Failed to lock output channel: {}", e);
+        });
+        *guard = Some(on_output);
+        log::info!("Reattached terminal {} to a new window", id);
+    } else {
+        log::warn!("reattach_terminal: terminal {} not found", id);
+    }
 }
 
 #[tauri::command]

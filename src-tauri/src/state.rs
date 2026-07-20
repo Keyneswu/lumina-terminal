@@ -5,10 +5,21 @@ use std::{
 };
 
 use portable_pty::{Child, PtyPair};
+use tauri::ipc::Channel;
 
 pub type CommandChild = Box<dyn Child + Send + Sync>;
 pub type SharedChild = Arc<Mutex<CommandChild>>;
 type TerminalWriter = Box<dyn Write + Send>;
+
+/// The output sink the reader thread forwards decoded PTY bytes to. Stored as
+/// a swappable `Option` so the PTY can be reattached to a different window
+/// (tab tear-off): the new window's `reattach_terminal` call replaces this in
+/// place, and the reader thread picks up the new channel on its next flush —
+/// the old window stops receiving immediately. `None` means no window is
+/// currently attached (the reader keeps draining the PTY and discards output
+/// until a window reattaches, so the child process never blocks on a full
+/// pipe).
+pub type OutputChannel = Arc<Mutex<Option<Channel<String>>>>;
 
 /// Everything the backend tracks per terminal. Fields are read/written from
 /// the terminal commands and the watcher thread.
@@ -25,6 +36,11 @@ pub struct TerminalEntry {
     /// by the `set_output_mode` command while the user is interacting
     /// (typing / mouse / resize). Default `false`.
     pub force_low_latency: Arc<AtomicBool>,
+    /// Swappable output channel shared with the reader thread. Replaced in
+    /// place by `reattach_terminal` when a tab is torn off into a new window,
+    /// so the live PTY process can keep streaming to whichever window now
+    /// owns it.
+    pub output_channel: OutputChannel,
 }
 
 #[derive(Default, Clone)]

@@ -16,6 +16,8 @@
     "File not exist": "File path not exist.",
     "Close Current Tab": "Close Current Tab",
     "Close the current terminal tab": "Close the current terminal tab",
+    "Tear Off Tab": "Tear Off Tab",
+    "Tear off tab into a new window": "Tear off the current tab into a new window (keeps the running process and scrollback)",
     "Hide Tab Bar": "Hide Tab Bar",
     "Hide the sidebar tab bar": "Hide the sidebar tab bar",
     "Show Tab Bar": "Show Tab Bar",

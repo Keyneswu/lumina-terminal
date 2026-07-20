@@ -21,8 +21,9 @@ import {getCurrentWebview} from "@tauri-apps/api/webview";
 import {WebLinksAddon} from "@xterm/addon-web-links";
 import {openUrl} from "@tauri-apps/plugin-opener";
 import {ImageAddon} from "@xterm/addon-image";
+import {SerializeAddon} from "@xterm/addon-serialize";
 import {IMAGE_ADDON_SETTINGS} from "../constants.ts";
-import {resizeTerminal, startTerminal, writeToTerminal} from "../lib/terminalApi.ts";
+import {reattachTerminal, resizeTerminal, startTerminal, writeToTerminal} from "../lib/terminalApi.ts";
 import {CurrentCommandParser} from "../lib/currentCommand.ts";
 
 let hasAppliedInitialWindowSize = false;
@@ -50,6 +51,18 @@ interface TermProps {
     // Reports the currently-running command for this terminal, or null when
     // idle at the shell prompt. Drives the small subtitle under the tab title.
     onCommandChange?: (command: CurrentCommand | null) => void;
+    // When set, this Term reattaches to an existing live PTY (torn-off-tab
+    // window) instead of spawning a new one: it replays `scrollback` into
+    // xterm, then calls `reattachTerminal(ptyId, …)` so the running process
+    // streams to this window. The `id` prop is ignored for backend calls in
+    // this mode — `reattach.ptyId` is the canonical PTY id.
+    reattach?: { ptyId: string; scrollback: string };
+    // Register a serialize function (captures the xterm buffer for tear-off)
+    // with the parent. The parent stores it and calls it right before tearing
+    // the tab off. Returns a cleanup that deregisters the function.
+    onRegisterSerialize?: (fn: () => string) => () => void;
+    // Tear this tab off into its own window. Wired to the `tearOffTab` action.
+    onTearOff?: () => void;
 }
 
 export default function Term(props : TermProps) {
@@ -57,6 +70,13 @@ export default function Term(props : TermProps) {
     const term = useRef<Terminal | null>(null);
     const termRef = useRef<HTMLDivElement>(null);
     const isInitialized = useRef<boolean>(false);
+    // SerializeAddon instance (loaded once at init). Used by the parent to
+    // capture the buffer when tearing this tab off into a new window.
+    const serializeAddonRef = useRef<SerializeAddon | null>(null);
+    // FitAddon instance (loaded once at init). Held in a ref so the separate
+    // resize-observer effect (which re-runs normally under StrictMode, unlike
+    // the one-shot init effect) can call fit() without re-deriving it.
+    const fitAddonRef = useRef<FloatingFitAddon | null>(null);
     const padding = useMemo(() => parseProfilePadding(profile, paddingOffset), [profile, paddingOffset]);
     const {config} = useGlobalConfig();
     const t = useI18n();
@@ -125,6 +145,9 @@ export default function Term(props : TermProps) {
                     const idx = args.index === "last" ? -1 : parseInt(args.index, 10);
                     if (!isNaN(idx)) props.onToTab?.(idx);
                 }
+                break;
+            case "tearOffTab":
+                props.onTearOff?.();
                 break;
         }
     };
@@ -218,9 +241,17 @@ export default function Term(props : TermProps) {
             ...xtermOptions,
         });
 
-        let observer: ResizeObserver | undefined;
+        // The PTY id used for backend calls. In reattach mode the canonical id
+        // is the torn-off tab's original PTY (still alive on the backend); in
+        // normal mode it is this tab's own freshly-minted id. Declared up here
+        // so onData/onResize/loadBindings all route to the right PTY.
+        const ptyId = props.reattach?.ptyId ?? id;
 
-        if (!hasAppliedInitialWindowSize) {
+        // Only the main window applies the profile's default rows/cols as an
+        // initial OS window size. Torn-off windows keep whatever size the
+        // source window handed them (createTearoffWindow), so a tab torn out
+        // of a 120x40 window doesn't snap back to 80x24 on mount.
+        if (!hasAppliedInitialWindowSize && getCurrentWindow().label === "main") {
             hasAppliedInitialWindowSize = true;
             const windowSize = getWindowSizeFromRowsAndColumns();
             getCurrentWindow().setSize(new LogicalSize(windowSize)).then();
@@ -244,6 +275,7 @@ export default function Term(props : TermProps) {
 
         const fitAddon = new FloatingFitAddon();
         term.current.loadAddon(fitAddon);
+        fitAddonRef.current = fitAddon;
 
         if (profile.webgl) {
             try {
@@ -255,6 +287,13 @@ export default function Term(props : TermProps) {
             }
         }
 
+        // SerializeAddon captures the xterm buffer (scrollback + viewport) so a
+        // torn-off tab can replay its history in the new window. Loaded for
+        // every terminal since any tab can be torn off at any time.
+        const serializeAddon = new SerializeAddon();
+        term.current.loadAddon(serializeAddon);
+        serializeAddonRef.current = serializeAddon;
+
         if (termRef.current) {
             term.current.open(termRef.current);
             fitAddon.fit();
@@ -265,16 +304,16 @@ export default function Term(props : TermProps) {
         loadBindings(term.current, bindings, (action, args) => {
             handleActionsRef.current(action, args);
         }, config.copyWithCtrl ?? false, (data) => {
-            writeToTerminal(id, data).then();
+            writeToTerminal(ptyId, data).then();
         });
         info(`Bindings loaded for terminal with id ${id}`);
 
         term.current.onData((data) => {
-            writeToTerminal(id, data).then();
+            writeToTerminal(ptyId, data).then();
             markInteractive();
         });
         term.current.onResize(({cols, rows}) => {
-            resizeTerminal(id, cols, rows).then();
+            resizeTerminal(ptyId, cols, rows).then();
             markInteractive();
         });
 
@@ -354,41 +393,109 @@ export default function Term(props : TermProps) {
             }
         };
 
-        startTerminal(id, profile, outputChannel).then(() => {
-            info(`Terminal started: id=${id} profile=${profile.name}`);
-            resizeTerminal(id, term.current!.cols, term.current!.rows).then();
-        }).catch((e) => {
-            error(`Failed to start terminal id=${id} (profile=${profile.name}): ${e}`).catch(() => {});
-        });
-
-        // Backend fallback: reports the foreground process-group command
-        // (from /proc on Linux, ps on macOS) as { command, privileged }. Only
-        // honored when the shell is NOT emitting OSC sequences — once OSC takes
-        // over, it is authoritative (OSC cannot currently report privilege).
-        listen<CurrentCommand>(`term-command-${id}`, (event) => {
-            if (oscActiveRef.current) return;
-            const info = event.payload;
-            const cmd = (info?.command ?? "").trim();
-            reportCommand(cmd === "" ? null : { command: cmd, privileged: !!info?.privileged });
-        }).catch((e) => {
-            error(`Failed to listen for term-command-${id}: ${e}`).catch(() => {});
-        });
-
-        listen(`term-exit-${id}`, () => {
-            info(`Terminal exited: id=${id}`);
-            onCloseRef.current?.();
-        }).catch((e) => {
-            error(`Failed to listen for term-exit-${id}: ${e}`).catch(() => {});
-        });
-
-        const handleResize = () => {
-            fitAddon.fit();
-        };
-        observer = new ResizeObserver(handleResize);
-        if (termRef.current) {
-            observer.observe(termRef.current);
+        if (props.reattach) {
+            // Tear-off window: replay the captured scrollback first so the new
+            // xterm shows the history, then swap the backend's output channel
+            // to this window's Channel. The PTY process is NOT respawned.
+            if (props.reattach.scrollback) {
+                term.current.write(props.reattach.scrollback);
+            }
+            reattachTerminal(ptyId, outputChannel).then(() => {
+                info(`Terminal reattached: ptyId=${ptyId} in window for tab ${id}`);
+                resizeTerminal(ptyId, term.current!.cols, term.current!.rows).then();
+            }).catch((e) => {
+                error(`Failed to reattach terminal ptyId=${ptyId}: ${e}`).catch(() => {});
+            });
+        } else {
+            startTerminal(id, profile, outputChannel).then(() => {
+                info(`Terminal started: id=${id} profile=${profile.name}`);
+                resizeTerminal(id, term.current!.cols, term.current!.rows).then();
+            }).catch((e) => {
+                error(`Failed to start terminal id=${id} (profile=${profile.name}): ${e}`).catch(() => {});
+            });
         }
     }, [id]);
+
+    // Register this terminal's serialize function with the parent so the
+    // "tear off tab" command can capture the xterm buffer right before opening
+    // the new window. Re-runs only if the parent hands us a new registrar
+    // (it won't in practice — App passes a stable callback); the cleanup
+    // deregisters so a closed/removed tab's stale fn is never called.
+    useEffect(() => {
+        if (!props.onRegisterSerialize) return;
+        const serialize = () => {
+            try {
+                return serializeAddonRef.current?.serialize() ?? "";
+            } catch (e) {
+                error(`Failed to serialize terminal ${id} for tear-off: ${e}`).catch(() => {});
+                return "";
+            }
+        };
+        return props.onRegisterSerialize(serialize);
+    }, [props.onRegisterSerialize, id]);
+
+    // ResizeObserver: refit the terminal whenever its container changes size.
+    // Lives in its own effect (NOT inside the one-shot init effect) so that:
+    //   1. React StrictMode's mount→unmount→remount cycle doesn't leave us
+    //      with a disconnected observer — this effect has no isInitialized
+    //      guard, so it re-runs and re-attaches cleanly on the second mount.
+    //   2. Real unmount (tab close / tear-off) disconnects the observer so we
+    //      never call fit() on a disposed terminal.
+    // The init effect must have run first (it creates the Terminal + addons);
+    // we check termRef + fitAddonRef and bail otherwise. Re-running before
+    // init completes is harmless — there's just nothing to observe yet.
+    useEffect(() => {
+        const container = termRef.current;
+        const fit = fitAddonRef.current;
+        if (!container || !fit) return;
+        const observer = new ResizeObserver(() => {
+            fit.fit();
+        });
+        observer.observe(container);
+        // Fit once on attach: this catches the case where the OS window was
+        // resized (e.g. the initial setSize call) between terminal init and
+        // this observer attaching.
+        fit.fit();
+        return () => observer.disconnect();
+    }, [id]);
+
+    // term-command / term-exit event listeners. Lives in its own effect (with
+    // a real cleanup) for the same StrictMode + real-unmount reasons as the
+    // ResizeObserver above. Critical for tear-off: when a tab is torn off, the
+    // source Term unmounts WITHOUT the PTY exiting, so a leaked term-exit
+    // listener would later fire onClose on an unmounted component. The cleanup
+    // here unregisters both listeners so only the currently-mounted Term (in
+    // whichever window owns the PTY now) reacts to events.
+    useEffect(() => {
+        const ptyId = props.reattach?.ptyId ?? id;
+        let unlistenCommand: (() => void) | undefined;
+        let unlistenExit: (() => void) | undefined;
+
+        listen<CurrentCommand>(`term-command-${ptyId}`, (event) => {
+            if (oscActiveRef.current) return;
+            const cmdInfo = event.payload;
+            const cmd = (cmdInfo?.command ?? "").trim();
+            reportCommand(cmd === "" ? null : { command: cmd, privileged: !!cmdInfo?.privileged });
+        }).then((fn) => {
+            unlistenCommand = fn;
+        }).catch((e) => {
+            error(`Failed to listen for term-command-${ptyId}: ${e}`).catch(() => {});
+        });
+
+        listen(`term-exit-${ptyId}`, () => {
+            info(`Terminal exited: ptyId=${ptyId}`);
+            onCloseRef.current?.();
+        }).then((fn) => {
+            unlistenExit = fn;
+        }).catch((e) => {
+            error(`Failed to listen for term-exit-${ptyId}: ${e}`).catch(() => {});
+        });
+
+        return () => {
+            unlistenCommand?.();
+            unlistenExit?.();
+        };
+    }, [id, props.reattach, reportCommand]);
 
     // Hot-reload keybindings + copyWithCtrl when the config changes (e.g. after the user edits
     // a shortcut in Settings). attachCustomKeyEventHandler replaces the previous handler, so

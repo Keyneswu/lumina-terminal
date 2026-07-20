@@ -52,6 +52,7 @@ src/
 │   ├── bindings.ts          # parseBindings, matchBinding, loadBindings, useKeyboardBindings,
 │   │                        #   exported actionSignature / keySignature
 │   ├── edgeBackground.ts    # sampleEdgeBackground (xterm buffer edge inspection)
+│   ├── tearoff.ts           # Tab tear-off: label mint/store/consume + WebviewWindow spawn
 │   └── FloatingFitAddon.ts  # xterm fit addon subclass (centered sub-cell fit)
 │
 ├── hooks/                   # React hooks (start with `use`)
@@ -63,7 +64,8 @@ src/
 │   ├── useShells.ts         # useShells() — cached find_shells backend call
 │   ├── useSshConfig.ts      # useSshConfig() — cached parse_ssh_config backend call
 │   ├── useOutputMode.ts     # useOutputMode(id) → {markInteractive}: debounced LowLatency toggle
-│   └── useEffectiveTheme.ts # useEffectiveTheme(profile, currentId) → theme/bg/fg + HeroUI sync
+│   ├── useEffectiveTheme.ts # useEffectiveTheme(profile, currentId) → theme/bg/fg + HeroUI sync
+│   └── useTearoffSession.ts # useTearoffSession() → {label, payload} | "no" | null (tab tear-off boot)
 │
 ├── components/
 │   ├── Term.tsx             # Single xterm instance: addons, PTY lifecycle, edge bg polling
@@ -95,10 +97,12 @@ src/
 src-tauri/src/
 ├── main.rs        # entry, calls lib::run()
 ├── lib.rs         # Tauri builder: plugins, state, invoke_handler registration
-├── state.rs       # TerminalState (HashMap of PTY pairs + writers + force_low_latency flags)
-├── terminal.rs    # start/kill/write/resize_terminal, set_output_mode commands;
-│                  #   reader thread streams output over a Channel<String> with
-│                  #   streaming-UTF-8 decoding + two-mode burst coalescing
+├── state.rs       # TerminalState (HashMap of PTY pairs + writers + force_low_latency flags
+│                  #   + swappable output_channel for tab tear-off reattach)
+├── terminal.rs    # start/reattach/kill/write/resize_terminal, set_output_mode commands;
+│                  #   reader thread streams output over the entry's swappable Channel<String>
+│                  #   with streaming-UTF-8 decoding + two-mode burst coalescing;
+│                  #   reattach_terminal atomically swaps the channel for tab tear-off
 └── utils.rs       # find_shells, path_exist, read_file, parse_ssh_config, etc.
 ```
 

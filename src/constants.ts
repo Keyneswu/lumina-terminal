@@ -107,6 +107,11 @@ export const DEFAULT_BINDINGS: Binding[] = [
         action: "toTab",
         args: { index: "last" },
     },
+    {
+        key: "L",
+        with: ["CtrlOrCommand", "shift"],
+        action: "tearOffTab",
+    },
 ];
 
 export const DEFAULT_CONFIG: GlobalConfig = {

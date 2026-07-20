@@ -16,6 +16,8 @@
     "File not exist": "文件路径不存在",
     "Close Current Tab": "关闭当前标签",
     "Close the current terminal tab": "关闭当前终端标签",
+    "Tear Off Tab": "分离标签页",
+    "Tear off tab into a new window": "将当前标签页分离到新窗口（保留正在运行的进程和历史记录）",
     "Hide Tab Bar": "隐藏标签栏",
     "Hide the sidebar tab bar": "隐藏侧边标签栏",
     "Show Tab Bar": "显示标签栏",

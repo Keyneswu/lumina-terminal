@@ -20,6 +20,7 @@ const DEFAULT_PROFILE_KEY = "__default_profile__";
 const ALL_ACTIONS: Actions[] = [
     "newTab",
     "closeTab",
+    "tearOffTab",
     "openSettings",
     "openCommandPalette",
     "toggleSidebar",
@@ -41,6 +42,8 @@ function actionLabel(action: Actions, args: Record<string, string> | undefined, 
         }
         case "closeTab":
             return t["Close Tab"];
+        case "tearOffTab":
+            return t["Tear Off Tab"];
         case "openSettings":
             return t["Settings"];
         case "openCommandPalette":

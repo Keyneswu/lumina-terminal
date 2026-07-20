@@ -50,6 +50,18 @@ export function startTerminal(id: string, profile: TerminalProfile, onOutput: Ch
 }
 
 /**
+ * Reattach an existing live PTY (keyed by `id`) to this window's output
+ * Channel. Used by the torn-off-tab window: after replaying the serialized
+ * scrollback into its own xterm, it calls this (instead of `startTerminal`)
+ * so the running process keeps going and new output starts streaming to this
+ * window. The backend atomically swaps the PTY's stored Channel, so the
+ * previous window stops receiving on the next flush.
+ */
+export function reattachTerminal(id: string, onOutput: Channel<string>) {
+    return invokeWithLog<void>("reattach_terminal", id, {onOutput});
+}
+
+/**
  * Toggle the per-terminal LowLatency output override. When true the backend
  * flushes every read immediately instead of coalescing into large bursts, so
  * user interaction (typing / mouse / resize) sees the lowest output delay.

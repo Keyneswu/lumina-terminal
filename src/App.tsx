@@ -19,22 +19,33 @@ import {X, PanelLeftClose, PanelLeftOpen, Terminal as TerminalIcon, Monitor, Mon
 import SettingsPage from "./pages/SettingsPage.tsx";
 import AboutPage from "./pages/AboutPage.tsx";
 import {SETTINGS_TAB_ID, ABOUT_TAB_ID} from "./constants.ts";
-import { info, debug, error } from "@tauri-apps/plugin-log";
+import { info, debug, error, warn } from "@tauri-apps/plugin-log";
 import {usePaddingOffset} from "./hooks/paddingOffset.ts";
 import {useMaximized} from "./hooks/maximized.ts";
 import {useStartupUpdateCheck} from "./hooks/useStartupUpdateCheck.ts";
 import {useUpdater} from "./hooks/useUpdater.ts";
 import UpdateModal from "./components/UpdateModal.tsx";
 import {listen} from "@tauri-apps/api/event";
+import {useTearoffSession} from "./hooks/useTearoffSession.ts";
+import {createTearoffWindow, newTearoffLabel, stashTearoff} from "./lib/tearoff.ts";
+import {ExternalLink} from "lucide-react";
 
 const OPEN_ABOUT_EVENT = "lumina-open-about";
 
 function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOffset: number}) {
     const {config, updateConfig} = useGlobalConfig();
     const t = useI18n();
+    // If this window was spawned as a torn-off tab, `tearoff` carries the
+    // stashed payload (profile + PTY id + scrollback) once consumed. `null`
+    // = still resolving; `"no"` = this is the main window (or a tear-off
+    // window with no payload). Drives initial tab seeding below.
+    const tearoff = useTearoffSession();
     const [ids, setIds] = useState<string[]>([]);
     const [terminals, setTerminals] = useState<Record<string, TerminalProfile>>({});
     const [currentId, setCurrentId] = useState<string | null>(null);
+    // Per-terminal serialize functions (captured by Term on mount). Used to
+    // grab the xterm buffer right before tearing a tab off into a new window.
+    const serializeFns = useRef<Map<string, () => string>>(new Map());
     // Per-terminal currently-running command (subtitle under the tab title).
     // null/undefined = idle at the shell prompt; an object = a command is running.
     const [commands, setCommands] = useState<Record<string, CurrentCommand | null>>({});
@@ -162,6 +173,75 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
         setCurrentId(id);
     };
 
+    /**
+     * Tear a terminal tab off into its own OS window. Captures the xterm
+     * scrollback, stashes the payload (profile + live PTY id + scrollback)
+     * for the new window to consume, spawns a hidden WebviewWindow whose
+     * label is the stash key, and finally removes the tab from THIS window
+     * WITHOUT killing the PTY — the new window reattaches to it instead.
+     * Any failure is logged; the tab stays put if stashing fails.
+     */
+    const tearOffTab = useCallback(async (id: string) => {
+        const profile = terminals[id];
+        if (!profile) {
+            warn(`tearOffTab: no profile for id=${id} (not a terminal tab)`);
+            return;
+        }
+        const scrollback = serializeFns.current.get(id)?.() ?? "";
+        const label = newTearoffLabel();
+        info(`Tearing off tab id=${id} into window ${label}`);
+
+        try {
+            await stashTearoff(label, {profile, ptyId: id, scrollback});
+        } catch (e) {
+            error(`tearOffTab: stash failed for ${label}, aborting: ${e}`).catch(() => {});
+            return;
+        }
+
+        // Seed the new window's size from this window's content area so the
+        // torn-off tab lands at a familiar size. window.innerWidth/Height is
+        // the webview (content) size, excluding any OS chrome.
+        const sourceInnerSize = {
+            width: window.innerWidth,
+            height: window.innerHeight,
+        };
+        try {
+            await createTearoffWindow(label, sourceInnerSize);
+        } catch (e) {
+            error(`tearOffTab: window creation failed for ${label}: ${e}`).catch(() => {});
+            // Leave the tab in place — the new window never came up.
+            return;
+        }
+
+        // Detach the tab from this window's React state. The PTY is NOT
+        // killed — the new window reattaches to the live process. Index-aware
+        // active-tab fallback mirrors closeTerminal so the neighbor becomes
+        // active.
+        const currentIds = idsRef.current;
+        const currentActiveId = currentIdRef.current;
+        const newIds = currentIds.filter((i) => i !== id);
+        let newCurrentId = currentActiveId;
+        if (currentActiveId === id) {
+            if (newIds.length > 0) {
+                const idx = currentIds.indexOf(id);
+                newCurrentId = newIds[Math.min(idx, newIds.length - 1)];
+            } else if (closeOnLastTabRef.current !== false) {
+                info("No tabs left after tear-off, closing source window");
+                getCurrentWindow().close().catch((e) =>
+                    error(`Failed to close source window after tear-off: ${e}`)
+                );
+            }
+        }
+        setTerminals((prevState) => {
+            const newState = {...prevState};
+            delete newState[id];
+            return newState;
+        });
+        setIds(newIds);
+        setCurrentId(newCurrentId);
+        info(`Tab id=${id} detached from source window (PTY kept alive)`);
+    }, [terminals]);
+
     const toTab = useCallback((index: number) => {
         if (ids.length === 0) return;
         const idx = index < 0 ? ids.length - 1 : Math.min(index, ids.length - 1);
@@ -209,18 +289,41 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
         };
     }, [openAbout]);
 
+    // Initial tab seeding. Three cases:
+    //   - tear-off window (tearoff carries payload): seed ONE reattach-mode
+    //     terminal from the stashed profile + PTY id. Do NOT call startTerminal
+    //     — the PTY is alive on the backend; Term's reattach path handles it.
+    //   - main window with configured profiles: open the default profile.
+    //   - main window with no profiles yet: WelcomePage handles onboarding.
+    // `tearoff === null` means the session probe is still pending — wait.
     useEffect(() => {
         if (isInitialized.current) return;
-        if (config.profiles.length && ids.length === 0) {
-            isInitialized.current = true;
-            getCurrentWindow().setResizable(true).catch((e) =>
-                error(`Failed to set window resizable: ${e}`)
-            );
-            newTerminal(defaultProfile).catch((e) =>
-                error(`Failed to create initial terminal: ${e}`)
-            );
+        if (tearoff === null) return; // tear-off probe in flight
+        if (tearoff === "no") {
+            if (config.profiles.length && ids.length === 0) {
+                isInitialized.current = true;
+                getCurrentWindow().setResizable(true).catch((e) =>
+                    error(`Failed to set window resizable: ${e}`)
+                );
+                newTerminal(defaultProfile).catch((e) =>
+                    error(`Failed to create initial terminal: ${e}`)
+                );
+            }
+            return;
         }
-    }, [config]);
+        // Tear-off window: seed exactly one tab whose id is the live PTY id.
+        // The profile in the payload is already resolved (post parseProfile),
+        // so we insert it directly without re-merging globalProfile.
+        isInitialized.current = true;
+        const {ptyId, profile: seedProfile} = tearoff.payload;
+        getCurrentWindow().setResizable(true).catch((e) =>
+            error(`Failed to set tear-off window resizable: ${e}`)
+        );
+        setTerminals({[ptyId]: seedProfile});
+        setIds([ptyId]);
+        setCurrentId(ptyId);
+        info(`Tear-off window seeded with ptyId=${ptyId}`);
+    }, [config, tearoff, defaultProfile]);
 
     // Keyboard bindings for non-terminal tabs (Settings, About, etc.)
     const isNonTerminalTab = currentId === SETTINGS_TAB_ID || currentId === ABOUT_TAB_ID;
@@ -248,6 +351,11 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
                     const idx = args.index === "last" ? -1 : parseInt(args.index, 10);
                     if (!isNaN(idx)) toTab(idx);
                 }
+                break;
+            case "tearOffTab":
+                // Only meaningful for terminal tabs; the command palette only
+                // shows this action when currentId is a real terminal, and
+                // Term handles the keybinding via its own onTearOff. No-op here.
                 break;
         }
     }, [currentId, findProfile, openSettings, toTab, tabBarVisible, updateConfig]);
@@ -306,6 +414,23 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
                 keywords: ["close", "关闭", "tab", "kill"],
                 onSelect: () => closeTerminal(currentId),
             });
+
+            // Tear off current tab into its own window (terminal tabs only —
+            // currentId is a real terminal here because Settings/About never
+            // match the `id in terminals` filter below).
+            if (currentId in terminals) {
+                const tearoffBinding = findBinding(parsedBindings, "tearOffTab");
+                actions.push({
+                    id: "tear-off-tab",
+                    label: t["Tear Off Tab"],
+                    description: t["Tear off tab into a new window"],
+                    icon: <ExternalLink size={18} />,
+                    shortcut: tearoffBinding ? bindingToShortcut(tearoffBinding) : undefined,
+                    category: t["Terminal"],
+                    keywords: ["tear off", "window", "窗口", "拖出", "分离", "detach", "pop out"],
+                    onSelect: () => tearOffTab(currentId),
+                });
+            }
         }
 
         // Toggle tab bar
@@ -372,7 +497,7 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
         });
 
         return actions;
-    }, [config.profiles, currentId, tabBarVisible, config.closeWindowOnLastTab, parsedBindings, t, openSettings, openAbout]);
+    }, [config.profiles, currentId, terminals, tabBarVisible, config.closeWindowOnLastTab, parsedBindings, t, openSettings, openAbout, tearOffTab]);
 
     // Close command palette when Escape is pressed while it's open
     const handleCommandPaletteOpenChange = useCallback((open: boolean) => {
@@ -465,7 +590,14 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
                                 />
                             </div>
                         )}
-                        {ids.filter((id) => id in terminals).map((id) => (
+                        {ids.filter((id) => id in terminals).map((id) => {
+                            // In a tear-off window, the single seeded tab reattaches
+                            // to the live PTY (ptyId === tab id) instead of spawning.
+                            const reattach =
+                                tearoff && tearoff !== "no" && tearoff.payload.ptyId === id
+                                    ? {ptyId: tearoff.payload.ptyId, scrollback: tearoff.payload.scrollback}
+                                    : undefined;
+                            return (
                             <div
                                 key={id}
                                 className="absolute inset-0"
@@ -481,6 +613,7 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
                                     paddingOffset={paddingOffset}
                                     isActive={id === currentId}
                                     bindings={parsedBindings}
+                                    reattach={reattach}
                                     onClose={() => closeTerminal(id)}
                                     onNewTab={(profileName?: string) => {
                                         newTerminal(findProfile(profileName));
@@ -489,6 +622,17 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
                                     onOpenSettings={openSettings}
                                     onToTab={toTab}
                                     onToggleSidebar={() => updateConfig({ showTabBar: !tabBarVisible })}
+                                    onTearOff={() => tearOffTab(id)}
+                                    onRegisterSerialize={(fn) => {
+                                        serializeFns.current.set(id, fn);
+                                        return () => {
+                                            // Only delete if it's still ours (avoids wiping a
+                                            // re-registered fn after a rapid remount).
+                                            if (serializeFns.current.get(id) === fn) {
+                                                serializeFns.current.delete(id);
+                                            }
+                                        };
+                                    }}
                                     onEdgeBackgroundChange={(color) => {
                                         // Only the active tab's report is honored;
                                         // inactive tabs report null and are ignored.
@@ -501,7 +645,8 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
                                     }}
                                 />
                             </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 </div>
             </div>

@@ -151,6 +151,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             start_terminal,
+            reattach_terminal,
             kill_terminal,
             write_to_terminal,
             resize_terminal,
