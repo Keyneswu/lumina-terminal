@@ -1,26 +1,26 @@
 name: Publish to AUR
 
-# Publishes the `lumina-terminal-bin` package to the Arch User Repository
-# whenever a GitHub Release goes live. The Release workflow already uploads
-# .deb artifacts for both x86_64 (amd64) and aarch64 (arm64) — we download
-# those, hash them, render the PKGBUILD template in .aur/, and push the
-# rendered PKGBUILD + .SRCINFO to AUR over SSH.
+# Publishes the `lumina-terminal-bin` package to the Arch User Repository.
+#
+# Triggered by the Release workflow's `trigger-aur` job (via `gh workflow
+# run`) AFTER every arch's .deb has been uploaded to the release — so by the
+# time this workflow runs, the assets we need are guaranteed to be there.
+# Also supports a manual `workflow_dispatch` run with an explicit tag for
+# re-publishing an older release without re-running Release.
+#
+# Why not `on: release: published`? Because the Release workflow uploads the
+# .debs concurrently with the release going live, so at publish-time the
+# assets aren't there yet. Letting Release explicitly call us after its
+# matrix finishes avoids any polling/waiting.
 #
 # Required repo secrets:
 #   AUR_SSH_PRIVATE_KEY — OpenSSH private key whose public half is registered
 #                          on the AUR account that owns `lumina-terminal-bin`.
-#   AUR_SSH_PUBLIC_KEY  — matching public key (used for known_hosts setup only;
-#                          not strictly required, but keeps config explicit).
-#
-# First-run note: if `lumina-terminal-bin` does not yet exist on AUR, the very
-# first push creates it — no manual `git clone` setup needed.
 
 on:
-  release:
-    types: [published]
   workflow_dispatch:
-    # Manual trigger takes an explicit tag, so you can re-publish an older
-    # release without toggling its published state.
+    # `tag` is the only input. Both the Release trigger-aur job and manual
+    # invocations pass the release tag (e.g. "v0.1.5") here.
     inputs:
       tag:
         description: "Release tag to publish (e.g. v0.1.5)"
@@ -35,7 +35,6 @@ concurrency:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
 
     steps:
       - name: Checkout
@@ -47,8 +46,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           INPUT_TAG: ${{ inputs.tag }}
         run: |
-          # release event → github.ref_name; workflow_dispatch → inputs.tag.
-          tag="${INPUT_TAG:-${GITHUB_REF_NAME}}"
+          # inputs.tag is required: true, so it's always present.
+          tag="${INPUT_TAG}"
           [[ -n "${tag}" ]] || { echo "No release tag resolved" >&2; exit 1; }
           # AUR pkgver is the version without the leading "v".
           case "${tag}" in
@@ -60,9 +59,12 @@ jobs:
             echo "pkgver=${ver}"
           } >> "$GITHUB_OUTPUT"
 
-      # Download both Linux .debs the Release workflow uploaded. We hash them
-      # so the published PKGBUILD can pin exact sha256s per arch — Arch users
-      # get reproducible downloads and the AUR helpers warn on tampering.
+      # Download both Linux .debs the Release workflow uploaded. By the time
+      # this workflow runs (called by Release's `trigger-aur` job AFTER the
+      # whole build matrix finished), both .debs are guaranteed to be on the
+      # release — no polling, no retry loop, no timeout needed. If a download
+      # fails here it's a genuine problem (asset missing / network), and we
+      # want to surface it loudly rather than paper over it.
       - name: Fetch release .deb assets and compute sha256
         id: sums
         env:

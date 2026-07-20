@@ -112,3 +112,29 @@ jobs:
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
+
+  # After the entire build matrix uploads its .deb artifacts, fire the AUR
+  # publish workflow. We can't rely on `release: published` for that one
+  # because the assets aren't uploaded yet when the release goes live, and
+  # polling is ugly. This job is the clean hand-off: by the time it runs,
+  # every arch's .deb is already on the release.
+  #
+  # The default GITHUB_TOKEN cannot trigger another workflow (GitHub blocks
+  # this to prevent recursive runs), so we use a PAT/App token stored in
+  # WORKFLOW_TRIGGER_TOKEN. Give it `actions: write` (+ `repo` if private).
+  trigger-aur:
+    needs: publish-tauri
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Trigger Publish to AUR workflow
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_TRIGGER_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Dispatch aur.yml with the tag that was just released. The AUR
+          # workflow's workflow_dispatch input is named `tag`.
+          gh workflow run aur.yml \
+            --ref "${{ github.ref_name }}" \
+            -f tag="${{ github.ref_name }}"
+          echo "::notice::Dispatched aur.yml for tag ${{ github.ref_name }}"
