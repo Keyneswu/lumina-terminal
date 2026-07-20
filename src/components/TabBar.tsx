@@ -1,3 +1,4 @@
+import {useEffect, useRef, type RefObject} from "react";
 import { Plus, X, Settings, Info, Sparkles } from "lucide-react";
 import Icon from "../assets/icon.svg";
 import { isMacOS } from "../lib/platform.ts";
@@ -6,6 +7,14 @@ import { useSurfaceColors } from "../hooks/surfaceColors.ts";
 import {useI18n} from "../hooks/i18n.tsx";
 import ShellIcon from "./ShellIcon.tsx";
 import {ShellType} from "../lib/shellIcon.ts";
+import {info} from "@tauri-apps/plugin-log";
+import {emit, emitTo, listen} from "@tauri-apps/api/event";
+import {getCurrentWindow} from "@tauri-apps/api/window";
+import {
+    DRAG_END_EVENT,
+    DRAG_HOVER_EVENT,
+    DRAG_START_EVENT,
+} from "../lib/tearoff.ts";
 
 export interface TabInfo {
     id: string;
@@ -26,6 +35,15 @@ interface TabBarProps {
     onSelect: (id: string) => void;
     onClose: (id: string) => void;
     onNew: () => void;
+    /** Called when the user drags a terminal tab out of the window and
+     * releases it. `opts.mergeTarget` (another window's label) → merge into
+     * that window; absent → spawn a new window. Ignored for Settings/About. */
+    onTearOff?: (id: string, opts?: {mergeTarget?: string}) => void;
+    /** App-owned ref tracking the last hover heartbeat from another window
+     * during a drag from this window ({label, time}). dragend reads it, with a
+     * freshness check, to pick merge vs. new-window. Passed down so TabBar
+     * doesn't re-derive it. */
+    mergeTargetRef?: RefObject<{label: string; time: number} | null>;
     backgroundColor: string;
     foregroundColor: string;
     /** Theme-aware red used for danger indicators (privileged-command dot). */
@@ -38,8 +56,96 @@ interface TabBarProps {
 }
 
 export default function TabBar(props: TabBarProps) {
-    const { tabs, activeId, onSelect, onClose, onNew, backgroundColor, foregroundColor, dangerColor, collapsed, defaultProfileName, updateVersion, onUpdateClick } = props;
+    const { tabs, activeId, onSelect, onClose, onNew, onTearOff, mergeTargetRef, backgroundColor, foregroundColor, dangerColor, collapsed, defaultProfileName, updateVersion, onUpdateClick } = props;
     const t = useI18n();
+
+    // Tracks whether the active tab drag's cursor is currently OUTSIDE the
+    // webview. HTML5 dragend's clientX/Y/screenX/Y are unreliable under Tauri
+    // (they freeze at the press position once the OS takes over the drag
+    // outside the window), so we can't decide "outside?" from the drop point.
+    // Instead we track the in/out state live via dragenter/dragleave on the
+    // document, and read this flag at dragend. See onDragStart/onDragEnd below.
+    const dragOutsideRef = useRef(false);
+    // Cleanup function for the document-level drag listeners attached during a
+    // drag. Kept in a ref (not a local) so onDragEnd can always reach the
+    // latest one even if onDragStart/onDragEnd close over different renders.
+    const dragCleanupRef = useRef<(() => void) | null>(null);
+
+    // Sentinel mode: while ANOTHER Lumina window is dragging a tab, THIS window
+    // watches its own document for dragenter/leave and reports hover state to
+    // the source window (DRAG_HOVER_EVENT). The source then knows — at dragend,
+    // without reliable cursor coordinates — whether to merge into us. We only
+    // arm this when the drag started elsewhere (sourceLabel !== our label); the
+    // source window itself never enters sentinel mode (it tracks its own
+    // dragOutsideRef instead). Stands down on DRAG_END_EVENT.
+    useEffect(() => {
+        let unlistenStart: (() => void) | undefined;
+        let unlistenEnd: (() => void) | undefined;
+        let cancelled = false;
+        // Active sentinel cleanup (document listeners), swapped as drags
+        // start/end. Held in a closure-local so the handlers below can disarm.
+        let disarm: (() => void) | undefined;
+        const myLabel = getCurrentWindow().label;
+
+        const arm = (sourceLabel: string) => {
+            // Already armed (nested drag)? Disarm first.
+            disarm?.();
+            // We report hover via `dragover`, NOT dragenter/dragleave. Reason:
+            // under Tauri's webview, dragenter is followed almost immediately
+            // by a spurious dragleave (relatedTarget === null) while the cursor
+            // is still inside — so a leave-based "I left" signal is unusable.
+            // dragover, by contrast, fires continuously (~per animation frame)
+            // while the cursor is actually over this document, and stops firing
+            // the instant it leaves. So a steady stream of dragover = "cursor
+            // is here right now", which is exactly what the source needs at
+            // dragend. Throttled to once per 120ms to avoid flooding IPC.
+            let lastReport = 0;
+            const onDragOver = () => {
+                const now = Date.now();
+                if (now - lastReport >= 120) {
+                    lastReport = now;
+                    emitTo(sourceLabel, DRAG_HOVER_EVENT, {label: myLabel}).catch((e) =>
+                        info(`Failed to emit hover to ${sourceLabel}: ${e}`).catch(() => {})
+                    );
+                }
+            };
+            document.addEventListener("dragover", onDragOver);
+            disarm = () => {
+                document.removeEventListener("dragover", onDragOver);
+            };
+            // info (not debug) for now so users can confirm sentinel mode works
+            // during testing; demote to debug once merge is verified in the field.
+            info(`Sentinel armed for source ${sourceLabel}`);
+        };
+
+        listen<{sourceLabel: string}>(DRAG_START_EVENT, (event) => {
+            const sourceLabel = event.payload?.sourceLabel;
+            if (!sourceLabel || sourceLabel === myLabel) return; // source is us
+            arm(sourceLabel);
+        }).then((un) => {
+            if (cancelled) un();
+            else unlistenStart = un;
+        }).catch((e) => {
+            info(`Failed to listen for ${DRAG_START_EVENT}: ${e}`).catch(() => {});
+        });
+
+        listen(DRAG_END_EVENT, () => {
+            disarm?.();
+            disarm = undefined;
+        }).then((un) => {
+            if (cancelled) un();
+            else unlistenEnd = un;
+        }).catch((e) => {
+            info(`Failed to listen for ${DRAG_END_EVENT}: ${e}`).catch(() => {});
+        });
+
+        return () => {
+            cancelled = true;
+            disarm?.();
+            unlistenStart?.();
+            unlistenEnd?.();
+        };
+    }, []);
 
     const colors = useSurfaceColors(backgroundColor);
 
@@ -83,6 +189,10 @@ export default function TabBar(props: TabBarProps) {
             }}>
                 {tabs.map((tab) => {
                     const isActive = tab.id === activeId;
+                    // Only real terminal tabs are draggable for tear-off;
+                    // Settings/About have no standalone-window semantics.
+                    const isTerminalTab =
+                        tab.id !== SETTINGS_TAB_ID && tab.id !== ABOUT_TAB_ID;
                     return (
                         <div
                             key={tab.id}
@@ -102,6 +212,94 @@ export default function TabBar(props: TabBarProps) {
                                 }
                             }}
                             title={tab.name}
+                            draggable={isTerminalTab}
+                            onDragStart={(e) => {
+                                if (!isTerminalTab) return;
+                                // effectAllowed + setData are both required for
+                                // the browser to actually start a drag; without
+                                // them some webviews swallow dragstart.
+                                e.dataTransfer.effectAllowed = "move";
+                                e.dataTransfer.setData("text/plain", tab.id);
+                                dragOutsideRef.current = false;
+                                // Clear any stale merge target from a previous
+                                // drag — only fresh heartbeats during THIS drag
+                                // should count.
+                                if (mergeTargetRef) mergeTargetRef.current = null;
+                                // If a previous drag's cleanup is still around
+                                // (e.g. dragend never fired), clear it first so
+                                // we don't stack listeners.
+                                dragCleanupRef.current?.();
+                                // Track the cursor's in/out state at the
+                                // document level for the lifetime of THIS drag.
+                                // dragend's coordinates are unreliable under
+                                // Tauri (frozen at the press position once the
+                                // OS takes over outside the window), so we
+                                // decide "outside?" from these live events
+                                // instead. Removed in onDragEnd.
+                                const onDragEnter = () => {
+                                    // Cursor entered (or re-entered) a document
+                                    // element → inside the window.
+                                    dragOutsideRef.current = false;
+                                };
+                                const onDragLeave = (ev: DragEvent) => {
+                                    // relatedTarget === null means the cursor
+                                    // left the document entirely (to the OS
+                                    // desktop / another window), not just moved
+                                    // between elements. That is our "outside".
+                                    if (ev.relatedTarget === null) {
+                                        dragOutsideRef.current = true;
+                                    }
+                                };
+                                document.addEventListener("dragenter", onDragEnter);
+                                document.addEventListener("dragleave", onDragLeave);
+                                dragCleanupRef.current = () => {
+                                    document.removeEventListener("dragenter", onDragEnter);
+                                    document.removeEventListener("dragleave", onDragLeave);
+                                };
+                                // Broadcast the drag start so OTHER Lumina windows
+                                // enter sentinel mode and report hover → we learn
+                                // at dragend whether to merge into one of them.
+                                const myLabel = getCurrentWindow().label;
+                                info(`dragstart: broadcasting ${DRAG_START_EVENT} sourceLabel=${myLabel}`);
+                                emit(DRAG_START_EVENT, {sourceLabel: myLabel}).catch((e) =>
+                                    info(`Failed to broadcast ${DRAG_START_EVENT}: ${e}`).catch(() => {})
+                                );
+                            }}
+                            onDragEnd={() => {
+                                if (!isTerminalTab) return;
+                                // Always remove the document-level listeners
+                                // attached in onDragStart, whether or not we
+                                // tear off — and tell other windows to stand down.
+                                dragCleanupRef.current?.();
+                                dragCleanupRef.current = null;
+                                emit(DRAG_END_EVENT).catch((e) =>
+                                    info(`Failed to broadcast ${DRAG_END_EVENT}: ${e}`).catch(() => {})
+                                );
+                                if (!onTearOff) return;
+                                // Three-way dispatch, in priority order:
+                                //   1. fresh mergeTarget  → merge into that window
+                                //   2. cursor outside     → spawn a new window
+                                //   3. neither            → drag cancelled (back inside)
+                                // "Fresh" = a hover heartbeat within the last 400ms.
+                                // Heartbeats fire every 120ms while the cursor is
+                                // over a target window, so a stale report means the
+                                // cursor has since left that window.
+                                const HOVER_FRESH_MS = 400;
+                                const mt = mergeTargetRef?.current ?? null;
+                                const mergeTarget =
+                                    mt && Date.now() - mt.time <= HOVER_FRESH_MS ? mt.label : null;
+                                if (mergeTargetRef) mergeTargetRef.current = null;
+                                // DIAGNOSTIC: demote once verified.
+                                info(`dragend dispatch: mergeTarget=${mergeTarget} dragOutside=${dragOutsideRef.current} myLabel=${getCurrentWindow().label}`);
+                                if (mergeTarget) {
+                                    info(`Drag → merge tab ${tab.id} into ${mergeTarget}`);
+                                    onTearOff(tab.id, {mergeTarget});
+                                } else if (dragOutsideRef.current) {
+                                    info(`Drag → tear off tab ${tab.id} into new window`);
+                                    onTearOff(tab.id);
+                                }
+                                // else: cancelled, no-op.
+                            }}
                         >
                             <div className="flex flex-col items-start flex-1 w-[70%] overflow-hidden">
                                 <div className="flex items-start gap-2 w-full">
@@ -153,6 +351,11 @@ export default function TabBar(props: TabBarProps) {
                                 style={{
                                     color: isActive ? foregroundColor : colors.inactiveText,
                                 }}
+                                // draggable={false} so a press-drag starting on the
+                                // close button doesn't initiate the parent tab's
+                                // HTML5 tear-off drag — a click (no movement) still
+                                // closes normally via the handler below.
+                                draggable={false}
                                 onClick={(e) => {
                                     e.stopPropagation();
                                     onClose(tab.id);

@@ -27,6 +27,26 @@ import {TerminalProfile} from "../types/terminal.ts";
 export const TEAROFF_LABEL_PREFIX = "tearoff-";
 export const TEAROFF_STORE_PATH = "tearoff.json";
 
+// ---- Cross-window event names (single source of truth, §3.2) ----
+// These couple the source/target windows of a tab drag. Keep them together so
+// a rename touches one place. Names follow the `lumina-` convention used by
+// OPEN_ABOUT_EVENT in App.tsx and must be alphanumeric + `-/:_`.
+
+/** Source → all windows: a tab drag started. Payload: `{sourceLabel}`.
+ * Non-source windows enter "sentinel" mode (watch their own dragenter/leave). */
+export const DRAG_START_EVENT = "lumina-tab-drag-start";
+/** Target (sentinel) → source: which window the cursor is currently over.
+ * Payload: `{label: string | null}` — null when the cursor left the window. */
+export const DRAG_HOVER_EVENT = "lumina-tab-drag-hover";
+/** Source → all windows: the drag ended (any branch). Sentinels stand down. */
+export const DRAG_END_EVENT = "lumina-tab-drag-end";
+/** Source → target window: please accept this tab. Payload: `{stashKey, sourceLabel}`.
+ * The target consumes the stashed payload (keyed by `stashKey`) and reattaches. */
+export const MERGE_TAB_EVENT = "lumina-merge-tab";
+/** Target → source: I consumed the tab, you may remove it from your state.
+ * Payload: `{stashKey}`. Source removes its tab only after this ack. */
+export const MERGE_ACK_EVENT = "lumina-merge-ack";
+
 const store = new LazyStore(TEAROFF_STORE_PATH);
 
 export interface TearoffPayload {
