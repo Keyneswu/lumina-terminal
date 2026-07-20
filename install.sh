@@ -16,7 +16,8 @@
 #   • Debian & derivs — downloads the .deb and installs it (apt pulls deps)
 #   • Red Hat / CentOS / Fedora / Rocky / Alma & derivs
 #                     — downloads the .rpm and installs it (dnf/yum pulls deps)
-#   • Arch & derivs   — repackages the .deb via a generated PKGBUILD (makepkg -si)
+#   • Arch & derivs   — installs the published AUR package (lumina-terminal-bin)
+#                       via paru/yay, falling back to git clone + makepkg -si
 # Linux ARM64 (aarch64) is supported on all three Linux paths.
 #
 # Asset names are read dynamically from the GitHub Releases API, so this keeps
@@ -28,6 +29,10 @@ REPO="iewnfod/lumina-terminal"
 APP_NAME="Lumina Terminal"
 APP_ID="lumina-terminal"            # binary name inside the package / Icon= key
 MAC_APP="Lumina Terminal.app"
+# The AUR package published by .github/workflows/aur.yml. install_arch() pulls
+# it through whichever AUR helper (or plain pacman) the user has — no local
+# rebuild of the .deb anymore.
+AUR_PKG="lumina-terminal-bin"
 ASSUME_YES=0                        # set by -y / --yes
 
 # ---- color helpers ----------------------------------------------------------
@@ -140,16 +145,16 @@ download() { # <url> <dest>
 # Asset suffixes differ by ecosystem:
 #   • deb filenames use dpkg arch names  → amd64 / arm64
 #   • rpm filenames use rpm arch names   → x86_64 / aarch64
-#   • pacman PKGBUILD uses Rust-style     → x86_64 / aarch64
 #   • macOS dmg uses Rust triple suffix   → x64 / aarch64
+# (Arch installs the published AUR package, so it has no per-arch asset suffix
+#  to resolve.)
 # Resolve once from `uname -m` so each installer picks the right asset.
 LINUX_DEB_ARCH=""    # amd64 | arm64
 LINUX_RPM_ARCH=""    # x86_64 | aarch64
-LINUX_PACMAN_ARCH="" # x86_64 | aarch64
 resolve_linux_arch() {
 	case "$(uname -m)" in
-		x86_64)  LINUX_DEB_ARCH="amd64";  LINUX_RPM_ARCH="x86_64";  LINUX_PACMAN_ARCH="x86_64"  ;;
-		aarch64|arm64) LINUX_DEB_ARCH="arm64"; LINUX_RPM_ARCH="aarch64"; LINUX_PACMAN_ARCH="aarch64" ;;
+		x86_64)  LINUX_DEB_ARCH="amd64";  LINUX_RPM_ARCH="x86_64"  ;;
+		aarch64|arm64) LINUX_DEB_ARCH="arm64"; LINUX_RPM_ARCH="aarch64" ;;
 		*) die "Unsupported Linux architecture: $(uname -m). Supported: x86_64, aarch64/arm64." ;;
 	esac
 }
@@ -289,113 +294,60 @@ install_redhat() {
 }
 
 # ============================================================================
-#  Arch & derivatives — PKGBUILD repackaging of the .deb
+#  Arch & derivatives — install the published AUR package
 # ============================================================================
 install_arch() {
-	log "Detected ${BOLD}Arch-based${C_RESET} Linux (${LINUX_PACMAN_ARCH}). Building a pacman package from the .deb."
+	log "Detected ${BOLD}Arch-based${C_RESET} Linux. Installing the AUR package ${BOLD}$AUR_PKG${C_RESET}."
 
-	# makepkg must run unprivileged and refuses to operate in directories
-	# owned by root or with unsafe permissions. Use a clean user-owned dir.
-	local workdir
-	workdir="$(mktemp -d "${TMPDIR:-/tmp}/lumina-build.XXXXXX")"
-	# Capture the path INTO the trap string (expand now) rather than referencing
-	# the local var at EXIT time: if a subshell fails under `set -e`, the
-	# function frame is already torn down and the local is unbound under `set -u`.
-	trap "rm -rf '$workdir'" EXIT
-	chmod 755 "$workdir"
-
-	local deb_url deb_name pkgver
-	deb_url="$(asset_url "_${LINUX_DEB_ARCH}\.deb\$" | head -n1)"
-	deb_name="$(basename "$deb_url")"
-	[[ -n "$deb_url" ]] || die "No .deb asset for ${LINUX_DEB_ARCH} found in the release."
-	# Package version = the version baked into the deb filename
-	# (e.g. Lumina.Terminal_0.1.1_amd64.deb -> 0.1.1), not the git tag,
-	# since the tag (v0.1.1-fix) and the app version can differ.
-	pkgver="$(printf '%s' "$deb_name" | sed -n "s/.*_\([0-9][^_]*\)_${LINUX_DEB_ARCH}\.deb/\1/p")"
-	[[ -n "$pkgver" ]] || pkgver="$(json_get '.tag_name' | sed 's/^v//')"
-	log "Package version: $pkgver"
-
-	if ! command -v makepkg >/dev/null 2>&1; then
-		die "'makepkg' is missing. Install the build toolchain first:\n    sudo pacman -S --needed base-devel"
-	fi
-	if ! command -v ar >/dev/null 2>&1; then
-		die "'ar' is missing (needed to unpack the .deb). Install:\n    sudo pacman -S --needed binutils"
+	# Prefer an installed AUR helper (it resolves deps and signs/offline-builds
+	# the AUR package the way the user expects). Fall back to the universal
+	# `pacman -S` path for paru/yay users' repo cache, and finally to a manual
+	# `git clone + makepkg -si` for stock Arch without any helper.
+	#
+	# We pass - --noconfirm through helpers but keep --needed so re-running the
+	# installer on an already-installed system is a no-op instead of an error.
+	local helper=""
+	if   command -v paru >/dev/null 2>&1; then helper="paru"
+	elif command -v yay  >/dev/null 2>&1; then helper="yay"
 	fi
 
-	# Generate the PKGBUILD. The .deb ships an already-built binary, the
-	# .desktop file, and the hicolor icon, so package() just relocates them.
-	cat > "$workdir/PKGBUILD" <<EOF
-# Maintainer: auto-generated by install.sh
-# Repackages the official Lumina Terminal .deb for pacman.
-
-pkgname=$APP_ID
-pkgver=$pkgver
-pkgrel=1
-pkgdesc="A Tauri App — Lumina Terminal"
-arch=('$LINUX_PACMAN_ARCH')
-url="https://github.com/$REPO"
-license=('MPL-2.0')
-# Deb Depends: libwebkit2gtk-4.1-0, libgtk-3-0  ->  translated to Arch:
-depends=('webkit2gtk-4.1' 'gtk3' 'hicolor-icon-theme')
-provides=('$APP_ID')
-conflicts=('$APP_ID')
-
-# Pinned by sha256; install.sh fills _DEB_URL at generation time.
-_DEB_URL="$deb_url"
-_DEB_NAME="$deb_name"
-source=("\${_DEB_URL}")
-noextract=("\${_DEB_NAME}")
-# sha256 is filled in below by install.sh; 'SKIP' if unavailable.
-sha256sums=('${DEB_SHA256:-SKIP}')
-
-build() {
-	cd "\$srcdir"
-	rm -rf _unpacked
-	mkdir _unpacked
-	ar x "\${_DEB_NAME}" --output _unpacked
-	tar -xf _unpacked/data.tar.* -C _unpacked
-}
-
-package() {
-	cd "\$srcdir/_unpacked"
-	# Binary
-	install -Dm0755 "usr/bin/$APP_ID" "\$pkgdir/usr/bin/$APP_ID"
-	# Desktop entry
-	install -Dm0644 "usr/share/applications/$APP_NAME.desktop" \\
-		"\$pkgdir/usr/share/applications/$APP_NAME.desktop"
-	# Hicolor icon (deb ships a single high-res PNG; install at all sizes)
-	local icon="usr/share/icons/hicolor/5116x5116/apps/$APP_ID.png"
-	if [[ -f "\$icon" ]]; then
-		local s
-		for s in 16 22 24 32 48 64 128 256 512 1024; do
-			install -Dm0644 "\$icon" "\$pkgdir/usr/share/icons/hicolor/\${s}x\${s}/apps/$APP_ID.png"
-		done
-		install -Dm0644 "\$icon" "\$pkgdir/usr/share/icons/hicolor/scalable/apps/$APP_ID.png"
-	fi
-}
-EOF
-
-	# Try to pin the download with its sha256 (best-effort; not fatal).
-	local tmpdeb="$workdir/$deb_name"
-	if download "$deb_url" "$tmpdeb" 2>/dev/null; then
-		DEB_SHA256="$(sha256sum "$tmpdeb" | awk '{print $1}')"
-		# Inject the real checksum in place of SKIP.
-		# Uses a literal match on the placeholder line.
-		sed -i "s/^sha256sums=('SKIP')/sha256sums=('$DEB_SHA256')/" "$workdir/PKGBUILD"
-		log "Pinned .deb sha256: $DEB_SHA256"
+	if [[ -n "$helper" ]]; then
+		log "Using AUR helper: $helper"
+		if $helper -S --noconfirm --needed "$AUR_PKG"; then
+			: # installed
+		else
+			die "$helper -S $AUR_PKG failed. You can retry manually:\n    $helper -S $AUR_PKG"
+		fi
 	else
-		warn "Could not pre-download for checksumming; building with sha256=SKIP."
+		# No helper: clone the AUR repo and build it with makepkg. This needs
+		# base-devel; if makepkg is missing we stop here rather than guessing.
+		need_cmd makepkg
+		need_cmd git
+
+		local workdir
+		workdir="$(mktemp -d "${TMPDIR:-/tmp}/lumina-aur.XXXXXX")"
+		# Capture the path INTO the trap string (expand now) rather than
+		# referencing the local var at EXIT time: if a subshell fails under
+		# `set -e`, the function frame is already torn down and the local is
+		# unbound under `set -u`.
+		trap "rm -rf '$workdir'" EXIT
+		chmod 755 "$workdir"
+
+		log "Cloning $AUR_PKG from AUR…"
+		if ! git clone --depth=1 "https://aur.archlinux.org/${AUR_PKG}.git" "$workdir/$AUR_PKG"; then
+			die "Failed to clone $AUR_PKG from AUR. Check your connection or install an AUR helper (paru/yay)."
+		fi
+
+		log "Building with makepkg…"
+		if ! ( cd "$workdir/$AUR_PKG" && makepkg -si --noconfirm --needed ); then
+			die "makepkg failed. You can retry manually:\n    cd \"$workdir/$AUR_PKG\" && makepkg -si"
+		fi
 	fi
 
-	( cd "$workdir" && makepkg -si --noconfirm --needed )
-	local status=$?
-	if [[ $status -ne 0 ]]; then
-		die "makepkg failed (exit $status). You can retry in $workdir:\n    cd \"$workdir\" && makepkg -si"
-	fi
-
-	printf "%s✓%s %s installed via pacman%s\n" "$C_GREEN" "$C_RESET" "$BOLD$APP_NAME$C_RESET" "$C_RESET"
+	printf "%s✓%s %s installed from AUR%s\n" "$C_GREEN" "$C_RESET" "$BOLD$APP_NAME$C_RESET" "$C_RESET"
 	echo "  Start it from your application menu, or run:  $APP_ID"
-	echo "  Upgrade later by re-running this script; uninstall with:  sudo pacman -R $APP_ID"
+	echo "  Upgrade later with:  ${helper:-paru/yay} -Syu $AUR_PKG    (or re-run this script)"
+	echo "  Uninstall with:      sudo pacman -R $AUR_PKG"
 }
 
 # ============================================================================
@@ -449,8 +401,9 @@ main() {
 	local platform
 	platform="$(detect_platform)"
 
-	# Resolve the Linux deb/pacman arch suffix once for the deb-based paths.
-	[[ "$platform" == "debian" || "$platform" == "arch" || "$platform" == "redhat" ]] && resolve_linux_arch
+	# Resolve the Linux deb/rpm arch suffix once for the deb/rpm-based paths.
+	# Arch no longer needs a suffix — it installs the published AUR package.
+	[[ "$platform" == "debian" || "$platform" == "redhat" ]] && resolve_linux_arch
 
 	if [[ "$platform" == "unknown" ]]; then
 		cat >&2 <<EOF
@@ -459,17 +412,21 @@ This installer supports:
   • macOS  (.dmg)
   • Debian / Ubuntu and derivatives  (.deb)
   • Red Hat / CentOS / Fedora / Rocky / Alma and derivatives  (.rpm)
-  • Arch / Manjaro / EndeavourOS and derivatives  (PKGBUILD from .deb)
+  • Arch / Manjaro / EndeavourOS and derivatives  (AUR package: $AUR_PKG)
 EOF
 		exit 1
 	fi
 
 	# Fetch the release up front so we can show what will be installed and
 	# let the user confirm before touching the system.
+	# macOS needs hdiutil to mount the .dmg. The Arch path installs the AUR
+	# package and doesn't need any asset-specific tool up front — its own
+	# helper-or-makepkg fallback handles tool checks at run time.
 	case "$platform" in
 		macos) need_cmd hdiutil ;;
-		arch)  need_cmd makepkg; need_cmd ar ;;
 	esac
+	# Arch doesn't consume the release assets directly, but we still fetch the
+	# JSON so the "Version" line below shows the same tag the AUR package tracks.
 	fetch_release
 
 	local tag asset_kind target_file
@@ -495,16 +452,23 @@ EOF
 			asset_kind=".rpm package"
 			;;
 		arch)
-			target_file="$(asset_url "_${LINUX_DEB_ARCH}\.deb\$" | head -n1 | sed 's#.*/##')"
-			asset_kind=".deb → pacman package (rebuilt locally)"
+			target_file=""
+			asset_kind="AUR package ($AUR_PKG)"
 			;;
 	esac
-	[[ -n "$target_file" ]] || die "No matching release asset found."
+	if [[ "$platform" != "arch" ]]; then
+		[[ -n "$target_file" ]] || die "No matching release asset found."
+	fi
 
 	echo "${BOLD}Ready to install:${C_RESET}"
 	echo "  ${BOLD}App${C_RESET}      $APP_NAME"
 	echo "  ${BOLD}Version${C_RESET}  $tag"
-	echo "  ${BOLD}Asset${C_RESET}    $target_file"
+	# Arch installs the AUR package, not a release asset — skip the Asset line.
+	if [[ "$platform" != "arch" ]]; then
+		echo "  ${BOLD}Asset${C_RESET}    $target_file"
+	else
+		echo "  ${BOLD}Package${C_RESET}  $AUR_PKG"
+	fi
 	echo "  ${BOLD}Method${C_RESET}   $asset_kind"
 	echo
 
