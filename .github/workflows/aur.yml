@@ -112,14 +112,23 @@ jobs:
           echo "===== rendered out/PKGBUILD ====="
           cat out/PKGBUILD
 
-      - name: Lint PKGBUILD with namcap
+      # namcap is Arch-only (and itself an AUR package), so it can't be
+      # apt-installed on the Ubuntu runner. We do the two portable checks
+      # that actually catch the real failure modes of a *rendered* PKGBUILD:
+      #   1. bash -n  — syntax check (no install needed).
+      #   2. leftover-placeholder scan — catches a broken envsubst, which is
+      #      the only thing that can go wrong at render time.
+      # Structural validation (missing required fields, bad arrays) is then
+      # enforced by `makepkg --printsrcinfo` in the .SRCINFO step below.
+      - name: Lint rendered PKGBUILD
         run: |
           set -euo pipefail
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq namcap
-          # namcap exits non-zero on real problems; the "dependency" and
-          # "enterprise" warnings for a -bin package are expected and fine.
-          namcap out/PKGBUILD || true
+          bash -n out/PKGBUILD
+          if grep -nE '\$\{(PKGVER|PKGREL|SHA256_AMD64|SHA256_ARM64)\}' out/PKGBUILD; then
+            echo "::error::Unsubstituted placeholder found in PKGBUILD" >&2
+            exit 1
+          fi
+          echo "PKGBUILD OK: syntax valid, no leftover placeholders"
 
       - name: Set up SSH for AUR
         env:
