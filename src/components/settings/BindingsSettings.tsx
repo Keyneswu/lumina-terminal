@@ -60,16 +60,32 @@ function actionLabel(action: Actions, args: Record<string, string> | undefined, 
     }
 }
 
-// An action signature (action + args) — used to detect default bindings so that
-// "delete" can restore the default instead of removing the row entirely.
-// actionSignature and keySignature are imported from lib/bindings.ts so the
+// A row is "default-origin" when it matches a default binding by BOTH
+// action+args AND key+modifiers. We track this per-row as a transient
+// `__isDefault` flag (never persisted) so that:
+//   - editing a default binding's key keeps it default-origin → "delete"
+//     restores the default key rather than dropping the row;
+//   - a binding the user *added* — even if its action matches a default —
+//     stays deletable, because the flag only follows rows that originated
+//     from the defaults.
+// actionSignature / keySignature are imported from lib/bindings.ts so the
 // settings UI and the runtime matcher stay perfectly in sync.
-const DEFAULT_SIGNATURES = new Set(DEFAULT_BINDINGS.map(actionSignature));
-
-function isDefaultBinding(b: Binding): boolean {
-    return DEFAULT_SIGNATURES.has(actionSignature(b));
+function fullSignature(b: Binding): string {
+    return `${actionSignature(b)}@${keySignature(b.key, b.with)}`;
 }
 
+const DEFAULT_FULL_SIGNATURES = new Set(DEFAULT_BINDINGS.map(fullSignature));
+
+function matchesDefaultBinding(b: Binding): boolean {
+    return DEFAULT_FULL_SIGNATURES.has(fullSignature(b));
+}
+
+type DraftBinding = Binding & { __isDefault?: boolean };
+
+// findDefaultFor locates the default binding for a row's action+args so "delete"
+// can restore the default key. It matches on action signature only (NOT the
+// key), because the row being restored may have had its key edited away from
+// the default.
 function findDefaultFor(b: Binding): Binding | undefined {
     const sig = actionSignature(b);
     return DEFAULT_BINDINGS.find((d) => actionSignature(d) === sig);
@@ -81,7 +97,8 @@ export default function BindingsSettings({borderColor}: { borderColor: string })
 
     const sourceBindings = config.bindings?.length ? config.bindings : DEFAULT_BINDINGS;
 
-    const [draft, setDraft] = useState<Binding[]>(() => sourceBindings.map((b) => ({...b})));
+    const toDraft = (b: Binding): DraftBinding => ({...b, __isDefault: matchesDefaultBinding(b)});
+    const [draft, setDraft] = useState<DraftBinding[]>(() => sourceBindings.map(toDraft));
     const [recordingIndex, setRecordingIndex] = useState<number | null>(null);
     // New-binding creation state.
     const [newAction, setNewAction] = useState<Actions | typeof NO_ACTION>(NO_ACTION);
@@ -92,11 +109,16 @@ export default function BindingsSettings({borderColor}: { borderColor: string })
     // Reset draft when config changes externally.
     useEffect(() => {
         const src = config.bindings?.length ? config.bindings : DEFAULT_BINDINGS;
-        setDraft(src.map((b) => ({...b})));
+        setDraft(src.map(toDraft));
     }, [config.bindings]);
 
     const isDirty = useMemo(() => {
-        return JSON.stringify(draft) !== JSON.stringify(sourceBindings.map((b) => ({...b})));
+        const src = sourceBindings.map((b) => ({...b}));
+        const cur = draft.map((b) => {
+            const {__isDefault, ...rest} = b;
+            return rest;
+        });
+        return JSON.stringify(cur) !== JSON.stringify(src);
     }, [draft, sourceBindings]);
 
     // Conflict detection: any key signature appearing more than once.
@@ -178,11 +200,15 @@ export default function BindingsSettings({borderColor}: { borderColor: string })
         setDraft((prev) => {
             const target = prev[index];
             if (!target) return prev;
-            // Deleting a default action restores the default key rather than removing the row.
-            if (isDefaultBinding(target)) {
+            // Deleting a default-origin action restores the default key rather
+            // than removing the row. User-added bindings (even ones whose action
+            // matches a default) are always removed outright.
+            if (target.__isDefault) {
                 const def = findDefaultFor(target);
                 if (def) {
-                    return prev.map((b, i) => (i === index ? {...def} : b));
+                    return prev.map((b, i) =>
+                        i === index ? {...def, __isDefault: matchesDefaultBinding(def)} : b,
+                    );
                 }
             }
             return prev.filter((_, i) => i !== index);
@@ -198,11 +224,12 @@ export default function BindingsSettings({borderColor}: { borderColor: string })
         } else if (action === "newTab" && newProfileName && newProfileName !== DEFAULT_PROFILE_KEY) {
             args = {profileName: newProfileName};
         }
-        const candidate: Binding = {
+        const candidate: DraftBinding = {
             key: "",
             with: [],
             action,
             args,
+            __isDefault: false,
         };
         setDraft((prev) => [...prev, candidate]);
         setNewAction(NO_ACTION);
@@ -220,14 +247,17 @@ export default function BindingsSettings({borderColor}: { borderColor: string })
     }, [recordingIndex, draft.length]);
 
     const handleReset = useCallback(() => {
-        setDraft(DEFAULT_BINDINGS.map((b) => ({...b})));
+        setDraft(DEFAULT_BINDINGS.map(toDraft));
         setRecordingIndex(null);
     }, []);
 
     const handleSave = useCallback(() => {
         if (hasConflicts || hasMissingAccelerator) return;
         info(`Bindings saved (${draft.length} entries)`);
-        updateConfig({bindings: draft.map((b) => ({...b}))});
+        // Strip the transient __isDefault flag before persisting.
+        updateConfig({
+            bindings: draft.map(({__isDefault, ...rest}) => rest),
+        });
     }, [draft, hasConflicts, hasMissingAccelerator, updateConfig]);
 
     const dangerColor = "var(--color-danger-500, #ef4444)";
@@ -333,9 +363,9 @@ export default function BindingsSettings({borderColor}: { borderColor: string })
                                         <button
                                             className="cursor-pointer p-1.5 rounded-md hover:bg-[var(--color-default-100,rgba(125,125,125,0.1))] text-muted"
                                             onClick={() => handleDelete(i)}
-                                            title={isDefaultBinding(b) ? t["Restore default"] : t["Delete"]}
+                                            title={b.__isDefault ? t["Restore default"] : t["Delete"]}
                                         >
-                                            {isDefaultBinding(b) ? (
+                                            {b.__isDefault ? (
                                                 <RotateCcw size={15}/>
                                             ) : (
                                                 <Trash2 size={15}/>
