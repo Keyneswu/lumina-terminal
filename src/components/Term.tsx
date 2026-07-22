@@ -24,6 +24,7 @@ import {ImageAddon} from "@xterm/addon-image";
 import {SerializeAddon} from "@xterm/addon-serialize";
 import {IMAGE_ADDON_SETTINGS} from "../constants.ts";
 import {reattachTerminal, resizeTerminal, startTerminal, writeToTerminal} from "../lib/terminalApi.ts";
+import {safeCodeUnitLength} from "../lib/text.ts";
 import {CurrentCommandParser} from "../lib/currentCommand.ts";
 
 let hasAppliedInitialWindowSize = false;
@@ -344,6 +345,12 @@ export default function Term(props : TermProps) {
             }
 
             // Build one chunk by consuming items from the front of the queue.
+            // The cut point is UTF-16-safe: if it would land between the two
+            // halves of a surrogate pair (emoji / astral-plane chars), back up
+            // by one code unit so the pair stays intact — otherwise both
+            // pieces carry a lone surrogate and render as a replacement char
+            // glitch. This is the real cause of "PTY string truncation" visual
+            // errors, not the backend (the backend already streams UTF-8-safe).
             let chunk = '';
             let taken = 0;
             while (pendingWrites.length > 0 && taken < CHUNK_SIZE) {
@@ -353,8 +360,9 @@ export default function Term(props : TermProps) {
                     chunk += pendingWrites.shift()!;
                     taken += next.length;
                 } else {
-                    chunk += next.slice(0, remaining);
-                    pendingWrites[0] = next.slice(remaining);
+                    const cut = safeCodeUnitLength(next, remaining);
+                    chunk += next.slice(0, cut);
+                    pendingWrites[0] = next.slice(cut);
                     taken = CHUNK_SIZE;
                 }
             }
