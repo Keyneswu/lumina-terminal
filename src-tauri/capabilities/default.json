@@ -35,6 +35,7 @@
     },
     "os:default",
     "core:window:allow-set-focus",
+    "core:window:allow-set-position",
     "core:window:allow-set-decorations",
     "log:default",
     "updater:default",

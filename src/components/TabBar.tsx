@@ -9,11 +9,13 @@ import ShellIcon from "./ShellIcon.tsx";
 import {ShellType} from "../lib/shellIcon.ts";
 import {info} from "@tauri-apps/plugin-log";
 import {emit, emitTo, listen} from "@tauri-apps/api/event";
-import {getCurrentWindow} from "@tauri-apps/api/window";
+import {cursorPosition, getCurrentWindow} from "@tauri-apps/api/window";
 import {
     DRAG_END_EVENT,
     DRAG_HOVER_EVENT,
     DRAG_START_EVENT,
+    TAB_DRAG_MIME,
+    type TabDragHover,
 } from "../lib/tearoff.ts";
 
 export interface TabInfo {
@@ -41,11 +43,11 @@ interface TabBarProps {
      * top-left there; absent → spawn a new window at the OS default. Ignored
      * for Settings/About. */
     onTearOff?: (id: string, opts?: {mergeTarget?: string; position?: {x: number; y: number}}) => void;
-    /** App-owned ref tracking the last hover heartbeat from another window
-     * during a drag from this window ({label, time}). dragend reads it, with a
-     * freshness check, to pick merge vs. new-window. Passed down so TabBar
+    /** App-owned ref tracking the last hover heartbeat during a drag from
+     * this window. Foreign windows set `merge: true` only over their sidebar;
+     * content drops set `merge: false` (cancel). Passed down so TabBar
      * doesn't re-derive it. */
-    mergeTargetRef?: RefObject<{label: string; time: number} | null>;
+    mergeTargetRef?: RefObject<TabDragHover | null>;
     /** App-owned ref where the last in-window cursor screen position (CSS px)
      * during a drag is recorded. dragend reads it to position a torn-off window
      * at the release point. Passed down so TabBar doesn't re-derive it. */
@@ -61,59 +63,79 @@ interface TabBarProps {
     onUpdateClick?: () => void;
 }
 
+/**
+ * Full-window transparent layer so HTML5 `dragover` keeps firing over xterm's
+ * canvas/WebGL (which otherwise swallows the event → stale heartbeat → false
+ * "tear off onto desktop"). Removed when the drag ends.
+ */
+function mountTabDragOverlay(onDragOver: (ev: DragEvent) => void): () => void {
+    const overlay = document.createElement("div");
+    overlay.setAttribute("data-lumina-tab-drag-overlay", "");
+    Object.assign(overlay.style, {
+        position: "fixed",
+        inset: "0",
+        // Above the terminal surface; below native OS UI.
+        zIndex: "2147483646",
+        // Keep the drag image visible; we only need hit-testing.
+        background: "transparent",
+    });
+    const handler = (ev: DragEvent) => {
+        // Required for continuous dragover across the webview (incl. canvas).
+        ev.preventDefault();
+        if (ev.dataTransfer) ev.dataTransfer.dropEffect = "move";
+        onDragOver(ev);
+    };
+    overlay.addEventListener("dragover", handler);
+    document.body.appendChild(overlay);
+    return () => {
+        overlay.removeEventListener("dragover", handler);
+        overlay.remove();
+    };
+}
+
 export default function TabBar(props: TabBarProps) {
     const { tabs, activeId, onSelect, onClose, onNew, onTearOff, mergeTargetRef, dragScreenPosRef, backgroundColor, foregroundColor, dangerColor, collapsed, defaultProfileName, updateVersion, onUpdateClick } = props;
     const t = useI18n();
 
-    // Cleanup function for the document-level drag listeners attached during a
-    // drag. Kept in a ref (not a local) so onDragEnd can always reach the
-    // latest one even if onDragStart/onDragEnd close over different renders.
+    // Cleanup for the overlay + listeners attached during a drag we started.
+    // Kept in a ref so onDragEnd always reaches the latest cleanup across renders.
     const dragCleanupRef = useRef<(() => void) | null>(null);
+    // Sidebar root — sentinel uses its bounding rect to decide merge vs cancel.
+    const sidebarRef = useRef<HTMLDivElement | null>(null);
 
     // Sentinel mode: while ANOTHER Lumina window is dragging a tab, THIS window
-    // watches its own document for dragenter/leave and reports hover state to
-    // the source window (DRAG_HOVER_EVENT). The source then knows — at dragend,
-    // without reliable cursor coordinates — whether to merge into us. We only
-    // arm this when the drag started elsewhere (sourceLabel !== our label); the
-    // source window itself never enters sentinel mode (it tracks its own
-    // dragOutsideRef instead). Stands down on DRAG_END_EVENT.
+    // mounts a full-window overlay and reports hover via DRAG_HOVER_EVENT.
+    // `merge: true` only when the cursor is over our sidebar; over terminal /
+    // title bar / settings we report `merge: false` so the source cancels
+    // instead of merging or spawning a window on top of our content.
+    // Armed only when the drag started elsewhere; stands down on DRAG_END_EVENT.
     useEffect(() => {
         let unlistenStart: (() => void) | undefined;
         let unlistenEnd: (() => void) | undefined;
         let cancelled = false;
-        // Active sentinel cleanup (document listeners), swapped as drags
-        // start/end. Held in a closure-local so the handlers below can disarm.
         let disarm: (() => void) | undefined;
         const myLabel = getCurrentWindow().label;
 
         const arm = (sourceLabel: string) => {
-            // Already armed (nested drag)? Disarm first.
             disarm?.();
-            // We report hover via `dragover`, NOT dragenter/dragleave. Reason:
-            // under Tauri's webview, dragenter is followed almost immediately
-            // by a spurious dragleave (relatedTarget === null) while the cursor
-            // is still inside — so a leave-based "I left" signal is unusable.
-            // dragover, by contrast, fires continuously (~per animation frame)
-            // while the cursor is actually over this document, and stops firing
-            // the instant it leaves. So a steady stream of dragover = "cursor
-            // is here right now", which is exactly what the source needs at
-            // dragend. Throttled to once per 120ms to avoid flooding IPC.
             let lastReport = 0;
-            const onDragOver = () => {
+            const removeOverlay = mountTabDragOverlay((ev) => {
                 const now = Date.now();
-                if (now - lastReport >= 120) {
-                    lastReport = now;
-                    emitTo(sourceLabel, DRAG_HOVER_EVENT, {label: myLabel}).catch((e) =>
-                        info(`Failed to emit hover to ${sourceLabel}: ${e}`).catch(() => {})
-                    );
-                }
-            };
-            document.addEventListener("dragover", onDragOver);
-            disarm = () => {
-                document.removeEventListener("dragover", onDragOver);
-            };
-            // info (not debug) for now so users can confirm sentinel mode works
-            // during testing; demote to debug once merge is verified in the field.
+                if (now - lastReport < 120) return;
+                lastReport = now;
+                const rect = sidebarRef.current?.getBoundingClientRect();
+                // Collapsed sidebar (width 0) never accepts merge.
+                const overSidebar = !!rect
+                    && rect.width > 0
+                    && ev.clientX >= rect.left
+                    && ev.clientX <= rect.right
+                    && ev.clientY >= rect.top
+                    && ev.clientY <= rect.bottom;
+                emitTo(sourceLabel, DRAG_HOVER_EVENT, {label: myLabel, merge: overSidebar}).catch((e) =>
+                    info(`Failed to emit hover to ${sourceLabel}: ${e}`).catch(() => {})
+                );
+            });
+            disarm = removeOverlay;
             info(`Sentinel armed for source ${sourceLabel}`);
         };
 
@@ -152,6 +174,7 @@ export default function TabBar(props: TabBarProps) {
 
     return (
         <div
+            ref={sidebarRef}
             className="flex flex-col h-full select-none transition-all duration-300 ease-in-out overflow-hidden"
             style={{
                 width: collapsed ? 0 : 180,
@@ -214,38 +237,34 @@ export default function TabBar(props: TabBarProps) {
                             draggable={isTerminalTab}
                             onDragStart={(e) => {
                                 if (!isTerminalTab) return;
-                                // effectAllowed + setData are both required for
-                                // the browser to actually start a drag; without
-                                // them some webviews swallow dragstart.
+                                // effectAllowed + setData are required for the
+                                // browser to start a drag. Use a proprietary MIME
+                                // only — `text/plain` makes macOS Finder drop a
+                                // .textClipping on the Desktop and lets text
+                                // fields treat the gesture as copy/paste.
                                 e.dataTransfer.effectAllowed = "move";
-                                e.dataTransfer.setData("text/plain", tab.id);
+                                e.dataTransfer.setData(TAB_DRAG_MIME, tab.id);
                                 // Clear any stale merge target from a previous
                                 // drag — only heartbeats during THIS drag count.
                                 if (mergeTargetRef) mergeTargetRef.current = null;
                                 if (dragScreenPosRef) dragScreenPosRef.current = null;
-                                // If a previous drag's cleanup is still around
-                                // (e.g. dragend never fired), clear it first so
-                                // we don't stack listeners.
                                 dragCleanupRef.current?.();
-                                // Record our own dragover as a self-heartbeat in
-                                // mergeTargetRef. This is what lets dragend tell
-                                // "dropped back on me" (cancel) apart from "dropped
-                                // on the desktop" (new window): while the cursor is
-                                // over OUR document we keep refreshing the heartbeat
-                                // with our own label; other windows refresh it with
-                                // theirs; over the desktop nobody does, so the last
-                                // heartbeat goes stale. Freshness at dragend then
-                                // distinguishes "on some Lumina window" (cancel or
-                                // merge) from "off-window" (new window), and the
-                                // label distinguishes merge-target from self.
-                                // We also cache screenX/Y for positioning a torn-off
-                                // window at the release point (see dragScreenPosRef).
+                                // Document dragover (with preventDefault) still
+                                // refreshes the self-heartbeat over non-canvas
+                                // chrome. Over xterm/WebGL it is unreliable on
+                                // macOS — dragend uses screenX/Y + cursorPosition.
                                 const myLabel = getCurrentWindow().label;
                                 const onDragOver = (ev: DragEvent) => {
+                                    ev.preventDefault();
+                                    if (ev.dataTransfer) ev.dataTransfer.dropEffect = "move";
                                     if (mergeTargetRef) {
-                                        mergeTargetRef.current = {label: myLabel, time: Date.now()};
+                                        mergeTargetRef.current = {
+                                            label: myLabel,
+                                            time: Date.now(),
+                                            merge: false,
+                                        };
                                     }
-                                    if (dragScreenPosRef && ev != null) {
+                                    if (dragScreenPosRef) {
                                         dragScreenPosRef.current = {x: ev.screenX, y: ev.screenY};
                                     }
                                 };
@@ -253,63 +272,89 @@ export default function TabBar(props: TabBarProps) {
                                 dragCleanupRef.current = () => {
                                     document.removeEventListener("dragover", onDragOver);
                                 };
-                                // Broadcast the drag start so OTHER Lumina windows
-                                // enter sentinel mode and report hover → we learn
-                                // at dragend whether to merge into one of them.
                                 info(`dragstart: broadcasting ${DRAG_START_EVENT} sourceLabel=${myLabel}`);
-                                emit(DRAG_START_EVENT, {sourceLabel: myLabel}).catch((e) =>
-                                    info(`Failed to broadcast ${DRAG_START_EVENT}: ${e}`).catch(() => {})
+                                emit(DRAG_START_EVENT, {sourceLabel: myLabel}).catch((err) =>
+                                    info(`Failed to broadcast ${DRAG_START_EVENT}: ${err}`).catch(() => {})
                                 );
                             }}
-                            onDragEnd={() => {
+                            onDragEnd={(e) => {
                                 if (!isTerminalTab) return;
-                                // Always remove the document-level listeners
-                                // attached in onDragStart, whether or not we
-                                // tear off — and tell other windows to stand down.
                                 dragCleanupRef.current?.();
                                 dragCleanupRef.current = null;
-                                emit(DRAG_END_EVENT).catch((e) =>
-                                    info(`Failed to broadcast ${DRAG_END_EVENT}: ${e}`).catch(() => {})
+                                emit(DRAG_END_EVENT).catch((err) =>
+                                    info(`Failed to broadcast ${DRAG_END_EVENT}: ${err}`).catch(() => {})
                                 );
                                 if (!onTearOff) return;
-                                // Three-way dispatch from the LAST heartbeat:
-                                //   - fresh, label = another window → merge into it
-                                //   - fresh, label = self             → cancel (dropped on us)
-                                //   - stale (no heartbeat for 400ms)  → cursor on desktop → new window
-                                // Both other windows (sentinel) and this window (self-
-                                // heartbeat in onDragStart) refresh mergeTargetRef while
-                                // the cursor is over them, so freshness reliably means
-                                // "cursor was on a Lumina window at release". Only a drop
-                                // on the desktop leaves every heartbeat stale.
-                                const HOVER_FRESH_MS = 400;
-                                const now = Date.now();
-                                const mt = mergeTargetRef?.current ?? null;
-                                const myLabel = getCurrentWindow().label;
-                                let action: "merge" | "new" | "cancel";
-                                let mergeTarget: string | null = null;
-                                if (mt && now - mt.time <= HOVER_FRESH_MS) {
-                                    if (mt.label === myLabel) {
-                                        action = "cancel";
+                                // Capture release coords sync from the DragEvent
+                                // (always present, unlike mid-drag dragover which
+                                // dies over xterm on macOS WebKit).
+                                const endScreen = {x: e.screenX, y: e.screenY};
+                                // Prefer DragEvent.screenX/Y for "still over us":
+                                // during an HTML5 drag on macOS, Tauri's
+                                // cursorPosition() often still reports a point
+                                // inside the source window even after release on
+                                // the desktop — that falsely cancelled every tear-off.
+                                const endInsideSelf =
+                                    endScreen.x >= window.screenX
+                                    && endScreen.x < window.screenX + window.outerWidth
+                                    && endScreen.y >= window.screenY
+                                    && endScreen.y < window.screenY + window.outerHeight;
+                                void (async () => {
+                                    const HOVER_FRESH_MS = 400;
+                                    const now = Date.now();
+                                    const mt = mergeTargetRef?.current ?? null;
+                                    const myLabel = getCurrentWindow().label;
+                                    let action: "merge" | "new" | "cancel";
+                                    let mergeTarget: string | null = null;
+                                    if (mt && now - mt.time <= HOVER_FRESH_MS) {
+                                        if (mt.label === myLabel || !mt.merge) {
+                                            action = "cancel";
+                                        } else {
+                                            action = "merge";
+                                            mergeTarget = mt.label;
+                                        }
                                     } else {
-                                        action = "merge";
-                                        mergeTarget = mt.label;
+                                        action = "new";
                                     }
-                                } else {
-                                    action = "new";
-                                }
-                                if (mergeTargetRef) mergeTargetRef.current = null;
-                                const dropPos = dragScreenPosRef?.current ?? null;
-                                if (dragScreenPosRef) dragScreenPosRef.current = null;
-                                // DIAGNOSTIC: demote once verified.
-                                info(`dragend dispatch: action=${action} mergeTarget=${mergeTarget} lastHeartbeatMs=${mt ? now - mt.time : -1} lastLabel=${mt?.label ?? "<none>"} myLabel=${myLabel} dropPos=${dropPos ? `${dropPos.x},${dropPos.y}` : "<none>"}`);
-                                if (action === "merge" && mergeTarget) {
-                                    info(`Drag → merge tab ${tab.id} into ${mergeTarget}`);
-                                    onTearOff(tab.id, {mergeTarget});
-                                } else if (action === "new") {
-                                    info(`Drag → tear off tab ${tab.id} into new window at ${dropPos ? `${dropPos.x},${dropPos.y}` : "default"}`);
-                                    onTearOff(tab.id, dropPos ? {position: dropPos} : undefined);
-                                }
-                                // action === "cancel": no-op.
+                                    if (mergeTargetRef) mergeTargetRef.current = null;
+                                    if (dragScreenPosRef) dragScreenPosRef.current = null;
+
+                                    // Stale heartbeat + release still over us →
+                                    // cancel (do not spawn on top of ourselves).
+                                    if (action === "new" && endInsideSelf) {
+                                        action = "cancel";
+                                        info(`dragend release still inside window → cancel`);
+                                    }
+
+                                    // Place the new window at the release point.
+                                    // Prefer Tauri cursor (physical→logical) when
+                                    // available; otherwise DragEvent.screenX/Y.
+                                    let dropPos = endScreen;
+                                    if (action === "new") {
+                                        try {
+                                            const win = getCurrentWindow();
+                                            const [cursor, factor] = await Promise.all([
+                                                cursorPosition(),
+                                                win.scaleFactor(),
+                                            ]);
+                                            dropPos = {
+                                                x: cursor.x / factor,
+                                                y: cursor.y / factor,
+                                            };
+                                        } catch (err) {
+                                            info(`dragend cursorPosition failed, using screenX/Y: ${err}`).catch(() => {});
+                                        }
+                                    }
+
+                                    info(`dragend dispatch: action=${action} mergeTarget=${mergeTarget} lastHeartbeatMs=${mt ? now - mt.time : -1} lastLabel=${mt?.label ?? "<none>"} merge=${mt?.merge ?? false} myLabel=${myLabel} dropPos=${dropPos.x},${dropPos.y} endInsideSelf=${endInsideSelf}`);
+                                    if (action === "merge" && mergeTarget) {
+                                        info(`Drag → merge tab ${tab.id} into ${mergeTarget}`);
+                                        onTearOff(tab.id, {mergeTarget});
+                                    } else if (action === "new") {
+                                        info(`Drag → tear off tab ${tab.id} into new window at ${dropPos.x},${dropPos.y}`);
+                                        onTearOff(tab.id, {position: dropPos});
+                                    }
+                                })();
                             }}
                         >
                             <div className="flex flex-col items-start flex-1 w-[70%] overflow-hidden">
