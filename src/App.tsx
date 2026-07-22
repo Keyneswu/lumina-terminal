@@ -36,6 +36,7 @@ import {
     MERGE_TAB_EVENT,
     newTearoffLabel,
     stashTearoff,
+    type TabDragHover,
     type TearoffPayload,
 } from "./lib/tearoff.ts";
 import {ExternalLink} from "lucide-react";
@@ -66,12 +67,11 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
     // Stored as state (not ref) because adding one must trigger a re-render so
     // the new Term mounts with its reattach prop.
     const [reattachTabs, setReattachTabs] = useState<Record<string, {ptyId: string; scrollback: string}>>({});
-    // During a tab drag from THIS window, holds the last hover report from any
-    // other Lumina window (label + timestamp). Target windows emit a steady
-    // `dragover`-driven heartbeat while the cursor is over them, so "fresh"
-    // (last ~300ms) means the cursor is currently there. TabBar's dragend reads
-    // this to pick merge vs. new-window vs. cancel.
-    const mergeTargetRef = useRef<{label: string; time: number} | null>(null);
+    // During a tab drag from THIS window, holds the last hover report (self
+    // heartbeat or foreign DRAG_HOVER). Fresh = cursor still over a Lumina
+    // window. `merge: true` only when over another window's sidebar — content
+    // drops cancel so we never tear off / merge onto a terminal surface.
+    const mergeTargetRef = useRef<TabDragHover | null>(null);
     // Last-known screen position (CSS px = logical px under Tauri) of the
     // cursor during a tab drag from THIS window, refreshed by our own dragover.
     // Used to position a torn-off window at the release point. Wayland forbids
@@ -444,16 +444,22 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
     }, []);
 
     // Track which other window the cursor is hovering during a drag FROM this
-    // window. TabBar's dragend reads mergeTargetRef to pick merge vs. new-window.
+    // window. TabBar's dragend reads mergeTargetRef to pick merge vs. cancel
+    // vs. new-window (`merge` is true only over a foreign sidebar).
     useEffect(() => {
         let unlisten: (() => void) | undefined;
         let cancelled = false;
-        listen<{label: string | null}>(DRAG_HOVER_EVENT, (event) => {
-            const label = event.payload?.label ?? null;
+        listen<{label?: string; merge?: boolean}>(DRAG_HOVER_EVENT, (event) => {
+            const label = event.payload?.label;
             if (label) {
-                mergeTargetRef.current = {label, time: Date.now()};
+                mergeTargetRef.current = {
+                    label,
+                    time: Date.now(),
+                    // Default false so a stale payload shape never merges by accident.
+                    merge: event.payload?.merge === true,
+                };
             }
-            // Ignore null reports — the heartbeat model only relies on the
+            // Ignore empty reports — the heartbeat model only relies on the
             // freshness of positive reports, so explicit leaves aren't needed.
         }).then((cleanup) => {
             if (cancelled) {
