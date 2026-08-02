@@ -84,6 +84,7 @@ export default function ProfileSettings({
             fontFamily: draft.fontFamily?.trim() || undefined,
             fontStyle: draft.fontStyle || undefined,
             themePath: draft.themePath?.trim() || undefined,
+            startupCommand: draft.startupCommand?.trim() || undefined,
             type: draft.type ?? "local",
             ssh: draft.type === "remote" ? draft.ssh : undefined,
         }));
@@ -201,6 +202,18 @@ export default function ProfileSettings({
                                 {t["Select"]}
                             </Button>
                         </div>
+                    </div>
+
+                    {/* Startup Command */}
+                    <div className="flex flex-col gap-1.5">
+                        <Label htmlFor="profile-startup-command">{t["Startup Command"]}</Label>
+                        <Input
+                            id="profile-startup-command"
+                            value={draft.startupCommand ?? ""}
+                            onChange={(e) => updateDraft({ startupCommand: e.target.value || undefined })}
+                            className="max-w-sm"
+                            placeholder={profileType === "remote" ? "e.g. top" : "e.g. vim, opencode"}
+                        />
                     </div>
 
                     {/* SSH Config Fields */}

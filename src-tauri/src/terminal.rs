@@ -41,6 +41,7 @@ pub fn start_terminal(
     profile_type: Option<String>,
     ssh_config: Option<SshConfig>,
     cwd: Option<String>,
+    startup_command: Option<String>,
 ) {
     {
         let terminals = state.terminals.try_lock().unwrap_or_else(|e| {
@@ -87,11 +88,24 @@ pub fn start_terminal(
         if let Some(ref dir) = cwd {
             c.cwd(dir);
         }
+        // Run a command on the remote host instead of an interactive session.
+        // `ssh user@host <cmd>` runs the command then disconnects on exit, so
+        // the tab closes (matching local startup_command behavior).
+        if let Some(ref cmd) = startup_command {
+            c.arg(cmd);
+        }
         log::debug!("Creating terminal with ssh");
         c
     } else {
         let mut c = CommandBuilder::new(&exe_path);
-        c.args(&["--login", "-i"]);
+        if let Some(ref cmd) = startup_command {
+            // Run a single command then exit: the shell exits when the command
+            // does, so the watcher emits `term-exit-<id>` and the tab closes —
+            // the desired behavior for a "launch opencode/vim" profile.
+            c.args(&["--login", "-i", "-c", cmd]);
+        } else {
+            c.args(&["--login", "-i"]);
+        }
         c.env("TERM", "xterm-256color");
         if let Some(ref dir) = cwd {
             c.cwd(dir);

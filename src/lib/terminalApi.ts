@@ -45,6 +45,7 @@ export function startTerminal(id: string, profile: TerminalProfile, onOutput: Ch
         profileType: profile.type ?? "local",
         sshConfig: profile.type === "remote" ? profile.ssh : undefined,
         cwd: profile.cwd || undefined,
+        startupCommand: profile.startupCommand || undefined,
         onOutput,
     });
 }

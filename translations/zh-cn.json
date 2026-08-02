@@ -98,6 +98,7 @@
     "New Local Profile": "新建本地配置",
     "New Remote Profile": "新建远程配置",
     "Startup Directory": "启动目录",
+    "Startup Command": "启动命令",
     "Default": "默认",
     "Keyboard Shortcuts": "键盘快捷键",
     "Click a shortcut and press the keys you want to use.": "点击某个快捷键，然后按下你想要使用的按键组合。",

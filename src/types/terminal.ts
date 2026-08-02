@@ -28,6 +28,12 @@ export interface TerminalProfile extends TerminalRenderOptions {
     name: string;
     exePath: string;
     cwd?: string;
+    /** Command to run on startup instead of dropping into an interactive
+     * shell, e.g. "vim" or "opencode". Locally executed as
+     * `<exe> --login -i -c "<cmd>"` (so the shell exits when the command does
+     * → the tab closes); for SSH profiles it is passed to the remote host
+     * (`ssh user@host <cmd>`). Empty/undefined = interactive shell. */
+    startupCommand?: string;
     default?: boolean;
     type?: ProfileType;
     ssh?: SSHConfig;
