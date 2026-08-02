@@ -32,6 +32,11 @@ let hasAppliedInitialWindowSize = false;
 interface TermProps {
     id: string;
     profile: TerminalProfile;
+    // Background color used to fill the terminal's own padding region (the gap
+    // between the canvas and the rounded shell). Without it the padding is
+    // transparent and the chrome layer beneath shows through as a border.
+    // Comes from App's effective bg (theme bg, or the TUI edge bg when spread).
+    fillBg?: string;
     // Pre-parsed bindings (merged defaults + user overrides), shared from App
     // so every terminal uses the same parsed set instead of re-parsing each.
     bindings: Binding[];
@@ -609,13 +614,16 @@ export default function Term(props : TermProps) {
     }, [id]);
 
     return (
-        <div className="w-full h-full rounded-md bg-black">
-            <div className="w-full h-full overflow-hidden relative" style={{
-                paddingLeft: padding.left,
-                paddingRight: padding.right,
-                paddingTop: padding.top,
-                paddingBottom: padding.bottom,
-            }} onPointerDown={markInteractive} onWheel={markInteractive}>
+        <div className="w-full h-full overflow-hidden relative" style={{
+            // Fill the padding region with the terminal's own bg so the chrome
+            // layer beneath only shows through the rounded corners (the mask),
+            // not as a border around the canvas.
+            background: props.fillBg,
+            paddingLeft: padding.left,
+            paddingRight: padding.right,
+            paddingTop: padding.top,
+            paddingBottom: padding.bottom,
+        }} onPointerDown={markInteractive} onWheel={markInteractive}>
                 <div ref={termRef} className="w-full h-full overflow-hidden" style={{
                     fontStyle: profile.fontStyle ?? "normal",
                 }}/>
@@ -638,7 +646,6 @@ export default function Term(props : TermProps) {
                         </div>
                     </div>
                 )}
-            </div>
         </div>
     );
 }

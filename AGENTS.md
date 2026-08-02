@@ -77,6 +77,8 @@ src/
 ├── components/
 │   ├── ui/                  # Shared design primitives (the visual system — one of each thing)
 │   │   ├── IconButton.tsx   # Unified chrome button (replaces 3 prior button systems). Motion-aware.
+│   │   ├── MaskedSurface.tsx    # SVG-mask wrapper: clips children to a rounded rect (corners cut
+│   │   │                        #   away so the chrome beneath shows). Extensible to complex shapes.
 │   │   ├── SettingsShell.tsx    # Settings page frame (scroll body + optional footer slot)
 │   │   ├── SettingRow.tsx       # field / toggle / action / info row — kills the settings spacing drift
 │   │   ├── SectionTitle.tsx     # <h2> heading + optional subtitle (consistent mb)

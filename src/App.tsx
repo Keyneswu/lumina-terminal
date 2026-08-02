@@ -1,4 +1,5 @@
 import Term from "./components/Term.tsx";
+import MaskedSurface from "./components/ui/MaskedSurface.tsx";
 import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {TerminalProfile, CurrentCommand} from "./types/terminal.ts";
 import {useGlobalConfig} from "./hooks/config.tsx";
@@ -22,6 +23,8 @@ import {SETTINGS_TAB_ID, ABOUT_TAB_ID} from "./constants.ts";
 import { info, debug, error, warn } from "@tauri-apps/plugin-log";
 import {usePaddingOffset} from "./hooks/paddingOffset.ts";
 import {useMaximized} from "./hooks/maximized.ts";
+import {useGlass} from "./hooks/useGlass.ts";
+import {glassSurface} from "./lib/glass.ts";
 import {useStartupUpdateCheck} from "./hooks/useStartupUpdateCheck.ts";
 import {useUpdater} from "./hooks/useUpdater.ts";
 import {useInstallSource} from "./hooks/useInstallSource.ts";
@@ -99,6 +102,15 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
         }
     }, [currentId, terminals]);
     const {theme: effectiveTheme, bg: effectiveBg, fg: effectiveFg, isSpread, setEdgeBg} = useEffectiveTheme(currentProfile, currentId);
+    // Glass material filling the terminal area. The terminal surface is clipped
+    // to a rounded rectangle via clip-path; its four corners are transparent,
+    // exposing this chrome layer beneath — so the chrome reads as a continuous
+    // frame wrapping the terminal with rounded inner corners.
+    const {supportsGlass} = useGlass();
+    const chromeGlass = useMemo(
+        () => glassSurface(effectiveBg ?? "#000000", supportsGlass, {blurPx: 16, spread: isSpread}),
+        [effectiveBg, supportsGlass, isSpread],
+    );
     // Danger color for the privileged-command indicator: follows the theme's
     // ANSI reds so it stays visible even on red-dominant backgrounds.
     const dangerColor = useMemo(
@@ -877,6 +889,18 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
                         isMaximized={isMaximized}
                     />
                     <div className="flex-1 relative overflow-hidden">
+                        {/* Chrome glass layer filling the terminal area. The
+                            terminal surfaces above are clipped to a rounded
+                            rectangle (clip-path), so their four corners are
+                            transparent and expose this layer — making the
+                            chrome read as a continuous frame wrapping the
+                            terminal. Settings/About sit above this (they fill
+                            the area without clipping). */}
+                        <div
+                            aria-hidden
+                            className="absolute inset-0"
+                            style={{...chromeGlass, zIndex: 0}}
+                        />
                         {currentId === SETTINGS_TAB_ID && (
                             <div
                                 className="absolute inset-0"
@@ -917,9 +941,19 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
                                     opacity: id === currentId ? 1 : 0,
                                 }}
                             >
+                                <MaskedSurface
+                                    // Mask the terminal to a rounded rectangle so
+                                    // its four corners expose the chrome glass
+                                    // layer beneath, tying the frame together.
+                                    // absolute inset-0 guarantees the surface is
+                                    // exactly the same size as the chrome layer
+                                    // beneath (no gap → no spurious border).
+                                    className="absolute inset-0"
+                                >
                                 <Term
                                     id={id}
                                     profile={terminals[id]}
+                                    fillBg={effectiveBg}
                                     paddingOffset={paddingOffset}
                                     isActive={id === currentId}
                                     bindings={parsedBindings}
@@ -954,6 +988,7 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
                                         );
                                     }}
                                 />
+                                </MaskedSurface>
                             </div>
                             );
                         })}
