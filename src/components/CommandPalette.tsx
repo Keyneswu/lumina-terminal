@@ -211,7 +211,7 @@ export default function CommandPalette({ isOpen, onOpenChange, actions }: Comman
                                                     <div
                                                         key={action.id}
                                                         data-index={index}
-                                                        className={`flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer transition-colors ${
+                                                        className={`lum-cmd-item group relative flex items-center gap-3 px-3 py-2.5 rounded-[var(--radius-sm)] cursor-pointer transition-colors duration-[var(--duration-fast)] ease-[var(--ease-glass)] ${
                                                             isSelected
                                                                 ? "bg-accent-soft text-accent-soft-foreground"
                                                                 : "hover:bg-default/10"

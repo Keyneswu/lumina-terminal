@@ -22,7 +22,7 @@ function Step1({onNext} : {
     return (
         <Card
             data-tauri-drag-region
-            className="flex flex-row items-center justify-between gap-5 select-none w-full h-full p-20 rounded-lg"
+            className="flex flex-row items-center justify-between gap-5 select-none w-full h-full p-10 rounded-[var(--radius-lg)]"
         >
             <div className="relative h-40 w-40 shrink-0 overflow-hidden rounded-2xl">
                 <img
@@ -161,7 +161,7 @@ function Step2({onNext, onPrev} : {
     return (
         <Card
             data-tauri-drag-region
-            className="flex flex-col items-start justify-center gap-5 select-none w-full h-full p-20 rounded-lg"
+            className="flex flex-col items-start justify-center gap-5 select-none w-full h-full p-10 rounded-[var(--radius-lg)]"
         >
             <Card.Header>
                 <Card.Title className="font-semibold text-lg">{t["New Profile"]}</Card.Title>
@@ -311,7 +311,7 @@ function FinalStep({onFinish, onPrev, display} : {
     return (
         <Card
             data-tauri-drag-region
-            className="flex flex-col items-center justify-center gap-6 select-none w-full h-full p-20 rounded-lg"
+            className="flex flex-col items-center justify-center gap-6 select-none w-full h-full p-10 rounded-[var(--radius-lg)]"
         >
             {display && (
                 <Confetti

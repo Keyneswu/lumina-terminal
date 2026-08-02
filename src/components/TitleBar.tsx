@@ -1,12 +1,24 @@
 import {LucideMaximize, LucideMinimize, LucideMinus, LucideX, PanelLeftClose, PanelLeftOpen, Settings} from "lucide-react";
-import {Button} from "@heroui/react";
 import {getCurrentWindow} from "@tauri-apps/api/window";
 import {ITheme} from "@xterm/xterm";
 import {isMacOS} from "../lib/platform.ts";
 import {useSurfaceColors} from "../hooks/surfaceColors.ts";
+import {useGlass} from "../hooks/useGlass.ts";
+import {glassSurface} from "../lib/glass.ts";
 import { info } from "@tauri-apps/plugin-log";
+import IconButton from "./ui/IconButton.tsx";
 
-function WindowControl({size, isMaximized} : {size: number, isMaximized: boolean}) {
+interface WindowControlProps {
+    size: number;
+    isMaximized: boolean;
+    hoverOverlay: string;
+    activeOverlay: string;
+    /** Brand-tinted wash for the close button on hover. */
+    closeHover: string;
+    fg: string;
+}
+
+function WindowControl({size, isMaximized, hoverOverlay, activeOverlay, closeHover, fg}: WindowControlProps) {
     const handleMinimize = () => {
         info("Window minimized");
         getCurrentWindow().minimize().then();
@@ -29,35 +41,61 @@ function WindowControl({size, isMaximized} : {size: number, isMaximized: boolean
 
     return (
         <div className="flex flex-row justify-end items-center" style={{height: size}}>
-            <Button isIconOnly variant="ghost" onClick={handleMinimize} size="sm" className="rounded-lg h-full grow" style={{width: size}}>
-                <LucideMinus/>
-            </Button>
-            {
-                isMaximized ? (
-                    <Button isIconOnly variant="ghost" onClick={handleUnmaximize} size="sm" className="rounded-lg h-full grow" style={{width: size}}>
-                        <LucideMinimize/>
-                    </Button>
-                ) : (
-                    <Button isIconOnly variant="ghost" onClick={handleMaximize} size="sm" className="rounded-lg h-full grow" style={{width: size}}>
-                        <LucideMaximize/>
-                    </Button>
-                )
-            }
-            <Button isIconOnly variant="ghost" onClick={handleClose} size="sm" className="rounded-lg h-full" style={{width: size}}>
-                <LucideX className="text-red-500"/>
-            </Button>
+            <IconButton
+                size={size}
+                hoverOverlay={hoverOverlay}
+                activeOverlay={activeOverlay}
+                style={{color: fg, borderRadius: 0}}
+                onClick={handleMinimize}
+            >
+                <LucideMinus size={16}/>
+            </IconButton>
+            {isMaximized ? (
+                <IconButton
+                    size={size}
+                    hoverOverlay={hoverOverlay}
+                    activeOverlay={activeOverlay}
+                    style={{color: fg, borderRadius: 0}}
+                    onClick={handleUnmaximize}
+                >
+                    <LucideMinimize size={16}/>
+                </IconButton>
+            ) : (
+                <IconButton
+                    size={size}
+                    hoverOverlay={hoverOverlay}
+                    activeOverlay={activeOverlay}
+                    style={{color: fg, borderRadius: 0}}
+                    onClick={handleMaximize}
+                >
+                    <LucideMaximize size={16}/>
+                </IconButton>
+            )}
+            <IconButton
+                size={size}
+                hoverOverlay={closeHover}
+                activeOverlay={closeHover}
+                style={{color: fg, borderRadius: 0}}
+                onClick={handleClose}
+            >
+                <LucideX size={16}/>
+            </IconButton>
         </div>
     );
 }
 
 export default function TitleBar({
     theme,
+    bgSpread,
     tabBarVisible,
     onToggleTabBar,
     onOpenSettings,
     isMaximized,
 } : {
     theme: ITheme | null,
+    /** True when the bg comes from a fullscreen TUI's spread edge color —
+     *  the glass drops its tint so the TUI color passes through unmodified. */
+    bgSpread?: boolean,
     tabBarVisible: boolean,
     onToggleTabBar: () => void,
     onOpenSettings: () => void,
@@ -66,9 +104,15 @@ export default function TitleBar({
     const bg = theme?.background ?? "black";
     const fg = theme?.foreground ?? "white";
 
-    const { borderColor, hoverOverlay, activeOverlay } = useSurfaceColors(bg);
+    const { hoverOverlay, activeOverlay } = useSurfaceColors(bg);
+    const {supportsGlass} = useGlass();
+    const glass = glassSurface(bg, supportsGlass, {blurPx: 14, spread: bgSpread});
     const macOSTitleButtonMarginLeft = tabBarVisible ? 8 : 88;
     const size = 36;
+    // Brand cinnabar wash for the close button hover — replaces the isolated
+    // `text-red-500` literal with the brand accent so window controls feel
+    // part of the app identity.
+    const closeHover = "rgba(255,70,31,0.18)";
 
     if (isMacOS()) {
         return (
@@ -77,33 +121,29 @@ export default function TitleBar({
                 className="w-full flex flex-row items-center select-none shrink-0"
                 style={{
                     height: size,
-                    background: bg,
-                    borderBottom: `1px solid ${borderColor}`,
+                    ...glass,
+                    color: fg,
                 }}
             >
-                <button
-                    className="p-1 rounded-lg transition-all duration-200 cursor-pointer"
-                    style={{ color: fg, marginLeft: macOSTitleButtonMarginLeft }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = hoverOverlay)}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-                    onMouseDown={(e) => (e.currentTarget.style.background = activeOverlay)}
-                    onMouseUp={(e) => (e.currentTarget.style.background = hoverOverlay)}
+                <IconButton
+                    size={28}
+                    hoverOverlay={hoverOverlay}
+                    activeOverlay={activeOverlay}
+                    style={{color: fg, marginLeft: macOSTitleButtonMarginLeft}}
                     onClick={() => { info(`Tab bar ${tabBarVisible ? "hidden" : "shown"}`); onToggleTabBar(); }}
                 >
                     {tabBarVisible ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
-                </button>
+                </IconButton>
                 <div className="flex-1" data-tauri-drag-region />
-                <button
-                    className="mr-2 p-1 rounded-lg transition-all duration-200 cursor-pointer"
-                    style={{ color: fg }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = hoverOverlay)}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-                    onMouseDown={(e) => (e.currentTarget.style.background = activeOverlay)}
-                    onMouseUp={(e) => (e.currentTarget.style.background = hoverOverlay)}
+                <IconButton
+                    size={28}
+                    hoverOverlay={hoverOverlay}
+                    activeOverlay={activeOverlay}
+                    style={{color: fg, marginRight: 8}}
                     onClick={() => { info("Settings opened from title bar"); onOpenSettings(); }}
                 >
                     <Settings size={18} />
-                </button>
+                </IconButton>
             </div>
         );
     }
@@ -114,35 +154,31 @@ export default function TitleBar({
             className="w-full flex flex-row items-center justify-between select-none shrink-0"
             style={{
                 height: size,
-                background: bg,
-                borderBottom: `1px solid ${borderColor}`,
+                ...glass,
+                color: fg,
             }}
         >
-            <Button
-                isIconOnly
-                variant="ghost"
+            <IconButton
+                size={size}
+                hoverOverlay={hoverOverlay}
+                activeOverlay={activeOverlay}
+                style={{color: fg, borderRadius: 0}}
                 onClick={() => { info(`Tab bar ${tabBarVisible ? "hidden" : "shown"}`); onToggleTabBar(); }}
-                size="sm"
-                className="rounded-lg h-full"
-                style={{ color: fg, width: size }}
             >
-                {tabBarVisible ? <PanelLeftClose/> : <PanelLeftOpen/>}
-            </Button>
+                {tabBarVisible ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
+            </IconButton>
             <div className="flex-1" data-tauri-drag-region />
-            <div className="flex flex-row items-center gap-1 h-full">
-                <Button
-                    isIconOnly
-                    variant="ghost"
+            <div className="flex flex-row items-center h-full">
+                <IconButton
+                    size={size}
+                    hoverOverlay={hoverOverlay}
+                    activeOverlay={activeOverlay}
+                    style={{color: fg, borderRadius: 0}}
                     onClick={() => { info("Settings opened from title bar"); onOpenSettings(); }}
-                    size="sm"
-                    className="rounded-lg h-full grow"
-                    style={{width: size}}
                 >
-                    <Settings/>
-                </Button>
-                <div style={{ color: fg }}>
-                    <WindowControl size={size} isMaximized={isMaximized}/>
-                </div>
+                    <Settings size={18} />
+                </IconButton>
+                <WindowControl size={size} isMaximized={isMaximized} hoverOverlay={hoverOverlay} activeOverlay={activeOverlay} closeHover={closeHover} fg={fg} />
             </div>
         </div>
     );

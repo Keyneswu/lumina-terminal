@@ -97,7 +97,7 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
             return null;
         }
     }, [currentId, terminals]);
-    const {theme: effectiveTheme, bg: effectiveBg, fg: effectiveFg, setEdgeBg} = useEffectiveTheme(currentProfile, currentId);
+    const {theme: effectiveTheme, bg: effectiveBg, fg: effectiveFg, isSpread, setEdgeBg} = useEffectiveTheme(currentProfile, currentId);
     // Danger color for the privileged-command indicator: follows the theme's
     // ANSI reds so it stays visible even on red-dominant backgrounds.
     const dangerColor = useMemo(
@@ -855,6 +855,7 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
                     backgroundColor={effectiveBg ?? "#000000"}
                     foregroundColor={effectiveFg ?? "#ffffff"}
                     dangerColor={dangerColor}
+                    bgSpread={isSpread}
                     collapsed={!tabBarVisible}
                     defaultProfileName={defaultProfile?.name}
                     updateVersion={updater.status === "available" && updater.info ? updater.info.version : null}
@@ -863,6 +864,7 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
                 <div className="flex-1 flex flex-col min-w-0">
                     <TitleBar
                         theme={effectiveTheme}
+                        bgSpread={isSpread}
                         tabBarVisible={tabBarVisible}
                         onToggleTabBar={() => updateConfig({ showTabBar: !tabBarVisible })}
                         onOpenSettings={openSettings}

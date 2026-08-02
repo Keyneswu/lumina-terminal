@@ -1,69 +1,53 @@
 import {useGlobalConfig} from "../../hooks/config.tsx";
 import {useI18n} from "../../hooks/i18n.tsx";
-import {useEffect, useMemo, useState} from "react";
 import {TerminalRenderOptions} from "../../types/terminal.ts";
 import {info} from "@tauri-apps/plugin-log";
 import RenderSettings from "./RenderSettings.tsx";
-import {Button} from "@heroui/react";
+import {useSettingsDraft} from "../../hooks/useSettingsDraft.ts";
+import SettingsShell from "../ui/SettingsShell.tsx";
+import SectionTitle from "../ui/SectionTitle.tsx";
+import SaveFooter from "../ui/SaveFooter.tsx";
 
-export default function GlobalProfileSettings({ borderColor }: { borderColor: string }) {
-    const { config, updateConfig } = useGlobalConfig();
+export default function GlobalProfileSettings({borderColor}: {borderColor: string}) {
+    const {config, updateConfig} = useGlobalConfig();
     const t = useI18n();
 
-    const [draft, setDraft] = useState<TerminalRenderOptions>({
-        cols: 80,
-        rows: 24,
-        ...config.globalProfile,
-    });
+    // The global profile is a partial — fill the structural defaults so the
+    // render-options form always has cols/rows to edit.
+    const source: TerminalRenderOptions = {cols: 80, rows: 24, ...config.globalProfile};
 
-    useEffect(() => {
-        setDraft({
-            cols: 80,
-            rows: 24,
-            ...config.globalProfile,
-        });
-    }, [config.globalProfile]);
-
-    const currentGlobalProfile = config.globalProfile ?? {};
-    const isDirty = useMemo(() => {
-        return JSON.stringify(draft) !== JSON.stringify({ cols: 80, rows: 24, ...currentGlobalProfile });
-    }, [draft, currentGlobalProfile]);
-
-    const updateDraft = (updates: Partial<TerminalRenderOptions>) => {
-        setDraft((prev) => ({ ...prev, ...updates }));
-    };
-
-    const handleSave = () => {
-        info("Global profile settings saved");
-        const trimmed: TerminalRenderOptions = JSON.parse(JSON.stringify({
-            ...draft,
-            fontFamily: draft.fontFamily?.trim() || undefined,
-            fontStyle: draft.fontStyle || undefined,
-            themePath: draft.themePath?.trim() || undefined,
-        }));
-        updateConfig({ globalProfile: trimmed });
-    };
+    const {draft, updateDraft, isDirty, save} = useSettingsDraft<TerminalRenderOptions>(
+        source,
+        (d) => {
+            info("Global profile settings saved");
+            // Trim empty strings to undefined so they don't serialize as "" in
+            // config.json (matches the original panel's behavior).
+            const trimmed: TerminalRenderOptions = JSON.parse(JSON.stringify({
+                ...d,
+                fontFamily: d.fontFamily?.trim() || undefined,
+                fontStyle: d.fontStyle || undefined,
+                themePath: d.themePath?.trim() || undefined,
+            }));
+            updateConfig({globalProfile: trimmed});
+        },
+        [config.globalProfile],
+    );
 
     return (
-        <div className="flex flex-col h-full">
-            <div className="flex-1 overflow-y-auto pb-4 pl-1 pr-6">
-                <h2 className="text-lg font-semibold mb-6">{t["Global Profile"]}</h2>
-                <RenderSettings draft={draft} updateDraft={updateDraft} idPrefix="gp" />
-            </div>
-            <div className="shrink-0 border-t pt-3 pr-6" style={{ borderColor: borderColor }}>
-                <div className="flex items-center gap-3">
-                    <Button
-                        variant="primary"
-                        isDisabled={!isDirty}
-                        onPress={handleSave}
-                    >
-                        {t["Save"]}
-                    </Button>
-                    {isDirty && (
-                        <span className="text-xs text-muted">{t["Unsaved changes"]}</span>
-                    )}
-                </div>
-            </div>
-        </div>
+        <SettingsShell
+            footer={
+                <SaveFooter
+                    isDisabled={!isDirty}
+                    saveLabel={t["Save"]}
+                    onPressSave={save}
+                    isDirty={isDirty}
+                    unsavedLabel={t["Unsaved changes"]}
+                    borderColor={borderColor}
+                />
+            }
+        >
+            <SectionTitle>{t["Global Profile"]}</SectionTitle>
+            <RenderSettings draft={draft} updateDraft={updateDraft} idPrefix="gp" />
+        </SettingsShell>
     );
 }

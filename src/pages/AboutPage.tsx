@@ -176,7 +176,7 @@ export default function AboutPage({ theme, updater, onShowUpdateModal }: AboutPa
                                     {t["You're up to date"]}
                                 </span>
                             ) : updater.status === "error" ? (
-                                <span className="flex items-center gap-1.5" style={{ color: "#ef4444" }}>
+                                <span className="flex items-center gap-1.5" style={{color: "var(--color-danger-500, #ef4444)"}}>
                                     <AlertCircle size={14} className="translate-y-px" />
                                     {t["Update check failed"]}
                                 </span>
@@ -288,9 +288,9 @@ export default function AboutPage({ theme, updater, onShowUpdateModal }: AboutPa
                                     href={tech.url}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="px-2.5 py-1 rounded-md text-xs transition-colors hover:opacity-80"
+                                    className="lum-tech-chip px-2.5 py-1 rounded-[var(--radius-sm)] text-xs transition-colors duration-[var(--duration-fast)] ease-[var(--ease-glass)] hover:opacity-85"
                                     style={{
-                                        background: colors.hoverOverlay,
+                                        background: "var(--color-brand-gradient-soft)",
                                         color: fg,
                                     }}
                                 >

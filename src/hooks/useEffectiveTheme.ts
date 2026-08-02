@@ -14,6 +14,10 @@ export interface EffectiveTheme {
     bg: string | undefined;
     // Effective foreground color — a readable contrast color for bg.
     fg: string | undefined;
+    /** True when `bg` comes from a fullscreen TUI's edge background (the TUI
+     *  has "spread" its color across the whole window). Chrome uses this to
+     *  skip its glass tint so the TUI's color passes through unmodified. */
+    isSpread: boolean;
 }
 
 /**
@@ -88,6 +92,7 @@ export function useEffectiveTheme(
         theme: effectiveTheme,
         bg: effectiveBg,
         fg: effectiveFg,
+        isSpread: edgeBg !== null,
         setEdgeBg,
     };
 }

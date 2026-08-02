@@ -44,7 +44,10 @@ src/
 ├── lib/                     # Pure, framework-agnostic logic (NO React)
 │   ├── platform.ts          # isMacOS() / isLinux()
 │   ├── configFile.ts        # config.json path + openConfigFile()
-│   ├── color.ts             # isColorDark, foregroundFor, adjustColor
+│   ├── color.ts             # isColorDark, foregroundFor, adjustColor, visibleRed
+│   ├── glass.ts             # glassSurface / glassBorder / elevationShadow — backdrop-filter material
+│   │                        #   + Wayland/WebKitGTK opaque fallback (single source for the glass look)
+│   ├── motion.ts            # framer-motion variants/transitions presets (one spring curve for all chrome)
 │   ├── ssh.ts               # formatSshAddress / formatSshEntry
 │   ├── term.ts              # parseProfile, parseProfileTheme, parseProfilePadding
 │   ├── terminalApi.ts       # invoke wrappers: writeToTerminal, resizeTerminal, ...
@@ -60,7 +63,11 @@ src/
 │   ├── i18n.tsx             # useI18n, languageNames, Languages type
 │   ├── maximized.ts         # useMaximized (window resize → isMaximized)
 │   ├── paddingOffset.ts     # usePaddingOffset(isMaximized) → platform/maximize padding
-│   ├── surfaceColors.ts     # useSurfaceColors(bg) → derived border/overlay colors
+│   ├── surfaceColors.ts     # useSurfaceColors(bg) → derived border/overlay/glass/accent colors
+│   ├── useGlass.ts          # useGlass() → {supportsGlass, blurPx}: platform backdrop-filter capability
+│   │                        #   (disabled on Linux/WebKitGTK; module-cached like useShells)
+│   ├── useSettingsDraft.ts  # useSettingsDraft(source, onCommit, deps) → {draft, isDirty, save, ...}
+│   │                        #   shared draft+dirty+save logic for all settings panels
 │   ├── useShells.ts         # useShells() — cached find_shells backend call
 │   ├── useSshConfig.ts      # useSshConfig() — cached parse_ssh_config backend call
 │   ├── useOutputMode.ts     # useOutputMode(id) → {markInteractive}: debounced LowLatency toggle
@@ -68,6 +75,12 @@ src/
 │   └── useTearoffSession.ts # useTearoffSession() → {label, payload} | "no" | null (tab tear-off boot)
 │
 ├── components/
+│   ├── ui/                  # Shared design primitives (the visual system — one of each thing)
+│   │   ├── IconButton.tsx   # Unified chrome button (replaces 3 prior button systems). Motion-aware.
+│   │   ├── SettingsShell.tsx    # Settings page frame (scroll body + optional footer slot)
+│   │   ├── SettingRow.tsx       # field / toggle / action / info row — kills the settings spacing drift
+│   │   ├── SectionTitle.tsx     # <h2> heading + optional subtitle (consistent mb)
+│   │   └── SaveFooter.tsx       # Save (disabled-when-clean) + unsaved hint + trailing action slot
 │   ├── Term.tsx             # Single xterm instance: addons, PTY lifecycle, edge bg polling
 │   ├── TabBar.tsx           # Sidebar tab list
 │   ├── TitleBar.tsx         # Drag region + window controls (per-platform)
@@ -134,6 +147,22 @@ categories that tend to duplicate:
 - **Platform checks** → use `lib/platform.ts` (`isMacOS`, `isLinux`). Do not
   call `@tauri-apps/plugin-os` directly in components.
 - **Color math** → use `lib/color.ts`. Do not re-implement luminance / contrast.
+- **Glass material / backdrop-filter** → use `lib/glass.ts` (`glassSurface`,
+  `glassBorder`, `elevationShadow`) gated by `hooks/useGlass.ts`. Never write
+  `backdrop-filter` inline in a component — the Wayland/WebKitGTK fallback
+  lives in `glassSurface`, so bypassing it breaks Linux. Call `glassSurface`
+  directly in the chrome container and spread the result onto its `style`.
+- **Motion presets** → use `lib/motion.ts` (shared framer-motion variants).
+  Do not invent per-component spring curves; reuse `springSoft`, `fadeSlideUp`,
+  `whileHoverTap`, etc., so all chrome animates with one rhythm.
+- **Chrome buttons** → use `components/ui/IconButton.tsx`. Do not hand-roll
+  `<button>` + `onMouseEnter` background swapping (the old pattern that
+  drifted across TitleBar/TabBar) — `IconButton` handles hover/active/focus
+  declaratively and is motion-aware.
+- **Settings layout** → use `components/ui/` primitives (`SettingsShell`,
+  `SettingRow`, `SectionTitle`, `SaveFooter`) and `hooks/useSettingsDraft.ts`.
+  Do not re-roll the page-shell / labeled-field / draft+isDirty pattern in a
+  new settings panel — port it onto the shared primitives instead.
 - **Backend `invoke` calls** → wrap new commands in `lib/terminalApi.ts` (or a
   sibling api module) and import the wrapper. Components should rarely call
   `invoke` directly; when they do (one-off commands like `path_exist`), it is

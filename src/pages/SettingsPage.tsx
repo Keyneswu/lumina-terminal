@@ -1,4 +1,5 @@
-import { useCallback, useState } from "react";
+import { useCallback, useState, type CSSProperties } from "react";
+import { motion } from "framer-motion";
 import {
     Button,
     Modal,
@@ -15,6 +16,9 @@ import { useGlobalConfig } from "../hooks/config.tsx";
 import { useI18n } from "../hooks/i18n.tsx";
 import { TerminalProfile } from "../types/terminal.ts";
 import { useSurfaceColors } from "../hooks/surfaceColors.ts";
+import { useGlass } from "../hooks/useGlass.ts";
+import { glassSurface } from "../lib/glass.ts";
+import { whileHoverTap } from "../lib/motion.ts";
 import { info, debug } from "@tauri-apps/plugin-log";
 import ProfileSettings from "../components/settings/ProfileSettings.tsx";
 import DeveloperSettings from "../components/settings/DeveloperSettings.tsx";
@@ -38,30 +42,21 @@ function SidebarItem({
     children: React.ReactNode;
     isSelected: boolean;
     onClick: () => void;
-    colors: { activeOverlay: string; hoverOverlay: string };
+    colors: { activeOverlay: string; hoverOverlay: string; accentOverlay: string };
 }) {
     return (
-        <div
-            className="flex items-center justify-between px-3 py-2.5 cursor-pointer text-sm"
+        <motion.div
+            {...whileHoverTap}
+            className={`lum-settings-nav-item group relative flex items-center justify-between mx-2 px-3 py-2 my-0.5 cursor-pointer text-sm rounded-[var(--radius-sm)] transition-colors duration-[var(--duration-base)] ease-[var(--ease-glass)] hover:bg-[var(--lum-nav-hover)] ${isSelected ? "bg-[var(--lum-nav-active)]" : ""}`}
             style={{
-                background: isSelected ? colors.activeOverlay : "transparent",
+                "--lum-nav-hover": isSelected ? colors.accentOverlay : colors.hoverOverlay,
+                "--lum-nav-active": colors.accentOverlay,
                 fontWeight: isSelected ? 500 : 400,
-                transition: "background-color 150ms",
-            }}
+            } as React.CSSProperties}
             onClick={onClick}
-            onMouseEnter={(e) => {
-                if (!isSelected) {
-                    e.currentTarget.style.background = colors.hoverOverlay;
-                }
-            }}
-            onMouseLeave={(e) => {
-                if (!isSelected) {
-                    e.currentTarget.style.background = "transparent";
-                }
-            }}
         >
             {children}
-        </div>
+        </motion.div>
     );
 }
 
@@ -81,6 +76,8 @@ export default function SettingsPage({ theme, openAbout }: { theme: ITheme | nul
     const bg = theme?.background ?? "#000000";
     const fg = theme?.foreground ?? "#ffffff";
     const colors = useSurfaceColors(bg);
+    const {supportsGlass} = useGlass();
+    const sidebarGlass = glassSurface(bg, supportsGlass, {blurPx: 16});
 
     const handleDeleteProfile = useCallback(
         (name: string) => {
@@ -117,16 +114,18 @@ export default function SettingsPage({ theme, openAbout }: { theme: ITheme | nul
     }, [config.profiles, newProfile, t]);
 
     return (
-        <div className="flex flex-row h-full" style={{ background: bg, color: fg }}>
-            {/* Inner Sidebar */}
+        <div className="flex flex-row h-full" style={{background: bg, color: fg}}>
+            {/* Inner Sidebar — wears the glass material so the terminal canvas
+                (or the page bg) shows through subtly, matching the terminal
+                TabBar's treatment. */}
             <div
                 className="flex flex-col shrink-0 h-full overflow-hidden"
                 style={{
                     width: 180,
-                    borderRight: `1px solid ${colors.borderColor}`,
+                    ...sidebarGlass,
                 }}
             >
-                <div className="flex-1 overflow-y-auto pt-2">
+                <div className="flex-1 overflow-y-auto overflow-x-hidden pt-2">
                     {/* General */}
                     <SidebarItem
                         isSelected={selectedSection === "general"}
@@ -167,10 +166,10 @@ export default function SettingsPage({ theme, openAbout }: { theme: ITheme | nul
 
                     {/* Profiles header */}
                     <div className="flex items-center gap-2 px-3 pt-3 pb-1.5 select-none">
-                        <span className="text-xs font-medium uppercase tracking-wider whitespace-nowrap" style={{ color: colors.inactiveText, opacity: 0.8 }}>
+                        <span className="text-xs font-medium uppercase tracking-wider whitespace-nowrap" style={{color: colors.inactiveText, opacity: 0.8}}>
                             {t["Profiles"]}
                         </span>
-                        <div className="flex-1" style={{ borderTop: `1px solid ${colors.borderColor}` }} />
+                        <div className="flex-1" style={{borderTop: `1px solid ${colors.glassBorder}`}} />
                     </div>
 
                     {/* Profile list */}
@@ -188,10 +187,10 @@ export default function SettingsPage({ theme, openAbout }: { theme: ITheme | nul
 
                     {/* Developer header */}
                     <div className="flex items-center gap-2 px-3 pt-3 pb-1.5 select-none">
-                        <span className="text-xs font-medium uppercase tracking-wider whitespace-nowrap" style={{ color: colors.inactiveText, opacity: 0.8 }}>
+                        <span className="text-xs font-medium uppercase tracking-wider whitespace-nowrap" style={{color: colors.inactiveText, opacity: 0.8}}>
                             {t["Developer"]}
                         </span>
-                        <div className="flex-1" style={{ borderTop: `1px solid ${colors.borderColor}` }} />
+                        <div className="flex-1" style={{borderTop: `1px solid ${colors.glassBorder}`}} />
                     </div>
 
                     <SidebarItem
@@ -207,17 +206,19 @@ export default function SettingsPage({ theme, openAbout }: { theme: ITheme | nul
                 </div>
 
                 {/* Add Profile button */}
-                <div className="border-t shrink-0" style={{ borderColor: colors.borderColor }}>
-                    <button
-                        className="flex flex-row items-center gap-2 w-full px-3 py-2.5 transition-colors cursor-pointer"
-                        style={{ color: colors.inactiveText }}
+                <div className="shrink-0 p-2">
+                    <motion.button
+                        {...whileHoverTap}
+                        className="flex flex-row items-center gap-2 w-full px-3 py-2.5 transition-colors duration-[var(--duration-fast)] cursor-pointer rounded-[var(--radius-sm)] hover:bg-[var(--lum-add-hover)]"
+                        style={{
+                            "--lum-add-hover": colors.hoverOverlay,
+                            color: colors.inactiveText,
+                        } as CSSProperties}
                         onClick={handleAddProfile}
-                        onMouseEnter={(e) => (e.currentTarget.style.background = colors.hoverOverlay)}
-                        onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
                     >
                         <Plus size={16} />
                         <span className="text-sm">{t["Add Profile"]}</span>
-                    </button>
+                    </motion.button>
                 </div>
             </div>
 

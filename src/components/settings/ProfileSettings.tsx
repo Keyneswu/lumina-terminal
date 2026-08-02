@@ -9,6 +9,9 @@ import RenderSettings from "./RenderSettings.tsx";
 import ShellSelector from "./ShellSelector.tsx";
 import SshFields from "./SshFields.tsx";
 import {Trash2} from "lucide-react";
+import SettingsShell from "../ui/SettingsShell.tsx";
+import SettingRow from "../ui/SettingRow.tsx";
+import SaveFooter from "../ui/SaveFooter.tsx";
 
 export default function ProfileSettings({
     profile,
@@ -21,15 +24,22 @@ export default function ProfileSettings({
     onNameChange: (newName: string) => void;
     borderColor: string;
 }) {
-    const { config, updateConfig } = useGlobalConfig();
+    const {config, updateConfig} = useGlobalConfig();
     const t = useI18n();
 
+    // Note: this panel keeps its own draft logic rather than using
+    // useSettingsDraft. The draft is `TerminalProfile | null` (profile may be
+    // undefined while the sidebar selection is in flight), and the save path
+    // has profile-specific concerns (name-rename collision check, ssh field
+    // pruning, onNameChange callback) that don't fit the generic hook's
+    // single-commit signature. The visual shell/row/footer primitives are
+    // still applied for consistency with the other panels.
     const [draft, setDraft] = useState<TerminalProfile | null>(null);
 
     // Reset draft when profile identity changes
     useEffect(() => {
         if (profile) {
-            setDraft({ ...profile });
+            setDraft({...profile});
         } else {
             setDraft(null);
         }
@@ -41,14 +51,14 @@ export default function ProfileSettings({
     }, [profile, draft]);
 
     const updateDraft = (updates: Partial<TerminalProfile>) => {
-        setDraft((prev) => (prev ? { ...prev, ...updates } : null));
+        setDraft((prev) => (prev ? {...prev, ...updates} : null));
     };
 
     const updateSsh = (updates: Partial<SSHConfig>) => {
         setDraft((prev) => {
             if (!prev) return null;
-            const ssh = { ...prev.ssh, ...updates } as SSHConfig;
-            return { ...prev, ssh };
+            const ssh = {...prev.ssh, ...updates} as SSHConfig;
+            return {...prev, ssh};
         });
     };
 
@@ -97,163 +107,152 @@ export default function ProfileSettings({
         }
 
         const newProfiles = config.profiles.map((p) =>
-            p.name === oldName ? trimmed : p
+            p.name === oldName ? trimmed : p,
         );
-        updateConfig({ profiles: newProfiles });
+        updateConfig({profiles: newProfiles});
         if (newName !== oldName) {
             onNameChange(newName);
         }
     };
 
     return (
-        <div className="flex flex-col h-full">
-            {/* Scrollable content */}
-            <div className="flex-1 overflow-y-auto pb-4 pl-1 pr-6">
-                {isEditingName ? (
-                    <input
-                        ref={nameInputRef}
-                        type="text"
-                        value={draft.name}
-                        onChange={(e) => updateDraft({ name: e.target.value })}
-                        onBlur={() => setIsEditingName(false)}
-                        onKeyDown={(e) => {
-                            if (e.key === "Enter") setIsEditingName(false);
-                            if (e.key === "Escape") {
-                                updateDraft({ name: profile.name });
-                                setIsEditingName(false);
-                            }
+        <SettingsShell
+            footer={
+                <SaveFooter
+                    isDisabled={!isDirty}
+                    saveLabel={t["Save"]}
+                    onPressSave={handleSave}
+                    isDirty={isDirty}
+                    unsavedLabel={t["Unsaved changes"]}
+                    borderColor={borderColor}
+                    trailing={
+                        <Button
+                            variant="outline"
+                            onPress={onRequestDelete}
+                            className="text-danger border-danger/30 hover:bg-danger/10"
+                        >
+                            <Trash2 size={15} />
+                            {t["Delete Profile"]}
+                        </Button>
+                    }
+                />
+            }
+        >
+            {isEditingName ? (
+                <input
+                    ref={nameInputRef}
+                    type="text"
+                    value={draft.name}
+                    onChange={(e) => updateDraft({name: e.target.value})}
+                    onBlur={() => setIsEditingName(false)}
+                    onKeyDown={(e) => {
+                        if (e.key === "Enter") setIsEditingName(false);
+                        if (e.key === "Escape") {
+                            updateDraft({name: profile.name});
+                            setIsEditingName(false);
+                        }
+                    }}
+                    className="text-lg font-semibold mb-6 bg-transparent border-b outline-none w-full max-w-xs"
+                    style={{borderColor: "var(--color-default-200, #333)", color: "inherit"}}
+                />
+            ) : (
+                <h2
+                    className="text-lg font-semibold mb-6 cursor-pointer select-none"
+                    onDoubleClick={() => setIsEditingName(true)}
+                    title="Double-click to rename"
+                >
+                    {draft.name}
+                </h2>
+            )}
+
+            <div className="flex flex-col gap-4">
+                {/* Profile Type */}
+                <SettingRow label={<Label>{t["Profile Type"]}</Label>}>
+                    <Select
+                        selectedKey={profileType}
+                        onSelectionChange={(key) => {
+                            const newType = key as "local" | "remote";
+                            updateDraft({
+                                type: newType,
+                                ssh: newType === "remote" ? (draft.ssh ?? {host: "", port: 22}) : undefined,
+                            });
                         }}
-                        className="text-lg font-semibold mb-6 bg-transparent border-b outline-none w-full max-w-xs"
-                        style={{ borderColor: "var(--color-default-200, #333)", color: "inherit" }}
-                    />
-                ) : (
-                    <h2
-                        className="text-lg font-semibold mb-6 cursor-pointer select-none"
-                        onDoubleClick={() => setIsEditingName(true)}
-                        title="Double-click to rename"
+                        className="max-w-sm"
                     >
-                        {draft.name}
-                    </h2>
+                        <Select.Trigger>
+                            <Select.Value />
+                            <Select.Indicator />
+                        </Select.Trigger>
+                        <Select.Popover>
+                            <ListBox>
+                                <ListBox.Item id="local" key="local" textValue="Local">
+                                    {t["Local"]}
+                                </ListBox.Item>
+                                <ListBox.Item id="remote" key="remote" textValue="Remote (SSH)">
+                                    {t["Remote (SSH)"]}
+                                </ListBox.Item>
+                            </ListBox>
+                        </Select.Popover>
+                    </Select>
+                </SettingRow>
+
+                {/* Exe Path (only for local) */}
+                {profileType === "local" && (
+                    <ShellSelector
+                        exePath={draft.exePath}
+                        onChange={(path) => updateDraft({exePath: path})}
+                        idPrefix="profile"
+                    />
                 )}
 
-                <div className="flex flex-col gap-4">
-                    {/* Profile Type */}
-                    <div className="flex flex-col gap-1.5">
-                        <Label>{t["Profile Type"]}</Label>
-                        <Select
-                            selectedKey={profileType}
-                            onSelectionChange={(key) => {
-                                const newType = key as "local" | "remote";
-                                updateDraft({
-                                    type: newType,
-                                    ssh: newType === "remote" ? (draft.ssh ?? { host: "", port: 22 }) : undefined,
-                                });
-                            }}
-                            className="max-w-sm"
-                        >
-                            <Select.Trigger>
-                                <Select.Value />
-                                <Select.Indicator />
-                            </Select.Trigger>
-                            <Select.Popover>
-                                <ListBox>
-                                    <ListBox.Item id="local" key="local" textValue="Local">
-                                        {t["Local"]}
-                                    </ListBox.Item>
-                                    <ListBox.Item id="remote" key="remote" textValue="Remote (SSH)">
-                                        {t["Remote (SSH)"]}
-                                    </ListBox.Item>
-                                </ListBox>
-                            </Select.Popover>
-                        </Select>
-                    </div>
-
-                    {/* Exe Path (only for local) */}
-                    {profileType === "local" && (
-                        <ShellSelector
-                            exePath={draft.exePath}
-                            onChange={(path) => updateDraft({ exePath: path })}
-                            idPrefix="profile"
-                        />
-                    )}
-
-                    {/* Startup Directory */}
-                    <div className="flex flex-col gap-1.5">
-                        <Label htmlFor="profile-cwd">{t["Startup Directory"]}</Label>
-                        <div className="flex flex-row gap-2 items-center">
-                            <Input
-                                id="profile-cwd"
-                                value={draft.cwd ?? ""}
-                                onChange={(e) => updateDraft({ cwd: e.target.value || undefined })}
-                                className="flex-1 max-w-sm"
-                                placeholder={t["Default"]}
-                            />
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onPress={async () => {
-                                    const dir = await open({
-                                        multiple: false,
-                                        directory: true,
-                                    });
-                                    if (dir) updateDraft({ cwd: dir });
-                                }}
-                            >
-                                {t["Select"]}
-                            </Button>
-                        </div>
-                    </div>
-
-                    {/* Startup Command */}
-                    <div className="flex flex-col gap-1.5">
-                        <Label htmlFor="profile-startup-command">{t["Startup Command"]}</Label>
+                {/* Startup Directory */}
+                <SettingRow label={<Label htmlFor="profile-cwd">{t["Startup Directory"]}</Label>}>
+                    <div className="flex flex-row gap-2 items-center">
                         <Input
-                            id="profile-startup-command"
-                            value={draft.startupCommand ?? ""}
-                            onChange={(e) => updateDraft({ startupCommand: e.target.value || undefined })}
-                            className="max-w-sm"
-                            placeholder={profileType === "remote" ? "e.g. top" : "e.g. vim, opencode"}
+                            id="profile-cwd"
+                            value={draft.cwd ?? ""}
+                            onChange={(e) => updateDraft({cwd: e.target.value || undefined})}
+                            className="flex-1 max-w-sm"
+                            placeholder={t["Default"]}
                         />
-                    </div>
-
-                    {/* SSH Config Fields */}
-                    {profileType === "remote" && (
-                        <SshFields
-                            ssh={draft.ssh}
-                            onChange={updateSsh}
-                            idPrefix="ssh"
-                        />
-                    )}
-
-                    <RenderSettings draft={draft} updateDraft={updateDraft} idPrefix="profile" defaultExpanded={false} />
-                </div>
-            </div>
-
-            {/* Fixed bottom: Save + Delete */}
-            <div className="shrink-0 border-t pt-3 pr-6" style={{ borderColor: borderColor }}>
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
                         <Button
-                            variant="primary"
-                            isDisabled={!isDirty}
-                            onPress={handleSave}
+                            variant="outline"
+                            size="sm"
+                            onPress={async () => {
+                                const dir = await open({
+                                    multiple: false,
+                                    directory: true,
+                                });
+                                if (dir) updateDraft({cwd: dir});
+                            }}
                         >
-                            {t["Save"]}
+                            {t["Select"]}
                         </Button>
-                        {isDirty && (
-                            <span className="text-xs text-muted">{t["Unsaved changes"]}</span>
-                        )}
                     </div>
-                    <Button
-                        variant="outline"
-                        onPress={onRequestDelete}
-                        className="text-danger border-danger/30 hover:bg-danger/10"
-                    >
-                        <Trash2 size={15} />
-                        {t["Delete Profile"]}
-                    </Button>
-                </div>
+                </SettingRow>
+
+                {/* Startup Command */}
+                <SettingRow label={<Label htmlFor="profile-startup-command">{t["Startup Command"]}</Label>}>
+                    <Input
+                        id="profile-startup-command"
+                        value={draft.startupCommand ?? ""}
+                        onChange={(e) => updateDraft({startupCommand: e.target.value || undefined})}
+                        className="max-w-sm"
+                        placeholder={profileType === "remote" ? "e.g. top" : "e.g. vim, opencode"}
+                    />
+                </SettingRow>
+
+                {/* SSH Config Fields */}
+                {profileType === "remote" && (
+                    <SshFields
+                        ssh={draft.ssh}
+                        onChange={updateSsh}
+                        idPrefix="ssh"
+                    />
+                )}
+
+                <RenderSettings draft={draft} updateDraft={updateDraft} idPrefix="profile" defaultExpanded={false} />
             </div>
-        </div>
+        </SettingsShell>
     );
 }

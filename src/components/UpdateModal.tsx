@@ -71,7 +71,7 @@ export default function UpdateModal({
 									{t["What's New"]}
 								</span>
 								<div
-									className="rounded-md p-3 overflow-y-auto"
+									className="rounded-[var(--radius-md)] p-3 overflow-y-auto"
 									style={{ background: colors.hoverOverlay, color: fg }}
 								>
 									<Markdown>{info.body}</Markdown>
@@ -102,7 +102,7 @@ export default function UpdateModal({
 										className="h-full rounded-full transition-[width] duration-150"
 										style={{
 											width: `${Math.round((progress?.fraction ?? 0) * 100)}%`,
-											background: fg,
+											background: "var(--color-brand-gradient)",
 										}}
 									/>
 								</div>
@@ -110,15 +110,15 @@ export default function UpdateModal({
 						)}
 
 						{/* Install error */}
-						{status === "error" && error && (
-							<span
-								className="flex items-center gap-1.5 text-xs"
-								style={{ color: "#ef4444" }}
-							>
-								<AlertCircle size={14} />
-								{error}
-							</span>
-						)}
+							{status === "error" && error && (
+								<span
+									className="flex items-center gap-1.5 text-xs"
+									style={{color: "var(--color-danger-500, #ef4444)"}}
+								>
+									<AlertCircle size={14} />
+									{error}
+								</span>
+							)}
 
 						<div className="flex items-center justify-end gap-2">
 							<Button

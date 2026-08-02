@@ -7,6 +7,8 @@ import {info} from "@tauri-apps/plugin-log";
 import {Actions, Binding, WithKeys} from "../../types/config.ts";
 import {DEFAULT_BINDINGS} from "../../constants.ts";
 import {actionSignature, bindingToShortcut, keySignature} from "../../lib/bindings.ts";
+import SettingsShell from "../ui/SettingsShell.tsx";
+import SectionTitle from "../ui/SectionTitle.tsx";
 
 // Key used in the "Add binding" action dropdown when no action is chosen yet.
 const NO_ACTION = "__none__";
@@ -266,132 +268,80 @@ export default function BindingsSettings({borderColor}: { borderColor: string })
     const dangerColor = "var(--color-danger-500, #ef4444)";
 
     return (
-        <div className="flex flex-col h-full">
-            {/* Scrollable content */}
-            <div className="flex-1 overflow-y-auto pb-4 pl-1 pr-6 w-full">
-                <h2 className="text-lg font-semibold mb-2">{t["Keyboard Shortcuts"]}</h2>
-                <p className="text-xs text-muted mb-5">
-                    {t["Click a shortcut and press the keys you want to use."]}
-                </p>
-
-                <div className="flex flex-col gap-2">
-                    {draft.map((b, i) => {
-                        const isRecording = recordingIndex === i;
-                        const hasConflict = conflicts.has(i);
-                        const isIncomplete = b.key.trim().length === 0 || b.with.length === 0;
-                        const isInvalid = hasConflict || isIncomplete;
-                        const shortcut = bindingToShortcut(b);
-
-                        return (
-                            <div
-                                key={`${b.action}-${i}`}
-                                className="flex flex-row items-center gap-3 px-3 py-2.5 rounded-md"
-                                style={{
-                                    border: `1px solid ${isInvalid ? dangerColor : borderColor}`,
-                                    background: isInvalid ? "rgba(239,68,68,0.06)" : "transparent",
-                                }}
+        <SettingsShell
+            footer={
+                <div className="shrink-0 pt-3 ml-1 mr-6" style={{borderTop: `1px solid ${borderColor}`}}>
+                    <div className="flex items-center gap-3 justify-between">
+                        <div className="flex items-center gap-3">
+                            <Button
+                                variant="primary"
+                                isDisabled={!isDirty || hasConflicts || hasMissingAccelerator}
+                                onPress={handleSave}
                             >
-                                {/* Action label */}
-                                <div className="flex-1 min-w-0 flex flex-col gap-0.5">
-                                    <span className="text-sm font-medium truncate">
-                                        {actionLabel(b.action, b.args, t)}
-                                    </span>
-                                    {hasConflict && (
-                                        <span className="text-xs" style={{color: dangerColor}}>
-                                            {t["Conflict: this shortcut is already in use"]}
-                                        </span>
-                                    )}
-                                    {isIncomplete && !isRecording && (
-                                        <span className="text-xs" style={{color: dangerColor}}>
-                                            {b.with.length === 0
-                                                ? t["At least one modifier key is required"]
-                                                : t["Press keys to record..."]}
-                                        </span>
-                                    )}
-                                </div>
+                                {t["Save"]}
+                            </Button>
+                            {isDirty && !hasConflicts && !hasMissingAccelerator && (
+                                <span className="text-xs text-muted">{t["Unsaved changes"]}</span>
+                            )}
+                            {hasConflicts && (
+                                <span className="text-xs" style={{color: dangerColor}}>
+                                    {t["Conflict: this shortcut is already in use"]}
+                                </span>
+                            )}
+                            {!hasConflicts && hasMissingAccelerator && (
+                                <span className="text-xs" style={{color: dangerColor}}>
+                                    {t["At least one modifier key is required"]}
+                                </span>
+                            )}
+                        </div>
+                        <Button variant="outline" onPress={handleReset}>
+                            <RotateCcw size={15}/>
+                            {t["Reset to Defaults"]}
+                        </Button>
+                    </div>
+                </div>
+            }
+        >
+            <SectionTitle mb="0.5rem">{t["Keyboard Shortcuts"]}</SectionTitle>
+            <p className="text-xs text-muted mb-5">
+                {t["Click a shortcut and press the keys you want to use."]}
+            </p>
 
-                                {/* Shortcut display / recorder */}
-                                {isRecording ? (
-                                    <div
-                                        className="flex items-center gap-2 px-2.5 py-1.5 rounded-md text-sm select-none"
-                                        style={{
-                                            border: `1px solid ${borderColor}`,
-                                            background: "var(--color-default-100, transparent)",
-                                            minWidth: 140,
-                                            justifyContent: "space-between",
-                                        }}
-                                    >
-                                        <span className="text-muted">{t["Recording... Esc to cancel"]}</span>
-                                        <button
-                                            onClick={stopRecording}
-                                            className="cursor-pointer text-muted hover:text-foreground shrink-0"
-                                            title={t["Cancel"]}
-                                        >
-                                            <X size={14}/>
-                                        </button>
-                                    </div>
-                                ) : (
-                                    <button
-                                        className="flex items-center gap-0.5 px-2.5 py-1.5 rounded-md cursor-pointer shrink-0 hover:bg-[var(--color-default-100,rgba(125,125,125,0.1))]"
-                                        style={{border: `1px solid ${borderColor}`}}
-                                        onClick={() => setRecordingIndex(i)}
-                                        title={t["Press keys to record..."]}
-                                    >
-                                        {b.key.trim().length > 0 ? (
-                                            shortcut.map((key, j) => (
-                                                <Kbd key={j}>
-                                                    {key.abbr ? (
-                                                        // @ts-ignore — keyValue is not typed in heroui
-                                                        <Kbd.Abbr keyValue={key.abbr}/>
-                                                    ) : null}
-                                                    <Kbd.Content>{key.content}</Kbd.Content>
-                                                </Kbd>
-                                            ))
-                                        ) : (
-                                            <Pencil size={14} className="text-muted"/>
-                                        )}
-                                    </button>
-                                )}
-
-                                {/* Edit + delete / restore */}
-                                {!isRecording && (
-                                    <div className="flex items-center gap-1 shrink-0">
-                                        <button
-                                            className="cursor-pointer p-1.5 rounded-md hover:bg-[var(--color-default-100,rgba(125,125,125,0.1))] text-muted"
-                                            onClick={() => setRecordingIndex(i)}
-                                            title={t["Press keys to record..."]}
-                                        >
-                                            <Pencil size={15}/>
-                                        </button>
-                                        <button
-                                            className="cursor-pointer p-1.5 rounded-md hover:bg-[var(--color-default-100,rgba(125,125,125,0.1))] text-muted"
-                                            onClick={() => handleDelete(i)}
-                                            title={b.__isDefault ? t["Restore default"] : t["Delete"]}
-                                        >
-                                            {b.__isDefault ? (
-                                                <RotateCcw size={15}/>
-                                            ) : (
-                                                <Trash2 size={15}/>
-                                            )}
-                                        </button>
-                                    </div>
-                                )}
-                            </div>
-                        );
-                    })}
+            {/* Add binding row */}
+            <div
+                className="flex flex-row items-end gap-3 mb-5 px-3"
+            >
+                <div className="flex flex-col gap-1.5 flex-1 min-w-0 max-w-xs">
+                    <Label>{t["Action"]}</Label>
+                    <Select
+                        selectedKey={newAction}
+                        onSelectionChange={(key) => {
+                            if (key) setNewAction(key as Actions);
+                        }}
+                    >
+                        <Select.Trigger>
+                            <Select.Value/>
+                            <Select.Indicator/>
+                        </Select.Trigger>
+                        <Select.Popover>
+                            <ListBox>
+                                {ALL_ACTIONS.map((a) => (
+                                    <ListBox.Item id={a} key={a} textValue={a}>
+                                        {actionLabel(a, undefined, t, true)}
+                                    </ListBox.Item>
+                                ))}
+                            </ListBox>
+                        </Select.Popover>
+                    </Select>
                 </div>
 
-                {/* Add binding row */}
-                <div
-                    className="flex flex-row items-end gap-3 mt-5 pt-4 px-3"
-                    style={{borderTop: `1px solid ${borderColor}`}}
-                >
-                    <div className="flex flex-col gap-1.5 flex-1 min-w-0 max-w-xs">
-                        <Label>{t["Action"]}</Label>
+                {newAction === "toTab" && (
+                    <div className="flex flex-col gap-1.5 w-28">
+                        <Label>{t["Switch to Tab"]}</Label>
                         <Select
-                            selectedKey={newAction}
+                            selectedKey={newTabIndex}
                             onSelectionChange={(key) => {
-                                if (key) setNewAction(key as Actions);
+                                if (key) setNewTabIndex(key as string);
                             }}
                         >
                             <Select.Trigger>
@@ -400,116 +350,165 @@ export default function BindingsSettings({borderColor}: { borderColor: string })
                             </Select.Trigger>
                             <Select.Popover>
                                 <ListBox>
-                                    {ALL_ACTIONS.map((a) => (
-                                        <ListBox.Item id={a} key={a} textValue={a}>
-                                            {actionLabel(a, undefined, t, true)}
+                                    {["0", "1", "2", "3", "4", "5", "6", "7"].map((idx) => (
+                                        <ListBox.Item id={idx} key={idx} textValue={idx}>
+                                            {t["Tab {n}"].replace("{n}", String(+idx + 1))}
+                                        </ListBox.Item>
+                                    ))}
+                                    <ListBox.Item id="last" key="last" textValue="last">
+                                        {t["Last tab"]}
+                                    </ListBox.Item>
+                                </ListBox>
+                            </Select.Popover>
+                        </Select>
+                    </div>
+                )}
+
+                {newAction === "newTab" && (
+                    <div className="flex flex-col gap-1.5 w-44">
+                        <Label>{t["Profile"]}</Label>
+                        <Select
+                            selectedKey={newProfileName}
+                            onSelectionChange={(key) => {
+                                if (key) setNewProfileName(key as string);
+                            }}
+                        >
+                            <Select.Trigger>
+                                <Select.Value/>
+                                <Select.Indicator/>
+                            </Select.Trigger>
+                            <Select.Popover>
+                                <ListBox>
+                                    <ListBox.Item id={DEFAULT_PROFILE_KEY} key={DEFAULT_PROFILE_KEY} textValue={DEFAULT_PROFILE_KEY}>
+                                        {t["Default Profile"]}
+                                    </ListBox.Item>
+                                    {config.profiles.map((p) => (
+                                        <ListBox.Item id={p.name} key={p.name} textValue={p.name}>
+                                            {p.name}
                                         </ListBox.Item>
                                     ))}
                                 </ListBox>
                             </Select.Popover>
                         </Select>
                     </div>
+                )}
 
-                    {newAction === "toTab" && (
-                        <div className="flex flex-col gap-1.5 w-28">
-                            <Label>{t["Switch to Tab"]}</Label>
-                            <Select
-                                selectedKey={newTabIndex}
-                                onSelectionChange={(key) => {
-                                    if (key) setNewTabIndex(key as string);
-                                }}
-                            >
-                                <Select.Trigger>
-                                    <Select.Value/>
-                                    <Select.Indicator/>
-                                </Select.Trigger>
-                                <Select.Popover>
-                                    <ListBox>
-                                        {["0", "1", "2", "3", "4", "5", "6", "7"].map((idx) => (
-                                            <ListBox.Item id={idx} key={idx} textValue={idx}>
-                                                {t["Tab {n}"].replace("{n}", String(+idx + 1))}
-                                            </ListBox.Item>
-                                        ))}
-                                        <ListBox.Item id="last" key="last" textValue="last">
-                                            {t["Last tab"]}
-                                        </ListBox.Item>
-                                    </ListBox>
-                                </Select.Popover>
-                            </Select>
-                        </div>
-                    )}
-
-                    {newAction === "newTab" && (
-                        <div className="flex flex-col gap-1.5 w-44">
-                            <Label>{t["Profile"]}</Label>
-                            <Select
-                                selectedKey={newProfileName}
-                                onSelectionChange={(key) => {
-                                    if (key) setNewProfileName(key as string);
-                                }}
-                            >
-                                <Select.Trigger>
-                                    <Select.Value/>
-                                    <Select.Indicator/>
-                                </Select.Trigger>
-                                <Select.Popover>
-                                    <ListBox>
-                                        <ListBox.Item id={DEFAULT_PROFILE_KEY} key={DEFAULT_PROFILE_KEY} textValue={DEFAULT_PROFILE_KEY}>
-                                            {t["Default Profile"]}
-                                        </ListBox.Item>
-                                        {config.profiles.map((p) => (
-                                            <ListBox.Item id={p.name} key={p.name} textValue={p.name}>
-                                                {p.name}
-                                            </ListBox.Item>
-                                        ))}
-                                    </ListBox>
-                                </Select.Popover>
-                            </Select>
-                        </div>
-                    )}
-
-                    <Button
-                        variant="outline"
-                        isDisabled={newAction === NO_ACTION}
-                        onPress={handleAdd}
-                    >
-                        <Plus size={15}/>
-                        {t["Add Binding"]}
-                    </Button>
-                </div>
+                <Button
+                    variant="outline"
+                    isDisabled={newAction === NO_ACTION}
+                    onPress={handleAdd}
+                >
+                    <Plus size={15}/>
+                    {t["Add Binding"]}
+                </Button>
             </div>
 
-            {/* Fixed footer: Save + Reset */}
-            <div className="shrink-0 border-t pt-3 pr-6" style={{borderColor}}>
-                <div className="flex items-center gap-3 justify-between">
-                    <div className="flex items-center gap-3">
-                        <Button
-                            variant="primary"
-                            isDisabled={!isDirty || hasConflicts || hasMissingAccelerator}
-                            onPress={handleSave}
+            <div className="flex flex-col gap-2">
+                {draft.map((b, i) => {
+                    const isRecording = recordingIndex === i;
+                    const hasConflict = conflicts.has(i);
+                    const isIncomplete = b.key.trim().length === 0 || b.with.length === 0;
+                    const isInvalid = hasConflict || isIncomplete;
+                    const shortcut = bindingToShortcut(b);
+
+                    return (
+                        <div
+                            key={`${b.action}-${i}`}
+                            className="flex flex-row items-center gap-3 px-3 py-2.5 rounded-md"
+                            style={{
+                                border: `1px solid ${isInvalid ? dangerColor : borderColor}`,
+                                background: isInvalid ? "rgba(239,68,68,0.06)" : "transparent",
+                            }}
                         >
-                            {t["Save"]}
-                        </Button>
-                        {isDirty && !hasConflicts && !hasMissingAccelerator && (
-                            <span className="text-xs text-muted">{t["Unsaved changes"]}</span>
-                        )}
-                        {hasConflicts && (
-                            <span className="text-xs" style={{color: dangerColor}}>
-                                {t["Conflict: this shortcut is already in use"]}
-                            </span>
-                        )}
-                        {!hasConflicts && hasMissingAccelerator && (
-                            <span className="text-xs" style={{color: dangerColor}}>
-                                {t["At least one modifier key is required"]}
-                            </span>
-                        )}
-                    </div>
-                    <Button variant="outline" onPress={handleReset}>
-                        <RotateCcw size={15}/>
-                        {t["Reset to Defaults"]}
-                    </Button>
-                </div>
+                            {/* Action label */}
+                            <div className="flex-1 min-w-0 flex flex-col gap-0.5">
+                                <span className="text-sm font-medium truncate">
+                                    {actionLabel(b.action, b.args, t)}
+                                </span>
+                                {hasConflict && (
+                                    <span className="text-xs" style={{color: dangerColor}}>
+                                        {t["Conflict: this shortcut is already in use"]}
+                                    </span>
+                                )}
+                                {isIncomplete && !isRecording && (
+                                    <span className="text-xs" style={{color: dangerColor}}>
+                                        {b.with.length === 0
+                                            ? t["At least one modifier key is required"]
+                                            : t["Press keys to record..."]}
+                                    </span>
+                                )}
+                            </div>
+
+                            {/* Shortcut display / recorder */}
+                            {isRecording ? (
+                                <div
+                                    className="flex items-center gap-2 px-2.5 py-1.5 rounded-md text-sm select-none"
+                                    style={{
+                                        border: `1px solid ${borderColor}`,
+                                        background: "var(--color-default-100, transparent)",
+                                        minWidth: 140,
+                                        justifyContent: "space-between",
+                                    }}
+                                >
+                                    <span className="text-muted">{t["Recording... Esc to cancel"]}</span>
+                                    <button
+                                        onClick={stopRecording}
+                                        className="cursor-pointer text-muted hover:text-foreground shrink-0"
+                                        title={t["Cancel"]}
+                                    >
+                                        <X size={14}/>
+                                    </button>
+                                </div>
+                            ) : (
+                                <button
+                                    className="flex items-center gap-0.5 px-2.5 py-1.5 rounded-md cursor-pointer shrink-0 hover:bg-[var(--color-default-100,rgba(125,125,125,0.1))]"
+                                    style={{border: `1px solid ${borderColor}`}}
+                                    onClick={() => setRecordingIndex(i)}
+                                    title={t["Press keys to record..."]}
+                                >
+                                    {b.key.trim().length > 0 ? (
+                                        shortcut.map((key, j) => (
+                                            <Kbd key={j}>
+                                                {key.abbr ? (
+                                                    // @ts-ignore — keyValue is not typed in heroui
+                                                    <Kbd.Abbr keyValue={key.abbr}/>
+                                                ) : null}
+                                                <Kbd.Content>{key.content}</Kbd.Content>
+                                            </Kbd>
+                                        ))
+                                    ) : (
+                                        <Pencil size={14} className="text-muted"/>
+                                    )}
+                                </button>
+                            )}
+
+                            {/* Edit + delete / restore */}
+                            {!isRecording && (
+                                <div className="flex items-center gap-1 shrink-0">
+                                    <button
+                                        className="cursor-pointer p-1.5 rounded-md hover:bg-[var(--color-default-100,rgba(125,125,125,0.1))] text-muted"
+                                        onClick={() => setRecordingIndex(i)}
+                                        title={t["Press keys to record..."]}
+                                    >
+                                        <Pencil size={15}/>
+                                    </button>
+                                    <button
+                                        className="cursor-pointer p-1.5 rounded-md hover:bg-[var(--color-default-100,rgba(125,125,125,0.1))] text-muted"
+                                        onClick={() => handleDelete(i)}
+                                        title={b.__isDefault ? t["Restore default"] : t["Delete"]}
+                                    >
+                                        {b.__isDefault ? (
+                                            <RotateCcw size={15}/>
+                                        ) : (
+                                            <Trash2 size={15}/>
+                                        )}
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    );
+                })}
             </div>
-        </div>
+        </SettingsShell>
     );
 }

@@ -1,13 +1,29 @@
 import {useGlobalConfig} from "../../hooks/config.tsx";
 import {languageNames, useI18n} from "../../hooks/i18n.tsx";
-import {useEffect, useMemo, useState} from "react";
+import {useMemo} from "react";
 import {info} from "@tauri-apps/plugin-log";
-import {Button, Label, ListBox, Select, Switch} from "@heroui/react";
+import {Label, ListBox, Select, Switch} from "@heroui/react";
 import {isMacOS} from "../../lib/platform.ts";
 import {useIsWayland} from "../../hooks/useIsWayland.ts";
+import {useSettingsDraft} from "../../hooks/useSettingsDraft.ts";
+import SettingsShell from "../ui/SettingsShell.tsx";
+import SettingRow from "../ui/SettingRow.tsx";
+import SectionTitle from "../ui/SectionTitle.tsx";
+import SaveFooter from "../ui/SaveFooter.tsx";
 
-export default function GeneralSettings({ borderColor, openAbout }: { borderColor: string, openAbout: () => void }) {
-    const { config, updateConfig } = useGlobalConfig();
+interface GeneralDraft {
+    language: "en-us" | "zh-cn";
+    showTabBar: boolean;
+    closeWindowOnLastTab: boolean;
+    defaultProfile: string;
+    copyWithCtrl: boolean;
+    autoUpdateOnStartup: boolean;
+    rememberWindowPosition: boolean;
+    rememberWindowSize: boolean;
+}
+
+export default function GeneralSettings({borderColor, openAbout}: {borderColor: string, openAbout: () => void}) {
+    const {config, updateConfig} = useGlobalConfig();
     const t = useI18n();
     // Wayland can't know or set absolute window position, so the "remember
     // window position" toggle is hidden there (it would be a no-op that
@@ -18,7 +34,7 @@ export default function GeneralSettings({ borderColor, openAbout }: { borderColo
         return config.profiles.find(p => p.default)?.name ?? config.profiles[0]?.name ?? "";
     }, [config.profiles]);
 
-    const [draft, setDraft] = useState({
+    const source: GeneralDraft = {
         language: config.language,
         showTabBar: config.showTabBar ?? false,
         closeWindowOnLastTab: config.closeWindowOnLastTab !== false,
@@ -27,255 +43,218 @@ export default function GeneralSettings({ borderColor, openAbout }: { borderColo
         autoUpdateOnStartup: config.autoUpdateOnStartup !== false,
         rememberWindowPosition: config.rememberWindowPosition ?? false,
         rememberWindowSize: config.rememberWindowSize ?? false,
-    });
-
-    // Reset draft when config changes externally
-    useEffect(() => {
-        setDraft({
-            language: config.language,
-            showTabBar: config.showTabBar ?? false,
-            closeWindowOnLastTab: config.closeWindowOnLastTab !== false,
-            defaultProfile: currentDefault,
-            copyWithCtrl: config.copyWithCtrl ?? false,
-            autoUpdateOnStartup: config.autoUpdateOnStartup !== false,
-            rememberWindowPosition: config.rememberWindowPosition ?? false,
-            rememberWindowSize: config.rememberWindowSize ?? false,
-        });
-    }, [config.language, config.showTabBar, config.closeWindowOnLastTab, config.copyWithCtrl, config.autoUpdateOnStartup, config.rememberWindowPosition, config.rememberWindowSize, currentDefault]);
-
-    const isDirty =
-        draft.language !== config.language ||
-        draft.showTabBar !== (config.showTabBar ?? false) ||
-        draft.closeWindowOnLastTab !== (config.closeWindowOnLastTab !== false) ||
-        draft.copyWithCtrl !== (config.copyWithCtrl ?? false) ||
-        draft.autoUpdateOnStartup !== (config.autoUpdateOnStartup !== false) ||
-        draft.rememberWindowPosition !== (config.rememberWindowPosition ?? false) ||
-        draft.rememberWindowSize !== (config.rememberWindowSize ?? false) ||
-        draft.defaultProfile !== currentDefault;
-
-    const handleSave = () => {
-        info("General settings saved");
-        const updated: Partial<typeof config> = {
-            language: draft.language,
-            showTabBar: draft.showTabBar,
-            closeWindowOnLastTab: draft.closeWindowOnLastTab,
-            copyWithCtrl: draft.copyWithCtrl,
-            autoUpdateOnStartup: draft.autoUpdateOnStartup,
-            rememberWindowPosition: draft.rememberWindowPosition,
-            rememberWindowSize: draft.rememberWindowSize,
-        };
-        if (draft.defaultProfile !== currentDefault) {
-            updated.profiles = config.profiles.map(p => ({
-                ...p,
-                default: p.name === draft.defaultProfile ? true : p.default ? false : undefined,
-            }));
-        }
-        updateConfig(updated);
     };
 
+    const {draft, setDraft, isDirty, save} = useSettingsDraft<GeneralDraft>(
+        source,
+        (d) => {
+            info("General settings saved");
+            const updated: Partial<typeof config> = {
+                language: d.language,
+                showTabBar: d.showTabBar,
+                closeWindowOnLastTab: d.closeWindowOnLastTab,
+                copyWithCtrl: d.copyWithCtrl,
+                autoUpdateOnStartup: d.autoUpdateOnStartup,
+                rememberWindowPosition: d.rememberWindowPosition,
+                rememberWindowSize: d.rememberWindowSize,
+            };
+            // Default-profile change rewrites the profiles array (only one may
+            // be default at a time), so apply it here rather than via a flat
+            // config field.
+            if (d.defaultProfile !== currentDefault) {
+                updated.profiles = config.profiles.map(p => ({
+                    ...p,
+                    default: p.name === d.defaultProfile ? true : p.default ? false : undefined,
+                }));
+            }
+            updateConfig(updated);
+        },
+        [config.language, config.showTabBar, config.closeWindowOnLastTab, config.copyWithCtrl, config.autoUpdateOnStartup, config.rememberWindowPosition, config.rememberWindowSize, currentDefault],
+    );
+
     return (
-        <div className="flex flex-col h-full">
-            {/* Scrollable content */}
-            <div className="flex-1 overflow-y-auto pb-4 pl-1 pr-6 w-full">
-                <h2 className="text-lg font-semibold mb-6">{t["General"]}</h2>
-
-                <div className="flex flex-col gap-5">
-                    <div className="flex flex-col lg:flex-row gap-5">
-                        {/* Language */}
-                        <div className="flex flex-col gap-1.5 w-full grow">
-                            <Label>{t["Language"]}</Label>
-                            <Select
-                                selectedKey={draft.language}
-                                onSelectionChange={(key) => {
-                                    if (key) {
-                                        setDraft((prev) => ({ ...prev, language: key as "en-us" | "zh-cn" }));
-                                    }
-                                }}
-                            >
-                                <Select.Trigger>
-                                    <Select.Value />
-                                    <Select.Indicator />
-                                </Select.Trigger>
-                                <Select.Popover>
-                                    <ListBox>
-                                        {[...languageNames.keys()].map((lang) => (
-                                            <ListBox.Item id={lang} key={lang} textValue={lang}>
-                                                {languageNames.get(lang)}
-                                            </ListBox.Item>
-                                        ))}
-                                    </ListBox>
-                                </Select.Popover>
-                            </Select>
-                        </div>
-
-                        {/* Default Profile */}
-                        <div className="flex flex-col gap-1.5 w-full grow">
-                            <Label>{t["Default Profile"]}</Label>
-                            <Select
-                                selectedKey={draft.defaultProfile}
-                                onSelectionChange={(key) => {
-                                    if (key) {
-                                        setDraft((prev) => ({ ...prev, defaultProfile: key as string }));
-                                    }
-                                }}
-                            >
-                                <Select.Trigger>
-                                    <Select.Value />
-                                    <Select.Indicator />
-                                </Select.Trigger>
-                                <Select.Popover>
-                                    <ListBox>
-                                        {config.profiles.map((p) => (
-                                            <ListBox.Item id={p.name} key={p.name} textValue={p.name}>
-                                                {p.name}
-                                            </ListBox.Item>
-                                        ))}
-                                    </ListBox>
-                                </Select.Popover>
-                            </Select>
-                        </div>
-                    </div>
-
-                    {/* Show Tab Bar */}
-                    <div className="flex flex-row items-center justify-between">
-                        <Label className="cursor-pointer">
-                            {t["Show Tab Bar"]}
-                        </Label>
-                        <Switch
-                            isSelected={draft.showTabBar}
-                            onChange={(v) => setDraft((prev) => ({ ...prev, showTabBar: v }))}
+        <SettingsShell
+            footer={
+                <SaveFooter
+                    isDisabled={!isDirty}
+                    saveLabel={t["Save"]}
+                    onPressSave={save}
+                    isDirty={isDirty}
+                    unsavedLabel={t["Unsaved changes"]}
+                    borderColor={borderColor}
+                    trailing={
+                        <button
+                            className="cursor-pointer text-sm px-3 py-1.5 rounded-[var(--radius-sm)] border transition-colors duration-[var(--duration-fast)] hover:bg-[var(--lum-outline-hover)]"
+                            style={{borderColor, ["--lum-outline-hover" as string]: "rgba(128,128,128,0.12)"}}
+                            onClick={openAbout}
                         >
-                            <Switch.Control>
-                                <Switch.Thumb />
-                            </Switch.Control>
-                        </Switch>
-                    </div>
+                            {t["About"]} Lumina Terminal
+                        </button>
+                    }
+                />
+            }
+        >
+            <SectionTitle>{t["General"]}</SectionTitle>
 
-                    {/* Close Window on Last Tab */}
-                    <div className="flex flex-row items-center justify-between">
-                        <Label className="cursor-pointer">
-                            {t["Close Window on Last Tab Closed"]}
-                        </Label>
-                        <Switch
-                            isSelected={draft.closeWindowOnLastTab}
-                            onChange={(v) => setDraft((prev) => ({ ...prev, closeWindowOnLastTab: v }))}
+            <div className="flex flex-col gap-5">
+                <div className="flex flex-col lg:flex-row gap-5">
+                    {/* Language */}
+                    <SettingRow label={<Label>{t["Language"]}</Label>}>
+                        <Select
+                            selectedKey={draft.language}
+                            onSelectionChange={(key) => {
+                                if (key) {
+                                    setDraft((prev) => ({...prev, language: key as "en-us" | "zh-cn"}));
+                                }
+                            }}
                         >
-                            <Switch.Control>
-                                <Switch.Thumb />
-                            </Switch.Control>
-                        </Switch>
-                    </div>
+                            <Select.Trigger>
+                                <Select.Value />
+                                <Select.Indicator />
+                            </Select.Trigger>
+                            <Select.Popover>
+                                <ListBox>
+                                    {[...languageNames.keys()].map((lang) => (
+                                        <ListBox.Item id={lang} key={lang} textValue={lang}>
+                                            {languageNames.get(lang)}
+                                        </ListBox.Item>
+                                    ))}
+                                </ListBox>
+                            </Select.Popover>
+                        </Select>
+                    </SettingRow>
 
-                    {/* Remember Window Position (hidden on Wayland — compositor
-                        forbids knowing/setting absolute position, so it'd be
-                        a no-op that only confuses users). */}
-                    {!isWayland && (
-                        <div className="flex flex-row items-center justify-between">
-                            <div className="flex flex-col gap-0.5">
-                                <Label className="cursor-pointer">
-                                    {t["Remember Window Position"]}
-                                </Label>
-                                <p className="text-xs text-muted">
-                                    {t["Restore the window to its last position on startup"]}
-                                </p>
-                            </div>
-                            <Switch
-                                isSelected={draft.rememberWindowPosition}
-                                onChange={(v) => setDraft((prev) => ({ ...prev, rememberWindowPosition: v }))}
-                            >
-                                <Switch.Control>
-                                    <Switch.Thumb />
-                                </Switch.Control>
-                            </Switch>
-                        </div>
-                    )}
-
-                    {/* Remember Window Size */}
-                    <div className="flex flex-row items-center justify-between">
-                        <div className="flex flex-col gap-0.5">
-                            <Label className="cursor-pointer">
-                                {t["Remember Window Size"]}
-                            </Label>
-                            <p className="text-xs text-muted">
-                                {t["Restore the window to its last size on startup"]}
-                            </p>
-                        </div>
-                        <Switch
-                            isSelected={draft.rememberWindowSize}
-                            onChange={(v) => setDraft((prev) => ({ ...prev, rememberWindowSize: v }))}
+                    {/* Default Profile */}
+                    <SettingRow label={<Label>{t["Default Profile"]}</Label>}>
+                        <Select
+                            selectedKey={draft.defaultProfile}
+                            onSelectionChange={(key) => {
+                                if (key) {
+                                    setDraft((prev) => ({...prev, defaultProfile: key as string}));
+                                }
+                            }}
                         >
-                            <Switch.Control>
-                                <Switch.Thumb />
-                            </Switch.Control>
-                        </Switch>
-                    </div>
-
-                    {/* Copy with Ctrl+C (non-macOS only) */}
-                    {!isMacOS() && (
-                        <div className="flex flex-row items-center justify-between">
-                            <div className="flex flex-col gap-0.5">
-                                <Label className="cursor-pointer">
-                                    {t["Copy with Ctrl+C"]}
-                                </Label>
-                                <p className="text-xs text-muted">
-                                    {t["Swap Ctrl+C and Ctrl+Shift+C for copy and interrupt on non-macOS systems"]}
-                                </p>
-                            </div>
-                            <Switch
-                                isSelected={draft.copyWithCtrl}
-                                onChange={(v) => setDraft((prev) => ({ ...prev, copyWithCtrl: v }))}
-                            >
-                                <Switch.Control>
-                                    <Switch.Thumb />
-                                </Switch.Control>
-                            </Switch>
-                        </div>
-                    )}
-
-                    {/* Auto-check for updates on startup */}
-                    <div className="flex flex-row items-center justify-between">
-                        <div className="flex flex-col gap-0.5">
-                            <Label className="cursor-pointer">
-                                {t["Auto-check for updates on startup"]}
-                            </Label>
-                            <p className="text-xs text-muted">
-                                {t["Check for available updates when the app starts"]}
-                            </p>
-                        </div>
-                        <Switch
-                            isSelected={draft.autoUpdateOnStartup}
-                            onChange={(v) => setDraft((prev) => ({ ...prev, autoUpdateOnStartup: v }))}
-                        >
-                            <Switch.Control>
-                                <Switch.Thumb />
-                            </Switch.Control>
-                        </Switch>
-                    </div>
+                            <Select.Trigger>
+                                <Select.Value />
+                                <Select.Indicator />
+                            </Select.Trigger>
+                            <Select.Popover>
+                                <ListBox>
+                                    {config.profiles.map((p) => (
+                                        <ListBox.Item id={p.name} key={p.name} textValue={p.name}>
+                                            {p.name}
+                                        </ListBox.Item>
+                                    ))}
+                                </ListBox>
+                            </Select.Popover>
+                        </Select>
+                    </SettingRow>
                 </div>
-            </div>
-            {/* Fixed bottom: Save */}
-            <div className="shrink-0 border-t pt-3 pr-6" style={{ borderColor: borderColor }}>
-                <div className="flex items-center gap-3 justify-between">
-                    <div className="flex items-center gap-3">
-                        <Button
-                            variant="primary"
-                            isDisabled={!isDirty}
-                            onPress={handleSave}
-                        >
-                            {t["Save"]}
-                        </Button>
-                        {isDirty && (
-                            <span className="text-xs text-muted">{t["Unsaved changes"]}</span>
-                        )}
-                    </div>
-                    <Button
-                        variant="outline"
-                        onPress={openAbout}
+
+                {/* Show Tab Bar */}
+                <SettingRow
+                    variant="toggle"
+                    label={<Label className="cursor-pointer">{t["Show Tab Bar"]}</Label>}
+                >
+                    <Switch
+                        isSelected={draft.showTabBar}
+                        onChange={(v) => setDraft((prev) => ({...prev, showTabBar: v}))}
                     >
-                        {t["About"]} Lumina Terminal
-                    </Button>
-                </div>
+                        <Switch.Control>
+                            <Switch.Thumb />
+                        </Switch.Control>
+                    </Switch>
+                </SettingRow>
+
+                {/* Close Window on Last Tab */}
+                <SettingRow
+                    variant="toggle"
+                    label={<Label className="cursor-pointer">{t["Close Window on Last Tab Closed"]}</Label>}
+                >
+                    <Switch
+                        isSelected={draft.closeWindowOnLastTab}
+                        onChange={(v) => setDraft((prev) => ({...prev, closeWindowOnLastTab: v}))}
+                    >
+                        <Switch.Control>
+                            <Switch.Thumb />
+                        </Switch.Control>
+                    </Switch>
+                </SettingRow>
+
+                {/* Remember Window Position (hidden on Wayland — compositor
+                    forbids knowing/setting absolute position, so it'd be
+                    a no-op that only confuses users). */}
+                {!isWayland && (
+                    <SettingRow
+                        variant="toggle"
+                        label={<Label className="cursor-pointer">{t["Remember Window Position"]}</Label>}
+                        description={t["Restore the window to its last position on startup"]}
+                        onClick={() => setDraft((prev) => ({...prev, rememberWindowPosition: !prev.rememberWindowPosition}))}
+                    >
+                        <Switch
+                            isSelected={draft.rememberWindowPosition}
+                            onChange={(v) => setDraft((prev) => ({...prev, rememberWindowPosition: v}))}
+                        >
+                            <Switch.Control>
+                                <Switch.Thumb />
+                            </Switch.Control>
+                        </Switch>
+                    </SettingRow>
+                )}
+
+                {/* Remember Window Size */}
+                <SettingRow
+                    variant="toggle"
+                    label={<Label className="cursor-pointer">{t["Remember Window Size"]}</Label>}
+                    description={t["Restore the window to its last size on startup"]}
+                    onClick={() => setDraft((prev) => ({...prev, rememberWindowSize: !prev.rememberWindowSize}))}
+                >
+                    <Switch
+                        isSelected={draft.rememberWindowSize}
+                        onChange={(v) => setDraft((prev) => ({...prev, rememberWindowSize: v}))}
+                    >
+                        <Switch.Control>
+                            <Switch.Thumb />
+                        </Switch.Control>
+                    </Switch>
+                </SettingRow>
+
+                {/* Copy with Ctrl+C (non-macOS only) */}
+                {!isMacOS() && (
+                    <SettingRow
+                        variant="toggle"
+                        label={<Label className="cursor-pointer">{t["Copy with Ctrl+C"]}</Label>}
+                        description={t["Swap Ctrl+C and Ctrl+Shift+C for copy and interrupt on non-macOS systems"]}
+                        onClick={() => setDraft((prev) => ({...prev, copyWithCtrl: !prev.copyWithCtrl}))}
+                    >
+                        <Switch
+                            isSelected={draft.copyWithCtrl}
+                            onChange={(v) => setDraft((prev) => ({...prev, copyWithCtrl: v}))}
+                        >
+                            <Switch.Control>
+                                <Switch.Thumb />
+                            </Switch.Control>
+                        </Switch>
+                    </SettingRow>
+                )}
+
+                {/* Auto-check for updates on startup */}
+                <SettingRow
+                    variant="toggle"
+                    label={<Label className="cursor-pointer">{t["Auto-check for updates on startup"]}</Label>}
+                    description={t["Check for available updates when the app starts"]}
+                    onClick={() => setDraft((prev) => ({...prev, autoUpdateOnStartup: !prev.autoUpdateOnStartup}))}
+                >
+                    <Switch
+                        isSelected={draft.autoUpdateOnStartup}
+                        onChange={(v) => setDraft((prev) => ({...prev, autoUpdateOnStartup: v}))}
+                    >
+                        <Switch.Control>
+                            <Switch.Thumb />
+                        </Switch.Control>
+                    </Switch>
+                </SettingRow>
             </div>
-        </div>
+        </SettingsShell>
     );
 }

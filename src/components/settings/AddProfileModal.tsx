@@ -74,7 +74,7 @@ export default function AddProfileModal({ isOpen, onOpenChange, onCreate, border
                                         {sshEntries.map((entry) => (
                                             <Card
                                                 key={entry.host}
-                                                className="flex flex-row items-center gap-3 py-3 px-4 cursor-pointer hover:bg-neutral-100 dark:hover:bg-neutral-900 transition-all duration-200"
+                                                className="lum-ssh-card flex flex-row items-center gap-3 py-3 px-4 cursor-pointer rounded-[var(--radius-md)] hover:bg-default/10 transition-colors duration-[var(--duration-base)] ease-[var(--ease-glass)]"
                                                 onClick={() => {
                                                     onCreate({
                                                         name: entry.host,

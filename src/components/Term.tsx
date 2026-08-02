@@ -619,8 +619,20 @@ export default function Term(props : TermProps) {
                 fontStyle: profile.fontStyle ?? "normal",
             }}/>
             {isDragOver && (
-                <div className="absolute inset-0 z-10 flex items-center justify-center bg-blue-500/20 border-2 border-blue-400 border-dashed pointer-events-none">
-                    <div className="bg-black/70 text-white px-4 py-2 rounded-lg text-sm">
+                <div
+                    className="absolute inset-0 z-10 flex items-center justify-center border-2 border-dashed pointer-events-none"
+                    style={{
+                        background: "rgba(255,70,31,0.12)",
+                        borderColor: "var(--color-brand-cinnabar)",
+                    }}
+                >
+                    <div
+                        className="px-4 py-2 rounded-[var(--radius-md)] text-sm font-medium"
+                        style={{
+                            background: "var(--color-brand-gradient)",
+                            color: "#ffffff",
+                        }}
+                    >
                         {t["Drop file to insert path"]}
                     </div>
                 </div>

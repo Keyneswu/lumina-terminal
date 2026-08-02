@@ -1,9 +1,13 @@
-import {useEffect, useRef, type RefObject} from "react";
+import {useEffect, useRef, type CSSProperties, type DragEvent as ReactDragEvent, type RefObject} from "react";
+import {motion} from "framer-motion";
 import { Plus, X, Settings, Info, Sparkles } from "lucide-react";
 import Icon from "../assets/icon.svg";
 import { isMacOS } from "../lib/platform.ts";
 import { SETTINGS_TAB_ID, ABOUT_TAB_ID } from "../constants.ts";
 import { useSurfaceColors } from "../hooks/surfaceColors.ts";
+import {useGlass} from "../hooks/useGlass.ts";
+import {glassSurface} from "../lib/glass.ts";
+import {whileHoverTap} from "../lib/motion.ts";
 import {useI18n} from "../hooks/i18n.tsx";
 import ShellIcon from "./ShellIcon.tsx";
 import {ShellType} from "../lib/shellIcon.ts";
@@ -56,6 +60,10 @@ interface TabBarProps {
     foregroundColor: string;
     /** Theme-aware red used for danger indicators (privileged-command dot). */
     dangerColor: string;
+    /** True when the bg comes from a fullscreen TUI's spread edge color. The
+     *  glass material then drops its tint so the TUI color passes through the
+     *  chrome unmodified (no extra darkening/lightening). */
+    bgSpread?: boolean;
     collapsed: boolean;
     defaultProfileName?: string;
     /** When set, an update is available — show a banner above "New Tab". */
@@ -94,7 +102,7 @@ function mountTabDragOverlay(onDragOver: (ev: DragEvent) => void): () => void {
 }
 
 export default function TabBar(props: TabBarProps) {
-    const { tabs, activeId, onSelect, onClose, onNew, onTearOff, mergeTargetRef, dragScreenPosRef, backgroundColor, foregroundColor, dangerColor, collapsed, defaultProfileName, updateVersion, onUpdateClick } = props;
+    const { tabs, activeId, onSelect, onClose, onNew, onTearOff, mergeTargetRef, dragScreenPosRef, backgroundColor, foregroundColor, dangerColor, bgSpread, collapsed, defaultProfileName, updateVersion, onUpdateClick } = props;
     const t = useI18n();
 
     // Cleanup for the overlay + listeners attached during a drag we started.
@@ -169,28 +177,31 @@ export default function TabBar(props: TabBarProps) {
     }, []);
 
     const colors = useSurfaceColors(backgroundColor);
+    const {supportsGlass} = useGlass();
 
-    const borderStyle = collapsed ? "none" : `1px solid ${colors.borderColor}`;
+    // The sidebar wears the glass material over the terminal canvas. On
+    // platforms where backdrop-filter is unreliable (Linux/Wayland), this
+    // falls back to an opaque derived surface — same visual role, no blur.
+    const glass = glassSurface(backgroundColor, supportsGlass, {blurPx: 16, spread: bgSpread});
 
     return (
         <div
             ref={sidebarRef}
-            className="flex flex-col h-full select-none transition-all duration-300 ease-in-out overflow-hidden"
+            className="flex flex-col h-full select-none transition-[width,min-width,opacity] duration-[var(--duration-slow)] ease-[var(--ease-spring)] overflow-hidden"
             style={{
                 width: collapsed ? 0 : 180,
                 minWidth: collapsed ? 0 : 180,
-                background: backgroundColor,
+                ...glass,
             }}
         >
             <div
                 data-tauri-drag-region
-                className="shrink-0 px-3 py-2 border-b"
+                className="shrink-0 px-3 flex flex-row items-center pt-2.5"
                 style={{
-                    borderColor: colors.borderColor,
                     color: foregroundColor,
                 }}
             >
-                <div className="flex flex-row items-center gap-1.5 h-5" data-tauri-drag-region>
+                <div className="flex flex-row items-center gap-1.5" data-tauri-drag-region>
                     {!isMacOS() && (
                         <>
                             <img
@@ -198,7 +209,7 @@ export default function TabBar(props: TabBarProps) {
                                 alt=""
                                 className="h-5 w-5 pointer-events-none"
                             />
-                            <span className="text-sm font-medium truncate leading-tight translate-y-px">
+                            <span className="text-sm font-medium truncate leading-tight">
                                 Lumina
                             </span>
                         </>
@@ -206,9 +217,7 @@ export default function TabBar(props: TabBarProps) {
                 </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto overflow-x-hidden" data-tauri-drag-region style={{
-                borderRight: borderStyle,
-            }}>
+            <div className="flex-1 overflow-y-auto overflow-x-hidden px-1.5 py-1.5" data-tauri-drag-region>
                 {tabs.map((tab) => {
                     const isActive = tab.id === activeId;
                     // Only real terminal tabs are draggable for tear-off;
@@ -218,24 +227,10 @@ export default function TabBar(props: TabBarProps) {
                     return (
                         <div
                             key={tab.id}
-                            className="flex flex-row items-center justify-between px-3 py-2.5 cursor-pointer group transition-colors"
-                            style={{
-                                background: isActive ? colors.activeOverlay : "transparent",
-                            }}
-                            onClick={() => onSelect(tab.id)}
-                            onMouseEnter={(e) => {
-                                if (!isActive) {
-                                    e.currentTarget.style.background = colors.hoverOverlay;
-                                }
-                            }}
-                            onMouseLeave={(e) => {
-                                if (!isActive) {
-                                    e.currentTarget.style.background = "transparent";
-                                }
-                            }}
+                            className="my-0.5 cursor-pointer"
                             title={tab.name}
                             draggable={isTerminalTab}
-                            onDragStart={(e) => {
+                            onDragStart={(e: ReactDragEvent) => {
                                 if (!isTerminalTab) return;
                                 // effectAllowed + setData are required for the
                                 // browser to start a drag. Use a proprietary MIME
@@ -277,7 +272,7 @@ export default function TabBar(props: TabBarProps) {
                                     info(`Failed to broadcast ${DRAG_START_EVENT}: ${err}`).catch(() => {})
                                 );
                             }}
-                            onDragEnd={(e) => {
+                            onDragEnd={(e: ReactDragEvent) => {
                                 if (!isTerminalTab) return;
                                 dragCleanupRef.current?.();
                                 dragCleanupRef.current = null;
@@ -357,6 +352,21 @@ export default function TabBar(props: TabBarProps) {
                                 })();
                             }}
                         >
+                            {/* Inner motion layer carries the spring scale animation.
+                                Kept separate from the outer drag div because
+                                motion.div redeclares onDragStart/onDragEnd for its
+                                own pan system, which collides with the HTML5 tear-off
+                                drag above. whileHoverTap mirrors the new-tab button
+                                (springSnappy physics) for a consistent press feel. */}
+                            <motion.div
+                                {...whileHoverTap}
+                                className={`lum-tab-row group relative flex flex-row items-center justify-between px-3 py-2.5 rounded-[var(--radius-sm)] transition-colors duration-[var(--duration-base)] ease-[var(--ease-glass)] hover:bg-[var(--lum-tab-hover)] ${isActive ? "bg-[var(--lum-tab-active)]" : ""}`}
+                                style={{
+                                    "--lum-tab-hover": isActive ? colors.accentOverlay : colors.hoverOverlay,
+                                    "--lum-tab-active": colors.accentOverlay,
+                                } as CSSProperties}
+                                onClick={() => onSelect(tab.id)}
+                            >
                             <div className="flex flex-col items-start flex-1 w-[70%] overflow-hidden">
                                 <div className="flex items-start gap-2 w-full">
                                     {tab.id === SETTINGS_TAB_ID && (
@@ -403,10 +413,11 @@ export default function TabBar(props: TabBarProps) {
                                 )}
                             </div>
                             <button
-                                className="opacity-0 group-hover:opacity-100 rounded p-0.5 shrink-0 transition-all ml-1"
+                                className="lum-tab-close cursor-pointer opacity-0 group-hover:opacity-100 rounded-[var(--radius-xs)] p-1 shrink-0 transition-all duration-[var(--duration-fast)] ml-1 hover:bg-[var(--lum-tab-active)]"
                                 style={{
+                                    "--lum-tab-active": colors.activeOverlay,
                                     color: isActive ? foregroundColor : colors.inactiveText,
-                                }}
+                                } as CSSProperties}
                                 // draggable={false} so a press-drag starting on the
                                 // close button doesn't initiate the parent tab's
                                 // HTML5 tear-off drag — a click (no movement) still
@@ -416,68 +427,49 @@ export default function TabBar(props: TabBarProps) {
                                     e.stopPropagation();
                                     onClose(tab.id);
                                 }}
-                                onMouseEnter={(e) => {
-                                    e.currentTarget.style.background = colors.activeOverlay;
-                                }}
-                                onMouseLeave={(e) => {
-                                    e.currentTarget.style.background = "transparent";
-                                }}
                             >
                                 <X size={12} />
                             </button>
+                            </motion.div>
                         </div>
                     );
                 })}
             </div>
 
-            <div
-                className="shrink-0"
-                style={{
-                    borderRight: borderStyle,
-                }}
-            >
+            <div className="shrink-0 px-1.5 pb-1.5">
                 {/* Update-available banner: shows above "New Tab" when an update
                     is available. Hidden when the sidebar is collapsed (no room).
-                    The background borrows the app icon's cinnabar→lavender gradient
-                    (#FF461F → #A892C7, see src/assets/icon.svg) as a subtle brand
-                    accent so it stands out from the neutral tab chrome. */}
+                    Wears the brand gradient (cinnabar→lavender, from the app icon)
+                    via the --color-brand-gradient-soft token as a subtle accent so
+                    it stands out from the neutral tab chrome. */}
                 {!collapsed && updateVersion && (
                     <div
-                        style={{
-                            // Static brand gradient (cinnabar→lavender from the app icon)
-                            // lives on this wrapper. The hover highlight is layered ON
-                            // TOP by the inner button, so it stays visible and smooth.
-                            // Opacity is high enough that the button's white wash
-                            // (0.5 → 0.3 on hover) reads as a clear brightness shift.
-                            background:
-                                "linear-gradient(135deg, rgba(255,70,31,0.55), rgba(168,146,199,0.55))",
-                        }}
+                        className="my-1 rounded-[var(--radius-sm)] overflow-hidden"
+                        style={{background: "var(--color-brand-gradient-soft)"}}
                     >
-                        <button
-                            className="flex flex-row items-center gap-2 w-full px-3 py-2 cursor-pointer transition-color duration-200 bg-[rgba(255,255,255,0.5)] hover:bg-[rgba(255,255,255,0.3)]"
-                            style={{
-                                color: foregroundColor,
-                            }}
+                        <motion.button
+                            {...whileHoverTap}
+                            className="lum-tab-update flex flex-row items-center gap-2 w-full px-3 py-2 cursor-pointer rounded-[var(--radius-sm)] transition-colors duration-[var(--duration-base)] bg-white/40 hover:bg-white/20"
+                            style={{color: foregroundColor}}
                             onClick={onUpdateClick}
                             title={t["New version available: v{version}"].replace("{version}", updateVersion)}
                         >
-                            <Sparkles size={14} className="shrink-0" style={{ color: "#A892C7" }} />
+                            <Sparkles size={14} className="shrink-0" style={{color: "var(--color-brand-lavender)"}} />
                             <span className="text-xs truncate">
                                 {t["New version available: v{version}"].replace("{version}", updateVersion)}
                             </span>
-                        </button>
+                        </motion.button>
                     </div>
                 )}
 
-                <button
-                    className="flex flex-row items-center gap-2 w-full px-3 py-2.5 transition-colors cursor-pointer border-t"
+                <motion.button
+                    {...whileHoverTap}
+                    className="lum-tab-new flex flex-row items-center gap-2 w-full px-3 py-2.5 mt-1 transition-colors duration-[var(--duration-fast)] cursor-pointer rounded-[var(--radius-sm)] hover:bg-[var(--lum-new-hover)]"
                     style={{
+                        "--lum-new-hover": colors.hoverOverlay,
                         color: colors.inactiveText,
-                        borderColor: colors.borderColor,
-                    }}
+                    } as CSSProperties}
                     onClick={onNew}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = colors.hoverOverlay)}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
                 >
                     <Plus size={16} />
                     <div className="flex flex-col w-full justify-start items-start">
@@ -485,13 +477,13 @@ export default function TabBar(props: TabBarProps) {
                         {defaultProfileName && (
                             <div
                                 className="text-xs truncate"
-                                style={{ color: colors.inactiveText, opacity: 0.5 }}
+                                style={{color: colors.inactiveText, opacity: 0.5}}
                             >
                                 {defaultProfileName}
                             </div>
                         )}
                     </div>
-                </button>
+                </motion.button>
             </div>
         </div>
     );

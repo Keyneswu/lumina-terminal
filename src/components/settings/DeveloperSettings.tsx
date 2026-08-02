@@ -5,6 +5,9 @@ import {invoke} from "@tauri-apps/api/core";
 import {Button, Label, ListBox, Select} from "@heroui/react";
 import {Bug, FolderOpen} from "lucide-react";
 import {warn, error} from "@tauri-apps/plugin-log";
+import SettingsShell from "../ui/SettingsShell.tsx";
+import SettingRow from "../ui/SettingRow.tsx";
+import SectionTitle from "../ui/SectionTitle.tsx";
 
 // localStorage key + values kept in sync with the dev mock in lib/updater.ts.
 const MOCK_KEY = "LUMINA_MOCK_UPDATE";
@@ -44,125 +47,115 @@ export default function DeveloperSettings() {
     };
 
     return (
-        <div className="flex flex-col h-full">
-            <div className="flex-1 overflow-y-auto pb-4 pl-1 pr-6">
-                <h2 className="text-lg font-semibold mb-6">{t["Developer"]}</h2>
+        <SettingsShell>
+            <SectionTitle>{t["Developer"]}</SectionTitle>
 
-                <div className="flex flex-col gap-5">
-                    {/* Config File Path */}
-                    <div className="flex flex-row justify-between items-center w-full">
-                        <div className="flex flex-col gap-1.5">
-                            <Label>{t["Config File Path"]}</Label>
-                            <p className="text-xs text-muted truncate flex-1" title={configPath}>
-                                {configPath || "—"}
-                            </p>
-                        </div>
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            className="shrink-0"
-                            onPress={() => {
-                                if (configPath) {
-                                    invoke("open_in_file_manager", {path: configPath}).catch((e) => {
-                                        warn(`Failed to open config file: ${e}`).catch(() => {});
-                                    });
-                                }
-                            }}
-                        >
-                            <FolderOpen size={15} />
-                            {t["Open"]}
-                        </Button>
-                    </div>
+            <div className="flex flex-col gap-5">
+                {/* Config File Path */}
+                <SettingRow
+                    variant="action"
+                    label={<Label>{t["Config File Path"]}</Label>}
+                    description={<span className="truncate block" title={configPath}>{configPath || "—"}</span>}
+                >
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        className="shrink-0"
+                        onPress={() => {
+                            if (configPath) {
+                                invoke("open_in_file_manager", {path: configPath}).catch((e) => {
+                                    warn(`Failed to open config file: ${e}`).catch(() => {});
+                                });
+                            }
+                        }}
+                    >
+                        <FolderOpen size={15} />
+                        {t["Open"]}
+                    </Button>
+                </SettingRow>
 
-                    {/* Log Directory */}
-                    <div className="flex flex-row justify-between items-center w-full">
-                        <div className="flex flex-col gap-1.5">
-                            <Label>{t["Log Directory"]}</Label>
-                            <p className="text-xs text-muted truncate flex-1" title={logDir}>
-                                {logDir || "—"}
-                            </p>
-                        </div>
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            className="shrink-0"
-                            onPress={() => {
-                                if (logDir) {
-                                    invoke("open_in_file_manager", {path: logDir}).catch((e) => {
-                                        warn(`Failed to open log directory: ${e}`).catch(() => {});
-                                    });
-                                }
-                            }}
-                        >
-                            <FolderOpen size={15} />
-                            {t["Open"]}
-                        </Button>
-                    </div>
+                {/* Log Directory */}
+                <SettingRow
+                    variant="action"
+                    label={<Label>{t["Log Directory"]}</Label>}
+                    description={<span className="truncate block" title={logDir}>{logDir || "—"}</span>}
+                >
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        className="shrink-0"
+                        onPress={() => {
+                            if (logDir) {
+                                invoke("open_in_file_manager", {path: logDir}).catch((e) => {
+                                    warn(`Failed to open log directory: ${e}`).catch(() => {});
+                                });
+                            }
+                        }}
+                    >
+                        <FolderOpen size={15} />
+                        {t["Open"]}
+                    </Button>
+                </SettingRow>
 
-                    {/* DevTools */}
-                    <div className="flex flex-row justify-between items-center w-full">
-                        <div className="flex flex-col gap-1.5">
-                            <Label>{t["DevTools"]}</Label>
-                            <p className="text-xs text-muted">
-                                Open the webview developer tools
-                            </p>
-                        </div>
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            isDisabled={!isDebug}
-                            onPress={() => invoke("open_devtools").catch(() => {
-                                warn("DevTools command not available, use Ctrl+Shift+I").catch(() => {});
-                            })}
-                        >
-                            <Bug size={15} />
-                            {t["Open"]}
-                        </Button>
-                    </div>
+                {/* DevTools */}
+                <SettingRow
+                    variant="action"
+                    label={<Label>{t["DevTools"]}</Label>}
+                    description={"Open the webview developer tools"}
+                >
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        isDisabled={!isDebug}
+                        onPress={() => invoke("open_devtools").catch(() => {
+                            warn("DevTools command not available, use Ctrl+Shift+I").catch(() => {});
+                        })}
+                    >
+                        <Bug size={15} />
+                        {t["Open"]}
+                    </Button>
+                </SettingRow>
 
-                    {/* Mock Update State — dev-only, drives the updater mock purely
-                        via localStorage (see lib/updater.ts DEV MOCK). */}
-                    {import.meta.env.DEV && (
-                        <div className="flex flex-row justify-between items-center w-full">
-                            <div className="flex flex-col gap-1.5">
-                                <Label>{t["Mock Update State"]}</Label>
-                                <p className="text-xs text-muted">
-                                    {t["Simulate an update-check result for testing the update UI"]}
-                                </p>
-                            </div>
-                            <div className="w-40 shrink-0">
-                                <Select
-                                    selectedKey={mockUpdate || "none"}
-                                    onSelectionChange={(key) => {
-                                        applyMock((key === "none" ? "" : key) as MockValue);
-                                    }}
-                                >
-                                    <Select.Trigger>
-                                        <Select.Value />
-                                        <Select.Indicator />
-                                    </Select.Trigger>
-                                    <Select.Popover>
-                                        <ListBox>
-                                            <ListBox.Item id="none" key="none" textValue="none">
-                                                {t["None"]}
-                                            </ListBox.Item>
-                                            <ListBox.Item id="available" key="available" textValue="available">
-                                                {t["Available"]}
-                                            </ListBox.Item>
-                                            <ListBox.Item id="upToDate" key="upToDate" textValue="upToDate">
-                                                {t["Up to Date"]}
-                                            </ListBox.Item>
-                                            <ListBox.Item id="error" key="error" textValue="error">
-                                                {t["Error"]}
-                                            </ListBox.Item>
-                                        </ListBox>
-                                    </Select.Popover>
-                                </Select>
-                            </div>
+                {/* Mock Update State — dev-only, drives the updater mock purely
+                    via localStorage (see lib/updater.ts DEV MOCK). */}
+                {import.meta.env.DEV && (
+                    <SettingRow
+                        variant="action"
+                        label={<Label>{t["Mock Update State"]}</Label>}
+                        description={t["Simulate an update-check result for testing the update UI"]}
+                    >
+                        <div className="w-40 shrink-0">
+                            <Select
+                                selectedKey={mockUpdate || "none"}
+                                onSelectionChange={(key) => {
+                                    applyMock((key === "none" ? "" : key) as MockValue);
+                                }}
+                            >
+                                <Select.Trigger>
+                                    <Select.Value />
+                                    <Select.Indicator />
+                                </Select.Trigger>
+                                <Select.Popover>
+                                    <ListBox>
+                                        <ListBox.Item id="none" key="none" textValue="none">
+                                            {t["None"]}
+                                        </ListBox.Item>
+                                        <ListBox.Item id="available" key="available" textValue="available">
+                                            {t["Available"]}
+                                        </ListBox.Item>
+                                        <ListBox.Item id="upToDate" key="upToDate" textValue="upToDate">
+                                            {t["Up to Date"]}
+                                        </ListBox.Item>
+                                        <ListBox.Item id="error" key="error" textValue="error">
+                                            {t["Error"]}
+                                        </ListBox.Item>
+                                    </ListBox>
+                                </Select.Popover>
+                            </Select>
                         </div>
-                    )}
-                </div>
+                    </SettingRow>
+                )}
             </div>
-        </div>
+        </SettingsShell>
     );
 }

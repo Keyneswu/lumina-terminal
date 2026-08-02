@@ -136,6 +136,7 @@ pnpm tauri dev
 * [Xterm.js & Addons](https://xtermjs.org/)
 * [Tailwind CSS](https://tailwindcss.com/)
 * [Lucide Icons](https://lucide.dev/)
+* [Framer Motion](https://www.framer.com/motion/)
 * [react-markdown](https://github.com/remarkjs/react-markdown)
 
 ## License
