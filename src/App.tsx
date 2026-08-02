@@ -902,25 +902,19 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
                             style={{...chromeGlass, zIndex: 0}}
                         />
                         {currentId === SETTINGS_TAB_ID && (
-                            <div
-                                className="absolute inset-0"
-                                style={{ zIndex: 1 }}
-                            >
+                            <MaskedSurface className="absolute inset-0" style={{zIndex: 1}}>
                                 <SettingsPage theme={effectiveTheme} openAbout={openAbout} />
-                            </div>
+                            </MaskedSurface>
                         )}
                         {currentId === ABOUT_TAB_ID && (
-                            <div
-                                className="absolute inset-0"
-                                style={{ zIndex: 1 }}
-                            >
+                            <MaskedSurface className="absolute inset-0" style={{zIndex: 1}}>
                                 <AboutPage
                                     theme={effectiveTheme}
                                     updater={updater}
                                     installSource={installSource}
                                     onShowUpdateModal={() => setIsUpdateModalOpen(true)}
                                 />
-                            </div>
+                            </MaskedSurface>
                         )}
                         {ids.filter((id) => id in terminals).map((id) => {
                             // A tab reattaches (replay scrollback + swap the PTY's
