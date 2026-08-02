@@ -493,9 +493,11 @@ export default function Term(props : TermProps) {
     // background can follow it, and sync the xterm-owned layers (.xterm and
     // .xterm-viewport, which otherwise paint theme.background over the sub-cell
     // gap to the right/bottom of the canvas). Only the active tab reports;
-    // inactive tabs clear it.
+    // inactive tabs clear it. Disabled entirely when color spread is off.
     const onEdgeRef = useRef(props.onEdgeBackgroundChange);
     onEdgeRef.current = props.onEdgeBackgroundChange;
+    const colorSpreadRef = useRef(config.enableColorSpread !== false);
+    colorSpreadRef.current = config.enableColorSpread !== false;
     useEffect(() => {
         if (!term.current) return;
         const xtermEl = termRef.current?.querySelector(".xterm") as HTMLElement | null;
@@ -516,6 +518,15 @@ export default function Term(props : TermProps) {
         let lastReported: string | null = null;
         const tick = () => {
             if (!term.current) return;
+            // When color spread is off, never sample or report — let the
+            // terminal theme's background show everywhere.
+            if (!colorSpreadRef.current) {
+                if (lastReported !== null) {
+                    lastReported = null;
+                    apply(null);
+                }
+                return;
+            }
             if (!isActiveRef.current) {
                 if (lastReported !== null) {
                     lastReported = null;

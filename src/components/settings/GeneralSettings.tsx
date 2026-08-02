@@ -17,6 +17,7 @@ interface GeneralDraft {
     closeWindowOnLastTab: boolean;
     defaultProfile: string;
     copyWithCtrl: boolean;
+    enableColorSpread: boolean;
     autoUpdateOnStartup: boolean;
     rememberWindowPosition: boolean;
     rememberWindowSize: boolean;
@@ -40,6 +41,7 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
         closeWindowOnLastTab: config.closeWindowOnLastTab !== false,
         defaultProfile: currentDefault,
         copyWithCtrl: config.copyWithCtrl ?? false,
+        enableColorSpread: config.enableColorSpread !== false,
         autoUpdateOnStartup: config.autoUpdateOnStartup !== false,
         rememberWindowPosition: config.rememberWindowPosition ?? false,
         rememberWindowSize: config.rememberWindowSize ?? false,
@@ -54,6 +56,7 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
                 showTabBar: d.showTabBar,
                 closeWindowOnLastTab: d.closeWindowOnLastTab,
                 copyWithCtrl: d.copyWithCtrl,
+                enableColorSpread: d.enableColorSpread,
                 autoUpdateOnStartup: d.autoUpdateOnStartup,
                 rememberWindowPosition: d.rememberWindowPosition,
                 rememberWindowSize: d.rememberWindowSize,
@@ -69,7 +72,7 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
             }
             updateConfig(updated);
         },
-        [config.language, config.showTabBar, config.closeWindowOnLastTab, config.copyWithCtrl, config.autoUpdateOnStartup, config.rememberWindowPosition, config.rememberWindowSize, currentDefault],
+        [config.language, config.showTabBar, config.closeWindowOnLastTab, config.copyWithCtrl, config.enableColorSpread, config.autoUpdateOnStartup, config.rememberWindowPosition, config.rememberWindowSize, currentDefault],
     );
 
     return (
@@ -237,6 +240,24 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
                         </Switch>
                     </SettingRow>
                 )}
+
+                {/* Color spread: let a fullscreen TUI's background bleed to the
+                    window edges. */}
+                <SettingRow
+                    variant="toggle"
+                    label={<Label className="cursor-pointer">{t["Color Spread"]}</Label>}
+                    description={t["Let fullscreen apps' background fill the whole window"]}
+                    onClick={() => setDraft((prev) => ({...prev, enableColorSpread: !prev.enableColorSpread}))}
+                >
+                    <Switch
+                        isSelected={draft.enableColorSpread}
+                        onChange={(v) => setDraft((prev) => ({...prev, enableColorSpread: v}))}
+                    >
+                        <Switch.Control>
+                            <Switch.Thumb />
+                        </Switch.Control>
+                    </Switch>
+                </SettingRow>
 
                 {/* Auto-check for updates on startup */}
                 <SettingRow

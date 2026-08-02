@@ -47,7 +47,7 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
             return null;
         }
     }, [currentId, terminals]);
-    const {theme: effectiveTheme, bg: effectiveBg, fg: effectiveFg, isSpread, setEdgeBg} = useEffectiveTheme(currentProfile, currentId);
+    const {theme: effectiveTheme, bg: effectiveBg, fg: effectiveFg, isSpread, setEdgeBg} = useEffectiveTheme(currentProfile, currentId, config.enableColorSpread !== false);
     // Glass material filling the terminal area. The terminal surface is clipped
     // to a rounded rectangle via clip-path; its four corners are transparent,
     // exposing this chrome layer beneath — so the chrome reads as a continuous

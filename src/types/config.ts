@@ -19,6 +19,10 @@ export interface GlobalConfig {
     bindings?: Binding[];
     closeWindowOnLastTab?: boolean;
     copyWithCtrl?: boolean;
+    /** When true (default), a fullscreen TUI's uniform edge background "spreads"
+     *  across the whole window chrome. When false, the app keeps the terminal
+     *  theme's background and the sampling/polling is disabled. */
+    enableColorSpread?: boolean;
     autoUpdateOnStartup?: boolean;
     /** When true, restore the main window to its last position on startup
      * (main window only; tear-off windows are positioned by their spawner). */

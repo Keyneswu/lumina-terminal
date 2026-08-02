@@ -36,6 +36,9 @@ export interface EffectiveTheme {
 export function useEffectiveTheme(
     currentProfile: TerminalProfile | null,
     currentId: string | null,
+    /** When false, the TUI edge-background spread is disabled: edge reports are
+     *  ignored and the effective theme falls back to the terminal theme. */
+    enabled: boolean = true,
 ): EffectiveTheme & { setEdgeBg: (color: string | null) => void } {
     const [currentTheme, setCurrentTheme] = useState<ITheme | null>(null);
     // Uniform background color sampled from the active terminal's outer ring
@@ -61,12 +64,14 @@ export function useEffectiveTheme(
         setEdgeBg(null);
     }, [currentId]);
 
-    // Effective background = TUI edge color if present, else terminal theme bg.
-    const effectiveBg = edgeBg ?? currentTheme?.background;
+    // Effective background = TUI edge color if present (and spread enabled),
+    // else terminal theme bg.
+    const activeEdgeBg = enabled ? edgeBg : null;
+    const effectiveBg = activeEdgeBg ?? currentTheme?.background;
     // Effective foreground: when a TUI overrides the background, pick a
     // readable contrast color for it instead of trusting the terminal theme's
     // foreground (which may clash, e.g. black text on a now-dark TUI bg).
-    const effectiveFg = edgeBg && effectiveBg
+    const effectiveFg = activeEdgeBg && effectiveBg
         ? foregroundFor(effectiveBg)
         : currentTheme?.foreground;
     // Theme object with bg/fg overridden to the effective values, so children
@@ -92,7 +97,7 @@ export function useEffectiveTheme(
         theme: effectiveTheme,
         bg: effectiveBg,
         fg: effectiveFg,
-        isSpread: edgeBg !== null,
+        isSpread: activeEdgeBg !== null,
         setEdgeBg,
     };
 }
