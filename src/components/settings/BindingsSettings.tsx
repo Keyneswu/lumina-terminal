@@ -4,9 +4,21 @@ import {Pencil, Plus, RotateCcw, Trash2, X} from "lucide-react";
 import {useGlobalConfig} from "../../hooks/config.tsx";
 import {useI18n} from "../../hooks/i18n.tsx";
 import {info} from "@tauri-apps/plugin-log";
-import {Actions, Binding, WithKeys} from "../../types/config.ts";
+import {Actions} from "../../types/config.ts";
 import {DEFAULT_BINDINGS} from "../../constants.ts";
-import {actionSignature, bindingToShortcut, keySignature} from "../../lib/bindings.ts";
+import {bindingToShortcut} from "../../lib/bindings.ts";
+import {
+    ALL_ACTIONS,
+    actionLabel,
+    detectConflicts,
+    detectMissingAccelerator,
+    findDefaultFor,
+    matchesDefaultBinding,
+    stripDraftFlag,
+    toDraft,
+    type DraftBinding,
+} from "../../lib/bindingsSettings.ts";
+import {useKeyRecorder} from "../../hooks/useKeyRecorder.ts";
 import SettingsShell from "../ui/SettingsShell.tsx";
 import SectionTitle from "../ui/SectionTitle.tsx";
 
@@ -15,94 +27,11 @@ const NO_ACTION = "__none__";
 // Sentinel used in the profile picker to mean "the default profile".
 const DEFAULT_PROFILE_KEY = "__default_profile__";
 
-// All actions a user can bind.
-// Note: newTab opens a terminal profile. No args → default profile;
-// args.profileName → a specific profile. openConfigFile (opens config.json)
-// is intentionally excluded from the bindings UI.
-const ALL_ACTIONS: Actions[] = [
-    "newTab",
-    "closeTab",
-    "tearOffTab",
-    "openSettings",
-    "openCommandPalette",
-    "toggleSidebar",
-    "toTab",
-];
-
-type TranslationDict = ReturnType<typeof useI18n>;
-
-function actionLabel(action: Actions, args: Record<string, string> | undefined, t: TranslationDict, preview?: boolean): string {
-    switch (action) {
-        case "newTab": {
-            const name = args?.profileName;
-            if (name) return `${t["Open Profile"]}: ${name}`;
-            if (preview) {
-                return t["Open Profile"];
-            } else {
-                return `${t["Open Profile"]}: ${t["Default"]}`;
-            }
-        }
-        case "closeTab":
-            return t["Close Tab"];
-        case "tearOffTab":
-            return t["Tear Off Tab"];
-        case "openSettings":
-            return t["Settings"];
-        case "openCommandPalette":
-            return t["Open Command Palette"];
-        case "toggleSidebar":
-            return t["Toggle Sidebar"];
-        case "openConfigFile":
-            return t["Open Config File"];
-        case "toTab": {
-            const idx = args?.index;
-            if (idx === "last") return `${t["Switch to Tab"]}: ${t["Last tab"]}`;
-            if (idx !== undefined && /^\d+$/.test(idx)) {
-                return `${t["Switch to Tab"]}: ${t["Tab {n}"].replace("{n}", String(+idx + 1))}`;
-            }
-            return `${t["Switch to Tab"]}: ${idx ?? ""}`;
-        }
-    }
-}
-
-// A row is "default-origin" when it matches a default binding by BOTH
-// action+args AND key+modifiers. We track this per-row as a transient
-// `__isDefault` flag (never persisted) so that:
-//   - editing a default binding's key keeps it default-origin → "delete"
-//     restores the default key rather than dropping the row;
-//   - a binding the user *added* — even if its action matches a default —
-//     stays deletable, because the flag only follows rows that originated
-//     from the defaults.
-// actionSignature / keySignature are imported from lib/bindings.ts so the
-// settings UI and the runtime matcher stay perfectly in sync.
-function fullSignature(b: Binding): string {
-    return `${actionSignature(b)}@${keySignature(b.key, b.with)}`;
-}
-
-const DEFAULT_FULL_SIGNATURES = new Set(DEFAULT_BINDINGS.map(fullSignature));
-
-function matchesDefaultBinding(b: Binding): boolean {
-    return DEFAULT_FULL_SIGNATURES.has(fullSignature(b));
-}
-
-type DraftBinding = Binding & { __isDefault?: boolean };
-
-// findDefaultFor locates the default binding for a row's action+args so "delete"
-// can restore the default key. It matches on action signature only (NOT the
-// key), because the row being restored may have had its key edited away from
-// the default.
-function findDefaultFor(b: Binding): Binding | undefined {
-    const sig = actionSignature(b);
-    return DEFAULT_BINDINGS.find((d) => actionSignature(d) === sig);
-}
-
 export default function BindingsSettings({borderColor}: { borderColor: string }) {
     const {config, updateConfig} = useGlobalConfig();
     const t = useI18n();
 
     const sourceBindings = config.bindings?.length ? config.bindings : DEFAULT_BINDINGS;
-
-    const toDraft = (b: Binding): DraftBinding => ({...b, __isDefault: matchesDefaultBinding(b)});
     const [draft, setDraft] = useState<DraftBinding[]>(() => sourceBindings.map(toDraft));
     const [recordingIndex, setRecordingIndex] = useState<number | null>(null);
     // New-binding creation state.
@@ -119,87 +48,24 @@ export default function BindingsSettings({borderColor}: { borderColor: string })
 
     const isDirty = useMemo(() => {
         const src = sourceBindings.map((b) => ({...b}));
-        const cur = draft.map((b) => {
-            const {__isDefault, ...rest} = b;
-            return rest;
-        });
+        const cur = draft.map(stripDraftFlag);
         return JSON.stringify(cur) !== JSON.stringify(src);
     }, [draft, sourceBindings]);
 
-    // Conflict detection: any key signature appearing more than once.
-    const conflicts = useMemo(() => {
-        const counts = new Map<string, number>();
-        for (const b of draft) {
-            const sig = keySignature(b.key, b.with);
-            counts.set(sig, (counts.get(sig) ?? 0) + 1);
-        }
-        const set = new Set<number>();
-        draft.forEach((b, i) => {
-            if ((counts.get(keySignature(b.key, b.with)) ?? 0) > 1) set.add(i);
-        });
-        return set;
-    }, [draft]);
-
+    const conflicts = useMemo(() => detectConflicts(draft), [draft]);
     const hasConflicts = conflicts.size > 0;
-
-    // Every binding must have a key AND at least one accelerator (modifier).
-    const missingAccelerator = useMemo(() => {
-        const set = new Set<number>();
-        draft.forEach((b, i) => {
-            if (b.key.trim().length === 0 || b.with.length === 0) set.add(i);
-        });
-        return set;
-    }, [draft]);
-
+    const missingAccelerator = useMemo(() => detectMissingAccelerator(draft), [draft]);
     const hasMissingAccelerator = missingAccelerator.size > 0;
 
-    const updateBinding = useCallback((index: number, updates: Partial<Binding>) => {
+    const updateBinding = useCallback((index: number, updates: Partial<DraftBinding>) => {
         setDraft((prev) => prev.map((b, i) => (i === index ? {...b, ...updates} : b)));
     }, []);
 
     const stopRecording = useCallback(() => setRecordingIndex(null), []);
-
-    // Key recorder: while recordingIndex is set, capture the next keydown globally.
-    useEffect(() => {
-        if (recordingIndex === null) return;
-        const handler = (e: KeyboardEvent) => {
-            e.preventDefault();
-            e.stopPropagation();
-
-            // Esc always cancels recording.
-            if (e.key === "Escape") {
-                stopRecording();
-                return;
-            }
-            // Ignore pure modifier presses (don't commit until a real key is pressed).
-            if (["Control", "Shift", "Alt", "Meta", "ContextMenu"].includes(e.key)) return;
-
-            const withKeys: WithKeys[] = [];
-            if (e.metaKey) withKeys.push("command");
-            if (e.ctrlKey) withKeys.push("ctrl");
-            if (e.altKey) withKeys.push("alt");
-            // For a single-letter key, Shift is reflected in e.key (uppercase). We store the
-            // lowercase key + an explicit "shift" modifier so bindingToShortcut / matchBinding
-            // (which compare case-insensitively for length-1 keys and check shiftKey) stay
-            // consistent with the existing default convention (e.g. openCommandPalette).
-            const isLetter = e.key.length === 1 && /[a-zA-Z]/.test(e.key);
-            if (e.shiftKey) withKeys.push("shift");
-
-            // A binding must include at least one accelerator (modifier). If the user pressed a
-            // bare key with no modifier, stay in recording mode and let them try again.
-            if (withKeys.length === 0) return;
-
-            let key = e.key;
-            if (isLetter) key = e.key.toLowerCase();
-
-            if (recordingIndex !== null) {
-                updateBinding(recordingIndex, {key, with: withKeys});
-            }
-            stopRecording();
-        };
-        window.addEventListener("keydown", handler, {capture: true});
-        return () => window.removeEventListener("keydown", handler, {capture: true});
-    }, [recordingIndex, updateBinding, stopRecording]);
+    const recordBinding = useCallback((index: number, key: string, withKeys: DraftBinding["with"]) => {
+        updateBinding(index, {key, with: withKeys});
+    }, [updateBinding]);
+    useKeyRecorder(recordingIndex, recordBinding, stopRecording);
 
     const handleDelete = useCallback((index: number) => {
         setDraft((prev) => {
@@ -261,7 +127,7 @@ export default function BindingsSettings({borderColor}: { borderColor: string })
         info(`Bindings saved (${draft.length} entries)`);
         // Strip the transient __isDefault flag before persisting.
         updateConfig({
-            bindings: draft.map(({__isDefault, ...rest}) => rest),
+            bindings: draft.map(stripDraftFlag),
         });
     }, [draft, hasConflicts, hasMissingAccelerator, updateConfig]);
 

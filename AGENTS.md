@@ -34,7 +34,8 @@ logic, state, and derivation live in the frontend.
 
 ```
 src/
-├── App.tsx                  # Root: window chrome + terminal tab lifecycle
+├── App.tsx                  # Root: composes chrome (TabBar/TitleBar/Term) + non-terminal key dispatch.
+│                            #   Tab lifecycle/state live in useTerminalManager; geometry in useWindowGeometry.
 ├── main.tsx                 # ReactDOM entry; wraps App in GlobalConfigProvider
 ├── constants.ts             # Default config, default bindings, tab-id sentinels
 ├── types/
@@ -56,6 +57,10 @@ src/
 │   │                        #   exported actionSignature / keySignature
 │   ├── edgeBackground.ts    # sampleEdgeBackground (xterm buffer edge inspection)
 │   ├── tearoff.ts           # Tab tear-off: label mint/store/consume + WebviewWindow spawn
+│   ├── tabDragOverlay.ts    # mountTabDragOverlay (transparent full-window layer keeping dragover alive over canvas)
+│   ├── chunkedWriter.ts     # ChunkedWriter — bounded-chunk feeder for term.write() (UTF-16-safe slicing)
+│   ├── terminalGeometry.ts  # profileWindowSize — measure cell size + compute OS window size for rows/cols
+│   ├── bindingsSettings.ts  # bindings-editor pure logic: actionLabel, detectConflicts, toDraft, …
 │   └── FloatingFitAddon.ts  # xterm fit addon subclass (centered sub-cell fit)
 │
 ├── hooks/                   # React hooks (start with `use`)
@@ -72,6 +77,11 @@ src/
 │   ├── useSshConfig.ts      # useSshConfig() — cached parse_ssh_config backend call
 │   ├── useOutputMode.ts     # useOutputMode(id) → {markInteractive}: debounced LowLatency toggle
 │   ├── useEffectiveTheme.ts # useEffectiveTheme(profile, currentId) → theme/bg/fg + HeroUI sync
+│   ├── useTerminalManager.ts# useTerminalManager() — tab list/profiles/active id + create/close/tear-off
+│   │                        #   + cross-window merge/hover listeners (extracted from App.tsx)
+│   ├── useWindowGeometry.ts # useWindowGeometry(isMainWindow) — restore + persist window pos/size (Wayland-aware)
+│   ├── useCommandPaletteActions.tsx # useCommandPaletteActions(opts) — build the palette action list (JSX)
+│   ├── useKeyRecorder.ts    # useKeyRecorder(index, onRecord, onCancel) — global keydown capture for bindings editor
 │   └── useTearoffSession.ts # useTearoffSession() → {label, payload} | "no" | null (tab tear-off boot)
 │
 ├── components/
@@ -118,7 +128,13 @@ src-tauri/src/
 │                  #   reader thread streams output over the entry's swappable Channel<String>
 │                  #   with streaming-UTF-8 decoding + two-mode burst coalescing;
 │                  #   reattach_terminal atomically swaps the channel for tab tear-off
-└── utils.rs       # find_shells, path_exist, read_file, parse_ssh_config, etc.
+├── command_tracker.rs # CommandInfo type + foreground_command() /proc + ps + privileged-name logic
+├── ssh.rs         # SshConfig/SshHostEntry types + parse_ssh_config (~/.ssh/config)
+├── shells.rs      # find_shells — PATH + known-dir shell discovery (Win MSYS2/Git, Unix homebrew)
+├── system.rs      # is_wayland, is_debug, get_commit_hash, get_log_dir, open_devtools
+├── install_source.rs # install_source — pacman/dpkg/rpm package-ownership detection
+├── file_manager.rs # open_in_file_manager — xdg-open / open -R / explorer (per-OS)
+└── utils.rs       # path_exist, read_file (tiny fs helpers)
 ```
 
 ---

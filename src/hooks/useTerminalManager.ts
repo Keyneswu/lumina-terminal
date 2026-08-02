@@ -1,0 +1,445 @@
+import {useCallback, useEffect, useMemo, useRef, useState} from "react";
+import {getCurrentWindow} from "@tauri-apps/api/window";
+import {TerminalProfile, CurrentCommand} from "../types/terminal.ts";
+import {parseProfile} from "../lib/term.ts";
+import {killTerminal} from "../lib/terminalApi.ts";
+import {info, debug, error, warn} from "@tauri-apps/plugin-log";
+import {SETTINGS_TAB_ID, ABOUT_TAB_ID} from "../constants.ts";
+import {
+    consumeTearoff,
+    createTearoffWindow,
+    DRAG_HOVER_EVENT,
+    MERGE_ACK_EVENT,
+    MERGE_TAB_EVENT,
+    newTearoffLabel,
+    stashTearoff,
+    type TabDragHover,
+    type TearoffPayload,
+} from "../lib/tearoff.ts";
+import {emitTo, listen} from "@tauri-apps/api/event";
+import {useTearoffSession} from "./useTearoffSession.ts";
+import {useGlobalConfig} from "./config.tsx";
+
+/**
+ * Owns the terminal-tab lifecycle: the id list, profile map, active id,
+ * per-tab running-command map, reattach-mode tabs, and the close-on-last-tab
+ * rule. Exposes the create/close/switch/toTab/tear-off operations and the
+ * cross-window merge/hover listeners.
+ *
+ * Extracted from App.tsx so App orchestrates chrome instead of babysitting
+ * state. The refs (serializeFns, mergeTargetRef, dragScreenPosRef) are
+ * returned so TabBar / Term can read + mutate them without re-deriving state.
+ */
+export interface TerminalManager {
+    ids: string[];
+    terminals: Record<string, TerminalProfile>;
+    currentId: string | null;
+    commands: Record<string, CurrentCommand | null>;
+    reattachTabs: Record<string, {ptyId: string; scrollback: string}>;
+    serializeFns: React.MutableRefObject<Map<string, () => string>>;
+    mergeTargetRef: React.MutableRefObject<TabDragHover | null>;
+    dragScreenPosRef: React.MutableRefObject<{x: number; y: number} | null>;
+    newTerminal: (profile: TerminalProfile) => Promise<void>;
+    closeTerminal: (id: string) => void;
+    switchTab: (id: string) => void;
+    toTab: (index: number) => void;
+    tearOffTab: (id: string, opts?: {mergeTarget?: string; position?: {x: number; y: number}}) => Promise<void>;
+    setCommandsFor: (id: string, cmd: CurrentCommand | null) => void;
+    /** Add a chrome-only tab (Settings/About — no PTY). If already present,
+     *  just activates it. Centralized so App's open* handlers share one path. */
+    openChromeTab: (id: string) => void;
+    // True once the initial-tab seeding effect has run for this window.
+    isInitialized: React.MutableRefObject<boolean>;
+}
+
+export function useTerminalManager(): TerminalManager {
+    const {config} = useGlobalConfig();
+    const tearoff = useTearoffSession();
+
+    const [ids, setIds] = useState<string[]>([]);
+    const [terminals, setTerminals] = useState<Record<string, TerminalProfile>>({});
+    const [currentId, setCurrentId] = useState<string | null>(null);
+    const serializeFns = useRef<Map<string, () => string>>(new Map());
+    const [reattachTabs, setReattachTabs] = useState<Record<string, {ptyId: string; scrollback: string}>>({});
+    const mergeTargetRef = useRef<TabDragHover | null>(null);
+    const dragScreenPosRef = useRef<{x: number; y: number} | null>(null);
+    const [commands, setCommands] = useState<Record<string, CurrentCommand | null>>({});
+    const isInitialized = useRef<boolean>(false);
+    const closeOnLastTabRef = useRef(config.closeWindowOnLastTab);
+    closeOnLastTabRef.current = config.closeWindowOnLastTab;
+
+    const idsRef = useRef(ids);
+    idsRef.current = ids;
+    const currentIdRef = useRef(currentId);
+    currentIdRef.current = currentId;
+
+    const defaultProfile = useMemo(() => {
+        return config.profiles.find(p => p.default) || config.profiles[0];
+    }, [config.profiles]);
+
+    const newTerminal = useCallback(async (profile: TerminalProfile) => {
+        const id = crypto.randomUUID();
+        const p = await parseProfile(profile, config.globalProfile);
+        setTerminals((prevState) => {
+            let newState = {...prevState};
+            newState[id] = p;
+            return newState;
+        });
+        setIds((prevState) => [...prevState, id]);
+        setCurrentId(id);
+        info(`New terminal: profile=${profile.name} id=${id}`);
+    }, [config]);
+
+    const closeTerminal = useCallback((id: string) => {
+        debug(`closeTerminal called for id=${id}`);
+        const currentIds = idsRef.current;
+        const currentActiveId = currentIdRef.current;
+
+        // Settings tab: no PTY process, just remove from list
+        if (id === SETTINGS_TAB_ID || id === ABOUT_TAB_ID) {
+            info("Closing settings/about tab");
+            const newIds = currentIds.filter((i) => i !== id);
+            let newCurrentId = currentActiveId;
+            if (currentActiveId === id) {
+                if (newIds.length > 0) {
+                    newCurrentId = newIds[newIds.length - 1];
+                } else if (closeOnLastTabRef.current !== false) {
+                    info("No tabs left, closing window");
+                    getCurrentWindow().close().catch((e) =>
+                        error(`Failed to close window on last tab: ${e}`)
+                    );
+                    return;
+                }
+            }
+            setIds(newIds);
+            setCurrentId(newCurrentId);
+            return;
+        }
+        // Kill the PTY process on the backend
+        killTerminal(id).catch((e) =>
+            error(`Failed to kill terminal: ${e}`)
+        );
+
+        // Compute new ID list
+        const newIds = currentIds.filter((i) => i !== id);
+
+        // Determine which tab should become active
+        let newCurrentId = currentActiveId;
+        if (currentActiveId === id) {
+            if (newIds.length > 0) {
+                const idx = currentIds.indexOf(id);
+                newCurrentId = newIds[Math.min(idx, newIds.length - 1)];
+            } else if (closeOnLastTabRef.current !== false) {
+                // No tabs left, close the window (default behavior)
+                info("No tabs left after close, closing window");
+                getCurrentWindow().close().catch((e) =>
+                    error(`Failed to close window on last tab: ${e}`)
+                );
+                return;
+            }
+            // If closeWindowOnLastTab is false, fall through to clear state
+        }
+
+        setTerminals((prevState) => {
+            const newState = {...prevState};
+            delete newState[id];
+            return newState;
+        });
+        setIds(newIds);
+        setCurrentId(newCurrentId);
+        info(`Terminal closed: id=${id}, remaining=${newIds.length}`);
+    }, []);
+
+    const switchTab = useCallback((id: string) => {
+        debug(`Switch tab to ${id}`);
+        setCurrentId(id);
+    }, []);
+
+    /**
+     * Tear a terminal tab off — either into a NEW window (default) or by
+     * MERGING into another existing Lumina window (`opts.mergeTarget` = that
+     * window's label). Captures scrollback, stashes the payload, then:
+     *   - new window: spawns a hidden WebviewWindow and detaches the tab here.
+     *   - merge: emits MERGE_TAB to the target, waits for MERGE_ACK, then
+     *     detaches. The PTY is never killed — the target reattaches to it.
+     * Any failure is logged; the tab stays put if stashing or (for merge) the
+     * ack times out.
+     */
+    const tearOffTab = useCallback(async (id: string, opts?: {mergeTarget?: string; position?: {x: number; y: number}}) => {
+        const profile = terminals[id];
+        if (!profile) {
+            warn(`tearOffTab: no profile for id=${id} (not a terminal tab)`);
+            return;
+        }
+        const scrollback = serializeFns.current.get(id)?.() ?? "";
+
+        // Shared detach: remove the tab from this window without killing the
+        // PTY. Index-aware active-tab fallback mirrors closeTerminal.
+        const detachTab = () => {
+            const currentIds = idsRef.current;
+            const currentActiveId = currentIdRef.current;
+            const newIds = currentIds.filter((i) => i !== id);
+            let newCurrentId = currentActiveId;
+            if (currentActiveId === id) {
+                if (newIds.length > 0) {
+                    const idx = currentIds.indexOf(id);
+                    newCurrentId = newIds[Math.min(idx, newIds.length - 1)];
+                } else if (closeOnLastTabRef.current !== false) {
+                    info("No tabs left after detach, closing source window");
+                    getCurrentWindow().close().catch((e) =>
+                        error(`Failed to close source window after detach: ${e}`)
+                    );
+                }
+            }
+            setTerminals((prevState) => {
+                const newState = {...prevState};
+                delete newState[id];
+                return newState;
+            });
+            setIds(newIds);
+            setCurrentId(newCurrentId);
+            setReattachTabs((prev) => {
+                if (!(id in prev)) return prev;
+                const next = {...prev};
+                delete next[id];
+                return next;
+            });
+            info(`Tab id=${id} detached from source window (PTY kept alive)`);
+        };
+
+        const target = opts?.mergeTarget;
+        if (target) {
+            // ---- Merge into an existing window ----
+            // Use a fresh stash key (NOT a window label) since the target
+            // window already has its own label.
+            const stashKey = newTearoffLabel();
+            info(`Merging tab id=${id} into window ${target} (stashKey=${stashKey})`);
+            try {
+                await stashTearoff(stashKey, {profile, ptyId: id, scrollback});
+            } catch (e) {
+                error(`tearOffTab merge: stash failed for ${stashKey}, aborting: ${e}`).catch(() => {});
+                return;
+            }
+            const sourceLabel = getCurrentWindow().label;
+            // Correct ordering for a reliable ack handshake:
+            //   1. await listen() so the handler is registered before we emit
+            //      (a fast target would otherwise ack before we listen).
+            //   2. emitTo target.
+            //   3. race the ack against a 3s timeout.
+            //   4. unlisten (whether acked or timed out).
+            let ackResolve!: (v: boolean) => void;
+            const ackPromise = new Promise<boolean>((resolve) => {
+                ackResolve = resolve;
+            });
+            let ackUnlisten: (() => void) | undefined;
+            try {
+                ackUnlisten = await listen(MERGE_ACK_EVENT, (event) => {
+                    const payload = event.payload as {stashKey?: string} | null;
+                    if (payload?.stashKey === stashKey) {
+                        info(`Merge acked by ${target}`);
+                        ackResolve(true);
+                    }
+                });
+            } catch (e) {
+                error(`Failed to listen for ${MERGE_ACK_EVENT}: ${e}`).catch(() => {});
+                return;
+            }
+            emitTo(target, MERGE_TAB_EVENT, {stashKey, sourceLabel}).catch((e) =>
+                error(`Failed to emit ${MERGE_TAB_EVENT} to ${target}: ${e}`).catch(() => {})
+            );
+            const acked = await Promise.race([
+                ackPromise,
+                new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 3000)),
+            ]);
+            ackUnlisten();
+            if (!acked) {
+                warn(`Merge ack timed out for ${stashKey} into ${target}; keeping tab`);
+                return;
+            }
+            detachTab();
+            return;
+        }
+
+        // ---- New window (existing path) ----
+        const label = newTearoffLabel();
+        info(`Tearing off tab id=${id} into new window ${label}`);
+        try {
+            await stashTearoff(label, {profile, ptyId: id, scrollback});
+        } catch (e) {
+            error(`tearOffTab: stash failed for ${label}, aborting: ${e}`).catch(() => {});
+            return;
+        }
+        const sourceInnerSize = {
+            width: window.innerWidth,
+            height: window.innerHeight,
+        };
+        try {
+            await createTearoffWindow(label, sourceInnerSize, opts?.position);
+        } catch (e) {
+            error(`tearOffTab: window creation failed for ${label}: ${e}`).catch(() => {});
+            // Leave the tab in place — the new window never came up.
+            return;
+        }
+        detachTab();
+    }, [terminals]);
+
+    const toTab = useCallback((index: number) => {
+        if (ids.length === 0) return;
+        const idx = index < 0 ? ids.length - 1 : Math.min(index, ids.length - 1);
+        setCurrentId(ids[idx]);
+    }, [ids]);
+
+    const openChromeTab = useCallback((id: string) => {
+        setIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+        setCurrentId(id);
+    }, []);
+
+    const setCommandsFor = useCallback((id: string, cmd: CurrentCommand | null) => {
+        setCommands((prev) =>
+            prev[id] === cmd ? prev : { ...prev, [id]: cmd }
+        );
+    }, []);
+
+    // Merge receiver: accept a tab dragged in from another Lumina window.
+    // Runs in EVERY window (main + tear-off). Payload: {stashKey, sourceLabel}.
+    // We consume the stashed {profile, ptyId, scrollback}, seed a reattach tab,
+    // and ack so the source can remove the tab from its state. The PTY is not
+    // killed on the source's side — our Term reattaches to the live process.
+    useEffect(() => {
+        let unlisten: (() => void) | undefined;
+        let cancelled = false;
+
+        listen(MERGE_TAB_EVENT, async (event) => {
+            const payload = event.payload as {stashKey?: string; sourceLabel?: string} | null;
+            const stashKey = payload?.stashKey;
+            const sourceLabel = payload?.sourceLabel ?? "unknown";
+            if (!stashKey) {
+                warn(`Merge received with no stashKey from ${sourceLabel}`);
+                return;
+            }
+            let loaded: TearoffPayload | null = null;
+            try {
+                loaded = await consumeTearoff(stashKey);
+            } catch (e) {
+                error(`Merge consume failed for ${stashKey}: ${e}`).catch(() => {});
+            }
+            // Always ack so the source isn't stuck waiting for the 3s timeout.
+            // (Even on failure — the source keeps its tab; nothing is lost.)
+            emitTo(sourceLabel, MERGE_ACK_EVENT, {stashKey}).catch((e) =>
+                error(`Failed to ack merge ${stashKey} to ${sourceLabel}: ${e}`).catch(() => {})
+            );
+            if (!loaded) {
+                error(`Merge received but stash empty for ${stashKey}; tab not seeded`).catch(() => {});
+                return;
+            }
+            const {ptyId, profile: seedProfile, scrollback} = loaded;
+            info(`Merge tab received: ptyId=${ptyId} from ${sourceLabel}`);
+            setTerminals((s) => ({...s, [ptyId]: seedProfile}));
+            setIds((s) => (s.includes(ptyId) ? s : [...s, ptyId]));
+            setReattachTabs((s) => ({...s, [ptyId]: {ptyId, scrollback}}));
+            setCurrentId(ptyId);
+        }).then((cleanup) => {
+            if (cancelled) {
+                cleanup();
+            } else {
+                unlisten = cleanup;
+            }
+        }).catch((e) => {
+            error(`Failed to listen for ${MERGE_TAB_EVENT}: ${e}`);
+        });
+
+        return () => {
+            cancelled = true;
+            unlisten?.();
+        };
+    }, []);
+
+    // Track which other window the cursor is hovering during a drag FROM this
+    // window. TabBar's dragend reads mergeTargetRef to pick merge vs. cancel
+    // vs. new-window (`merge` is true only over a foreign sidebar).
+    useEffect(() => {
+        let unlisten: (() => void) | undefined;
+        let cancelled = false;
+        listen<{label?: string; merge?: boolean}>(DRAG_HOVER_EVENT, (event) => {
+            const label = event.payload?.label;
+            if (label) {
+                mergeTargetRef.current = {
+                    label,
+                    time: Date.now(),
+                    // Default false so a stale payload shape never merges by accident.
+                    merge: event.payload?.merge === true,
+                };
+            }
+            // Ignore empty reports — the heartbeat model only relies on the
+            // freshness of positive reports, so explicit leaves aren't needed.
+        }).then((cleanup) => {
+            if (cancelled) {
+                cleanup();
+            } else {
+                unlisten = cleanup;
+            }
+        }).catch((e) => {
+            error(`Failed to listen for ${DRAG_HOVER_EVENT}: ${e}`);
+        });
+        return () => {
+            cancelled = true;
+            unlisten?.();
+        };
+    }, []);
+
+    // Initial tab seeding. Three cases:
+    //   - tear-off window (tearoff carries payload): seed ONE reattach-mode
+    //     terminal from the stashed profile + PTY id. Do NOT call startTerminal
+    //     — the PTY is alive on the backend; Term's reattach path handles it.
+    //   - main window with configured profiles: open the default profile.
+    //   - main window with no profiles yet: WelcomePage handles onboarding.
+    // `tearoff === null` means the session probe is still pending — wait.
+    useEffect(() => {
+        if (isInitialized.current) return;
+        if (tearoff === null) return; // tear-off probe in flight
+        if (tearoff === "no") {
+            if (config.profiles.length && ids.length === 0) {
+                isInitialized.current = true;
+                getCurrentWindow().setResizable(true).catch((e) =>
+                    error(`Failed to set window resizable: ${e}`)
+                );
+                newTerminal(defaultProfile).catch((e) =>
+                    error(`Failed to create initial terminal: ${e}`)
+                );
+            }
+            return;
+        }
+        // Tear-off window: seed exactly one tab whose id is the live PTY id.
+        // The profile in the payload is already resolved (post parseProfile),
+        // so we insert it directly without re-merging globalProfile.
+        isInitialized.current = true;
+        const {ptyId, profile: seedProfile} = tearoff.payload;
+        getCurrentWindow().setResizable(true).catch((e) =>
+            error(`Failed to set tear-off window resizable: ${e}`)
+        );
+        setTerminals({[ptyId]: seedProfile});
+        setIds([ptyId]);
+        setCurrentId(ptyId);
+        setReattachTabs({[ptyId]: {ptyId, scrollback: tearoff.payload.scrollback}});
+        info(`Tear-off window seeded with ptyId=${ptyId}`);
+    }, [config, tearoff, defaultProfile]);
+
+    return {
+        ids,
+        terminals,
+        currentId,
+        commands,
+        reattachTabs,
+        serializeFns,
+        mergeTargetRef,
+        dragScreenPosRef,
+        newTerminal,
+        closeTerminal,
+        switchTab,
+        toTab,
+        tearOffTab,
+        setCommandsFor,
+        openChromeTab,
+        isInitialized,
+    };
+}

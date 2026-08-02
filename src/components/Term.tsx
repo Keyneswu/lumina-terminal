@@ -5,8 +5,10 @@ import {Channel} from "@tauri-apps/api/core";
 import {TerminalProfile, CurrentCommand} from "../types/terminal.ts";
 import {FloatingFitAddon} from "../lib/FloatingFitAddon.ts";
 import {WebglAddon} from "@xterm/addon-webgl";
-import {getCurrentWindow, LogicalSize} from "@tauri-apps/api/window";
+import {getCurrentWindow} from "@tauri-apps/api/window";
 import {parseProfilePadding} from "../lib/term.ts";
+import {profileWindowSize} from "../lib/terminalGeometry.ts";
+import {ChunkedWriter} from "../lib/chunkedWriter.ts";
 import {sampleEdgeBackground} from "../lib/edgeBackground.ts";
 import {loadBindings} from "../lib/bindings.ts";
 import type {Binding} from "../types/config.ts";
@@ -24,7 +26,6 @@ import {ImageAddon} from "@xterm/addon-image";
 import {SerializeAddon} from "@xterm/addon-serialize";
 import {IMAGE_ADDON_SETTINGS} from "../constants.ts";
 import {reattachTerminal, resizeTerminal, startTerminal, writeToTerminal} from "../lib/terminalApi.ts";
-import {safeCodeUnitLength} from "../lib/text.ts";
 import {CurrentCommandParser} from "../lib/currentCommand.ts";
 
 let hasAppliedInitialWindowSize = false;
@@ -92,37 +93,13 @@ export default function Term(props : TermProps) {
     isActiveRef.current = isActive;
 
     const getWindowSizeFromRowsAndColumns = useCallback(() => {
-        const term = new Terminal({...profile});
-        const dummyDiv = document.createElement("div");
-        dummyDiv.style.position = "absolute";
-        dummyDiv.style.visibility = "hidden"; // 隐形，用户看不到
-        dummyDiv.style.top = "-9999px";
-        dummyDiv.style.width = "500px";
-        dummyDiv.style.height = "500px";
-        dummyDiv.style.fontStyle = profile.fontStyle ?? "normal";
-        document.body.appendChild(dummyDiv);
-        term.open(dummyDiv);
-        // @ts-ignore
-        if (term._core?._charSizeService) {
-            // @ts-ignore
-            term._core._charSizeService.measure();
-        }
-        const renderDimensions = (term as any)._core?._renderService?.dimensions;
-        const charSizeService = (term as any)._core?._charSizeService;
-        let charWidth = renderDimensions?.actualCellWidth || charSizeService?.width;
-        let charHeight = renderDimensions?.actualCellHeight || charSizeService?.height;
-        debug(`Char size measured: ${charWidth}x${charHeight}`);
-        term.dispose();
-        dummyDiv.remove();
-        let widthOffset = 0; let heightOffset = 0;
-        if (termRef.current) {
-            widthOffset = window.innerWidth - termRef.current.clientWidth;
-            heightOffset = window.innerHeight - termRef.current.clientHeight;
-        }
-        const padding = parseProfilePadding(profile, paddingOffset);
-        const pixelWidth = Math.floor((profile.cols ?? 80) * charWidth) + widthOffset + padding.left + padding.right;
-        const pixelHeight = Math.floor((profile.rows ?? 24) * charHeight) + heightOffset + padding.top + padding.bottom;
-        return {width: pixelWidth, height: pixelHeight};
+        const container = termRef.current;
+        return profileWindowSize(
+            profile,
+            paddingOffset,
+            container?.clientWidth ?? 0,
+            container?.clientHeight ?? 0,
+        );
     }, [profile, paddingOffset]);
 
     const handleActions = (action: Actions, args?: Record<string, string>) => {
@@ -264,7 +241,7 @@ export default function Term(props : TermProps) {
         if (!hasAppliedInitialWindowSize && getCurrentWindow().label === "main" && !skipForRemembered) {
             hasAppliedInitialWindowSize = true;
             const windowSize = getWindowSizeFromRowsAndColumns();
-            getCurrentWindow().setSize(new LogicalSize(windowSize)).then();
+            getCurrentWindow().setSize(windowSize).then();
         } else if (!hasAppliedInitialWindowSize) {
             // Mark as applied even when we skipped, so a later profile change
             // doesn't suddenly resize the window.
@@ -331,59 +308,11 @@ export default function Term(props : TermProps) {
             markInteractive();
         });
 
-        // Chunked write: feed pending PTY data to xterm in bounded chunks, with a
-        // microtask gap between chunks so the main thread stays responsive during
-        // large output (e.g. cat bigfile).
-        //
-        // The chunk size is a trade-off: too large and one term.write() blocks the
-        // main thread for tens of ms while xterm parses thousands of lines (jank);
-        // too small and per-write overhead dominates. 16KB stays well under a frame
-        // while keeping the number of write() calls (and parse/render passes) low.
-        const pendingWrites: string[] = [];
-        let writeScheduled = false;
-        const CHUNK_SIZE = 1024 * 16;
-
-        function drainWrites(term: Terminal) {
-            if (pendingWrites.length === 0) {
-                writeScheduled = false;
-                return;
-            }
-
-            // Build one chunk by consuming items from the front of the queue.
-            // The cut point is UTF-16-safe: if it would land between the two
-            // halves of a surrogate pair (emoji / astral-plane chars), back up
-            // by one code unit so the pair stays intact — otherwise both
-            // pieces carry a lone surrogate and render as a replacement char
-            // glitch. This is the real cause of "PTY string truncation" visual
-            // errors, not the backend (the backend already streams UTF-8-safe).
-            let chunk = '';
-            let taken = 0;
-            while (pendingWrites.length > 0 && taken < CHUNK_SIZE) {
-                const next = pendingWrites[0];
-                const remaining = CHUNK_SIZE - taken;
-                if (next.length <= remaining) {
-                    chunk += pendingWrites.shift()!;
-                    taken += next.length;
-                } else {
-                    const cut = safeCodeUnitLength(next, remaining);
-                    chunk += next.slice(0, cut);
-                    pendingWrites[0] = next.slice(cut);
-                    taken = CHUNK_SIZE;
-                }
-            }
-
-            // Drive the queue forward via microtask regardless of whether more
-            // data remains, instead of waiting for term.write()'s render callback.
-            // The callback model serialized writes behind xterm's render time,
-            // which throttled throughput to "one chunk per frame" and made large
-            // chunks *worse* (longer single write blocking). Microtask draining
-            // keeps the queue moving while still yielding between chunks.
-            term.write(chunk);
-            writeScheduled = pendingWrites.length > 0;
-            if (writeScheduled) {
-                queueMicrotask(() => drainWrites(term));
-            }
-        }
+        // Bounded-chunk feeder for term.write(): coalesces bursts into 16KB
+        // chunks with a microtask gap so large output (cat bigfile) doesn't
+        // block the main thread. See lib/chunkedWriter.ts for the full
+        // rationale (chunk size, microtask draining, UTF-16-safe slicing).
+        const writer = new ChunkedWriter(term.current);
 
         // Lazily create the OSC parser (one per terminal, kept in a ref).
         if (!commandParserRef.current) {
@@ -392,8 +321,8 @@ export default function Term(props : TermProps) {
 
         // Backend streams PTY output over this Channel (low-overhead,
         // binary-safe UTF-8, with dynamic burst coalescing). The handler does
-        // the same OSC parse → pendingWrites → drainWrites the old
-        // `term-write` event listener did.
+        // the same OSC parse → writer.push the old `term-write` event
+        // listener did.
         const outputChannel = new Channel<string>();
         outputChannel.onmessage = (data) => {
             if (term.current && data) {
@@ -406,11 +335,7 @@ export default function Term(props : TermProps) {
                         parsed === "" ? null : { command: parsed, privileged: false }
                     );
                 }
-                pendingWrites.push(data);
-                if (!writeScheduled) {
-                    writeScheduled = true;
-                    queueMicrotask(() => drainWrites(term.current!));
-                }
+                writer.push(data);
             }
         };
 

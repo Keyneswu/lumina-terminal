@@ -1,8 +1,19 @@
+mod command_tracker;
+mod file_manager;
+mod install_source;
+mod shells;
+mod ssh;
 mod state;
+mod system;
 mod terminal;
 mod utils;
 
+use crate::file_manager::*;
+use crate::install_source::*;
+use crate::shells::*;
+use crate::ssh::*;
 use crate::state::TerminalState;
+use crate::system::*;
 use crate::terminal::*;
 use crate::utils::*;
 #[cfg(target_os = "macos")]

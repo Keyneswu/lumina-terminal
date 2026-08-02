@@ -21,6 +21,7 @@ import {
     TAB_DRAG_MIME,
     type TabDragHover,
 } from "../lib/tearoff.ts";
+import {mountTabDragOverlay} from "../lib/tabDragOverlay.ts";
 
 export interface TabInfo {
     id: string;
@@ -69,36 +70,6 @@ interface TabBarProps {
     /** When set, an update is available — show a banner above "New Tab". */
     updateVersion?: string | null;
     onUpdateClick?: () => void;
-}
-
-/**
- * Full-window transparent layer so HTML5 `dragover` keeps firing over xterm's
- * canvas/WebGL (which otherwise swallows the event → stale heartbeat → false
- * "tear off onto desktop"). Removed when the drag ends.
- */
-function mountTabDragOverlay(onDragOver: (ev: DragEvent) => void): () => void {
-    const overlay = document.createElement("div");
-    overlay.setAttribute("data-lumina-tab-drag-overlay", "");
-    Object.assign(overlay.style, {
-        position: "fixed",
-        inset: "0",
-        // Above the terminal surface; below native OS UI.
-        zIndex: "2147483646",
-        // Keep the drag image visible; we only need hit-testing.
-        background: "transparent",
-    });
-    const handler = (ev: DragEvent) => {
-        // Required for continuous dragover across the webview (incl. canvas).
-        ev.preventDefault();
-        if (ev.dataTransfer) ev.dataTransfer.dropEffect = "move";
-        onDragOver(ev);
-    };
-    overlay.addEventListener("dragover", handler);
-    document.body.appendChild(overlay);
-    return () => {
-        overlay.removeEventListener("dragover", handler);
-        overlay.remove();
-    };
 }
 
 export default function TabBar(props: TabBarProps) {
