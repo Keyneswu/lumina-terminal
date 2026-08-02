@@ -288,9 +288,9 @@ export default function AboutPage({ theme, updater, onShowUpdateModal }: AboutPa
                                     href={tech.url}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="lum-tech-chip px-2.5 py-1 rounded-[var(--radius-sm)] text-xs transition-colors duration-[var(--duration-fast)] ease-[var(--ease-glass)] hover:opacity-85"
+                                    className="lum-tech-chip px-2.5 py-1 rounded-[var(--radius-sm)] text-xs transition-colors duration-[var(--duration-fast)] ease-[var(--ease-glass)] hover:opacity-80"
                                     style={{
-                                        background: "var(--color-brand-gradient-soft)",
+                                        background: colors.hoverOverlay,
                                         color: fg,
                                     }}
                                 >
