@@ -161,6 +161,7 @@ pub fn run() {
             read_file,
             is_debug,
             is_wayland,
+            install_source,
             get_log_dir,
             get_commit_hash,
             parse_ssh_config,

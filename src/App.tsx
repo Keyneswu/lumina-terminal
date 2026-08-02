@@ -24,6 +24,7 @@ import {usePaddingOffset} from "./hooks/paddingOffset.ts";
 import {useMaximized} from "./hooks/maximized.ts";
 import {useStartupUpdateCheck} from "./hooks/useStartupUpdateCheck.ts";
 import {useUpdater} from "./hooks/useUpdater.ts";
+import {useInstallSource} from "./hooks/useInstallSource.ts";
 import UpdateModal from "./components/UpdateModal.tsx";
 import {emitTo, listen} from "@tauri-apps/api/event";
 import {useTearoffSession} from "./hooks/useTearoffSession.ts";
@@ -112,6 +113,10 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
     // Single updater instance for the whole app — owned here so the sidebar
     // banner, the update modal, and the About page all share one state machine.
     const updater = useUpdater();
+    // Detect package-manager-managed installs (pacman/dpkg/rpm) so the update
+    // modal can show the package-manager update command instead of the in-app
+    // self-updater, which only supports AppImage on Linux.
+    const installSource = useInstallSource();
     const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
     const defaultProfile = useMemo(() => {
         return config.profiles.find(p => p.default) || config.profiles[0];
@@ -841,6 +846,7 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
                     progress={updater.progress}
                     error={updater.error}
                     onInstall={updater.install}
+                    installSource={installSource}
                     theme={effectiveTheme}
                 />
                 <TabBar
@@ -887,6 +893,7 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
                                 <AboutPage
                                     theme={effectiveTheme}
                                     updater={updater}
+                                    installSource={installSource}
                                     onShowUpdateModal={() => setIsUpdateModalOpen(true)}
                                 />
                             </div>

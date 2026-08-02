@@ -3,6 +3,7 @@ import { ITheme } from "@xterm/xterm";
 import { useI18n } from "../hooks/i18n.tsx";
 import { useSurfaceColors } from "../hooks/surfaceColors.ts";
 import type { UpdaterState } from "../hooks/useUpdater.ts";
+import type { InstallSource } from "../hooks/useInstallSource.ts";
 import { fetchReleaseNotes } from "../lib/releaseNotes.ts";
 import iconSvg from "../assets/icon.svg";
 import readmeRaw from "../../README.md?raw";
@@ -22,6 +23,8 @@ interface AboutPageProps {
 	theme: ITheme | null;
 	/** Shared updater state (owned by App so the sidebar/modal stay in sync). */
 	updater: UpdaterState;
+	/** Detected install source; when set, the in-app updater is disabled. */
+	installSource?: InstallSource | null;
 	/** Open the update-detail modal (About never installs directly). */
 	onShowUpdateModal: () => void;
 }
@@ -63,7 +66,7 @@ function parseTechStack(readme: string): TechItem[] {
     return items;
 }
 
-export default function AboutPage({ theme, updater, onShowUpdateModal }: AboutPageProps) {
+export default function AboutPage({ theme, updater, installSource, onShowUpdateModal }: AboutPageProps) {
     const t = useI18n();
     const bg = theme?.background ?? "#000000";
     const fg = theme?.foreground ?? "#ffffff";
@@ -160,11 +163,17 @@ export default function AboutPage({ theme, updater, onShowUpdateModal }: AboutPa
                                     title={t["What's New"]}
                                     onClick={onShowUpdateModal}
                                 >
-                                    <Download size={14} className="translate-y-px" />
-                                    {updater.info
-                                        ? t["Update available: v{version}"].replace("{version}", updater.info.version)
-                                        : t["A new version is available"]}
-                                </span>
+								<Download size={14} className="translate-y-px" />
+								{updater.info
+									? t["Update available: v{version}"].replace("{version}", updater.info.version)
+									: t["A new version is available"]}
+								{installSource && (
+									<span className="text-muted">
+										{" · "}
+										{installSource.manager}
+									</span>
+								)}
+							</span>
                             ) : updater.status === "upToDate" ? (
                                 <span
                                     className="flex items-center gap-1.5 cursor-pointer select-none"

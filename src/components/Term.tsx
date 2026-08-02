@@ -609,34 +609,36 @@ export default function Term(props : TermProps) {
     }, [id]);
 
     return (
-        <div className="w-full h-full overflow-hidden relative" style={{
-            paddingLeft: padding.left,
-            paddingRight: padding.right,
-            paddingTop: padding.top,
-            paddingBottom: padding.bottom,
-        }} onPointerDown={markInteractive} onWheel={markInteractive}>
-            <div ref={termRef} className="w-full h-full overflow-hidden" style={{
-                fontStyle: profile.fontStyle ?? "normal",
-            }}/>
-            {isDragOver && (
-                <div
-                    className="absolute inset-0 z-10 flex items-center justify-center border-2 border-dashed pointer-events-none"
-                    style={{
-                        background: "rgba(255,70,31,0.12)",
-                        borderColor: "var(--color-brand-cinnabar)",
-                    }}
-                >
+        <div className="w-full h-full rounded-md bg-black">
+            <div className="w-full h-full overflow-hidden relative" style={{
+                paddingLeft: padding.left,
+                paddingRight: padding.right,
+                paddingTop: padding.top,
+                paddingBottom: padding.bottom,
+            }} onPointerDown={markInteractive} onWheel={markInteractive}>
+                <div ref={termRef} className="w-full h-full overflow-hidden" style={{
+                    fontStyle: profile.fontStyle ?? "normal",
+                }}/>
+                {isDragOver && (
                     <div
-                        className="px-4 py-2 rounded-[var(--radius-md)] text-sm font-medium"
+                        className="absolute inset-0 z-10 flex items-center justify-center border-2 border-dashed pointer-events-none"
                         style={{
-                            background: "var(--color-brand-gradient)",
-                            color: "#ffffff",
+                            background: "rgba(255,70,31,0.12)",
+                            borderColor: "var(--color-brand-cinnabar)",
                         }}
                     >
-                        {t["Drop file to insert path"]}
+                        <div
+                            className="px-4 py-2 rounded-[var(--radius-md)] text-sm font-medium"
+                            style={{
+                                background: "var(--color-brand-gradient)",
+                                color: "#ffffff",
+                            }}
+                        >
+                            {t["Drop file to insert path"]}
+                        </div>
                     </div>
-                </div>
-            )}
+                )}
+            </div>
         </div>
     );
 }
