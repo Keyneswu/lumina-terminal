@@ -2,11 +2,18 @@ name: Publish to AUR
 
 # Publishes the `lumina-terminal-bin` package to the Arch User Repository.
 #
-# Triggered by the Release workflow's `trigger-aur` job (via `gh workflow
-# run`) AFTER every arch's .deb has been uploaded to the release — so by the
-# time this workflow runs, the assets we need are guaranteed to be there.
-# Also supports a manual `workflow_dispatch` run with an explicit tag for
-# re-publishing an older release without re-running Release.
+# Triggered by the Release workflow's `trigger-aur` job (via a
+# `repository_dispatch` event) AFTER every arch's .deb has been uploaded to
+# the release — so by the time this workflow runs, the assets we need are
+# guaranteed to be there. Also supports a manual `workflow_dispatch` run with
+# an explicit tag for re-publishing an older release without re-running
+# Release.
+#
+# Why `repository_dispatch` instead of `gh workflow run`? Because triggering
+# another workflow via `gh workflow run` requires a PAT/App token (the default
+# GITHUB_TOKEN is blocked from spawning new workflow runs). A dispatch event
+# fires this workflow with the repo's own GITHUB_TOKEN — no PAT, no extra
+# secret to manage. The tag travels in `client_payload.tag`.
 #
 # Why not `on: release: published`? Because the Release workflow uploads the
 # .debs concurrently with the release going live, so at publish-time the
@@ -19,13 +26,18 @@ name: Publish to AUR
 
 on:
   workflow_dispatch:
-    # `tag` is the only input. Both the Release trigger-aur job and manual
-    # invocations pass the release tag (e.g. "v0.1.5") here.
+    # `tag` is the only input. Manual invocations pass the release tag
+    # (e.g. "v0.1.5") here.
     inputs:
       tag:
         description: "Release tag to publish (e.g. v0.1.5)"
         required: true
         type: string
+  repository_dispatch:
+    # Fired by Release's trigger-aur job with {tag: "<release tag>"} in the
+    # client payload. Runs on the DEFAULT branch (master), so this always
+    # uses the latest workflow code — no stale-on-tag problem.
+    types: [publish-aur]
 
 # Avoid two concurrent pushes racing the same AUR ssh://git remote.
 concurrency:
@@ -44,10 +56,13 @@ jobs:
         id: rel
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # tag arrives differently depending on the trigger:
+          #   workflow_dispatch    → inputs.tag
+          #   repository_dispatch  → github.event.client_payload.tag
           INPUT_TAG: ${{ inputs.tag }}
+          PAYLOAD_TAG: ${{ github.event.client_payload.tag }}
         run: |
-          # inputs.tag is required: true, so it's always present.
-          tag="${INPUT_TAG}"
+          tag="${INPUT_TAG:-${PAYLOAD_TAG}}"
           [[ -n "${tag}" ]] || { echo "No release tag resolved" >&2; exit 1; }
           # AUR pkgver is the version without the leading "v".
           case "${tag}" in
