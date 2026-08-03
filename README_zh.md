@@ -116,12 +116,6 @@ Lumina Terminal 的渲染管线针对高负载输出做了调优 —— 大文�
 
 作为 xterm.js + webview 架构，Lumina 与 Alacritty 的差距在预期范围内，但**在大多数 cell/scroll 测试中明显优于 Tabby 和 VS Code 内置终端** —— 快约 1.5-6 倍 —— 而它们运行的是同样的底层 Web 渲染技术栈。
 
-作为对比，简单 `cat` 一个 50MB 随机文本文件耗时 **~4.0s**（Alacritty：~3.2s）：
-
-<p align="center">
-  <img src="./assets/print-50mb-text-file.png" alt="性能对比：Lumina Terminal vs Alacritty" width="800">
-</p>
-
 ## 开发
 1. 克隆此仓库并进入目录
 ```shell

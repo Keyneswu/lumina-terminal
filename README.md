@@ -117,12 +117,6 @@ Benchmarks below use [vtebench](https://github.com/alacritty/vtebench) (the same
 
 Lumina trails Alacritty by the expected margin for an xterm.js + webview architecture, but **comfortably outperforms both Tabby and the VS Code integrated terminal** — roughly 1.5-6× faster on most cell/scroll benchmarks — while running the same underlying web rendering stack.
 
-For comparison, a simple `cat` of a 50MB random text file completes in **~4.0s** (Alacritty: ~3.2s):
-
-<p align="center">
-  <img src="./assets/print-50mb-text-file.png" alt="Performance: Lumina Terminal vs Alacritty" width="800">
-</p>
-
 ## Development
 1. Clone the repo and enter it.
 ```shell
