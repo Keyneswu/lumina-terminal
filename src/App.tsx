@@ -235,6 +235,9 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
                     isOpen={isCommandPaletteOpen}
                     onOpenChange={handleCommandPaletteOpenChange}
                     actions={commandActions}
+                    backgroundColor={effectiveBg ?? "#000000"}
+                    foregroundColor={effectiveFg ?? "#ffffff"}
+                    bgSpread={isSpread}
                 />
                 <UpdateModal
                     isOpen={isUpdateModalOpen}

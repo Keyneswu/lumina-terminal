@@ -30,24 +30,27 @@ export function parseBindings(configBindings?: Binding[]): Binding[] {
 export function bindingToShortcut(
     b: Binding,
 ): { abbr?: string; content: string }[] {
+    // Modifier keys render as plain text (e.g. "Ctrl", "Shift"), not symbols
+    // — keeps the style uniform with Shift, which has no glyph. The optional
+    // `abbr` (which drives <Kbd.Abbr> symbol rendering) is intentionally left
+    // off all modifiers.
     const shortcut: { abbr?: string; content: string }[] = [];
     for (const w of b.with) {
         switch (w) {
             case "ctrl":
-                shortcut.push({ abbr: "ctrl", content: "Ctrl" });
+                shortcut.push({ content: "Ctrl" });
                 break;
             case "shift":
                 shortcut.push({ content: "Shift" });
                 break;
             case "alt":
-                shortcut.push({ abbr: "alt", content: "Alt" });
+                shortcut.push({ content: "Alt" });
                 break;
             case "command":
-                shortcut.push({ abbr: "cmd", content: "Cmd" });
+                shortcut.push({ content: "Cmd" });
                 break;
             case "CtrlOrCommand":
                 shortcut.push({
-                    abbr: isMacOS() ? "cmd" : "ctrl",
                     content: isMacOS() ? "Cmd" : "Ctrl",
                 });
                 break;
