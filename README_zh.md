@@ -110,7 +110,7 @@ Lumina Terminal 的渲染管线针对高负载输出做了调优 —— 大文�
 | scrolling_top_region | 407ms | 172ms | 191ms | 1296ms |
 | scrolling_bottom_region | 417ms | 128ms | 198ms | 1250ms |
 | scrolling_top_small_region | 404ms | 138ms | 175ms | 1391ms |
-| scrolling_bottom_small_region | 2307ms | 190ms | 181ms | 1364ms |
+| scrolling_bottom_small_region | 1430ms | 190ms | 181ms | 1364ms |
 | sync_medium_cells | 63ms | 9ms | 72ms | 164ms |
 | unicode | 45ms | 7ms | 73ms | 56ms |
 
