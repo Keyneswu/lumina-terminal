@@ -140,7 +140,7 @@ export default function AboutPage({ theme, updater, installSource, onShowUpdateM
                             {/* Status text (always present) */}
                             {updater.status === "checking" ? (
                                 <span className="flex items-center gap-1.5 text-muted">
-                                    <LoaderCircle size={14} className="animate-spin translate-y-px" />
+                                    <LoaderCircle size={14} className="animate-spin" />
                                     {t["Checking for updates..."]}
                                 </span>
                             ) : updater.status === "downloading" ? (
@@ -158,12 +158,12 @@ export default function AboutPage({ theme, updater, installSource, onShowUpdateM
                                 </span>
                             ) : updater.status === "available" ? (
                                 <span
-                                    className="flex items-center gap-1.5 cursor-pointer hover:underline -translate-y-px"
+                                    className="flex items-center gap-1.5 cursor-pointer hover:underline"
                                     style={{ color: fg }}
                                     title={t["What's New"]}
                                     onClick={onShowUpdateModal}
                                 >
-								<Download size={14} className="translate-y-px" />
+								<Download size={14} />
 								{updater.info
 									? t["Update available: v{version}"].replace("{version}", updater.info.version)
 									: t["A new version is available"]}
@@ -181,16 +181,16 @@ export default function AboutPage({ theme, updater, installSource, onShowUpdateM
                                     title={t["What's New"]}
                                     onDoubleClick={openCurrentReleaseNotes}
                                 >
-                                    <CheckCircle2 size={14} className="translate-y-px" />
+                                    <CheckCircle2 size={14} />
                                     {t["You're up to date"]}
                                 </span>
                             ) : updater.status === "error" ? (
                                 <span className="flex items-center gap-1.5" style={{color: "var(--color-danger-500, #ef4444)"}}>
-                                    <AlertCircle size={14} className="translate-y-px" />
+                                    <AlertCircle size={14} />
                                     {t["Update check failed"]}
                                 </span>
                             ) : (
-                                <span className="text-muted -translate-y-px">
+                                <span className="text-muted">
                                     {t["Check for Updates"]}
                                 </span>
                             )}
