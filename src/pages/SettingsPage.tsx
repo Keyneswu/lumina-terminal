@@ -111,7 +111,7 @@ function ProfileSidebarItem({
                     aria-label={reorderLabel}
                     onPointerDown={(e) => dragControls.start(e)}
                     onClick={(e) => e.stopPropagation()}
-                    className="ml-2 shrink-0 flex items-center justify-center w-5 h-5 rounded-[var(--radius-xs)] opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity duration-[var(--duration-fast)] cursor-grab active:cursor-grabbing hover:bg-[var(--lum-nav-hover)]"
+                    className="ml-2 shrink-0 flex items-center justify-center w-5 h-5 bg-transparent opacity-0 group-hover:opacity-100 focus-visible:opacity-100 cursor-grab active:cursor-grabbing"
                     style={{color: colors.inactiveText}}
                 >
                     <GripVertical size={14} />
