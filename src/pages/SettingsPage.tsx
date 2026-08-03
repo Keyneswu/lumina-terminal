@@ -1,5 +1,5 @@
-import { useCallback, useState, type CSSProperties } from "react";
-import { motion } from "framer-motion";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+import { motion, Reorder, useDragControls } from "framer-motion";
 import {
     Button,
     Modal,
@@ -10,6 +10,7 @@ import {
     Bug,
     Globe,
     Keyboard,
+    GripVertical,
 } from "lucide-react";
 import { ITheme } from "@xterm/xterm";
 import { useGlobalConfig } from "../hooks/config.tsx";
@@ -18,7 +19,7 @@ import { TerminalProfile } from "../types/terminal.ts";
 import { useSurfaceColors } from "../hooks/surfaceColors.ts";
 import { useGlass } from "../hooks/useGlass.ts";
 import { glassSurface } from "../lib/glass.ts";
-import { whileHoverTap } from "../lib/motion.ts";
+import { whileHoverTap, springSnappy } from "../lib/motion.ts";
 import { info, debug } from "@tauri-apps/plugin-log";
 import ProfileSettings from "../components/settings/ProfileSettings.tsx";
 import DeveloperSettings from "../components/settings/DeveloperSettings.tsx";
@@ -61,12 +62,99 @@ function SidebarItem({
     );
 }
 
+/**
+ * A reorderable profile entry. Each item needs its own `useDragControls()`
+ * (hooks can't be called inside `.map`), so this is split out from
+ * `SidebarItem`. Dragging is initiated only from the grip handle
+ * (`dragListener={false}` + the handle's `onPointerDown` calls
+ * `dragControls.start`), so the rest of the row keeps its click-to-select.
+ */
+function ProfileSidebarItem({
+    profile,
+    isSelected,
+    onClick,
+    onDragEnd,
+    showHandle,
+    reorderLabel,
+    colors,
+}: {
+    profile: TerminalProfile;
+    isSelected: boolean;
+    onClick: () => void;
+    onDragEnd: () => void;
+    showHandle: boolean;
+    reorderLabel: string;
+    colors: { activeOverlay: string; hoverOverlay: string; accentOverlay: string; inactiveText: string };
+}) {
+    const dragControls = useDragControls();
+    return (
+        <Reorder.Item
+            as="div"
+            value={profile}
+            dragControls={dragControls}
+            dragListener={false}
+            transition={springSnappy}
+            onDragEnd={onDragEnd}
+            className={`lum-settings-nav-item group relative flex items-center justify-between mx-2 px-3 py-2 my-0.5 cursor-pointer text-sm rounded-[var(--radius-sm)] transition-colors duration-[var(--duration-base)] ease-[var(--ease-glass)] hover:bg-[var(--lum-nav-hover)] ${isSelected ? "bg-[var(--lum-nav-active)]" : ""}`}
+            style={{
+                "--lum-nav-hover": isSelected ? colors.accentOverlay : colors.hoverOverlay,
+                "--lum-nav-active": colors.accentOverlay,
+                fontWeight: isSelected ? 500 : 400,
+            } as React.CSSProperties}
+            onClick={onClick}
+        >
+            <span className="truncate">{profile.name}</span>
+            {showHandle && (
+                <button
+                    type="button"
+                    title={reorderLabel}
+                    aria-label={reorderLabel}
+                    onPointerDown={(e) => dragControls.start(e)}
+                    onClick={(e) => e.stopPropagation()}
+                    className="ml-2 shrink-0 flex items-center justify-center w-5 h-5 rounded-[var(--radius-xs)] opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity duration-[var(--duration-fast)] cursor-grab active:cursor-grabbing hover:bg-[var(--lum-nav-hover)]"
+                    style={{color: colors.inactiveText}}
+                >
+                    <GripVertical size={14} />
+                </button>
+            )}
+        </Reorder.Item>
+    );
+}
+
 export default function SettingsPage({ theme, openAbout }: { theme: ITheme | null, openAbout: () => void }) {
     const { config, updateConfig, newProfile } = useGlobalConfig();
     const t = useI18n();
     const [selectedSection, setSelectedSection] = useState<SettingsSection>(lastSettingsSection);
     const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
     const [showAddModal, setShowAddModal] = useState(false);
+
+    // Local mirror of `config.profiles` order that drives Reorder.Group.
+    // `onReorder` fires many times per drag, so we only persist to config
+    // (and thus to disk) once, on the dragged item's `onDragEnd`.
+    const [profileOrder, setProfileOrder] = useState<TerminalProfile[]>(config.profiles);
+    const orderRef = useRef(profileOrder);
+    orderRef.current = profileOrder;
+
+    // Re-sync the local order whenever the source-of-truth array changes
+    // (add / delete / rename / external update).
+    useEffect(() => {
+        setProfileOrder(config.profiles);
+    }, [config.profiles]);
+
+    const handleReorder = useCallback((next: TerminalProfile[]) => {
+        setProfileOrder(next);
+    }, []);
+
+    const persistReorder = useCallback(() => {
+        // Only write when the order actually differs, to avoid no-op disk writes.
+        const current = orderRef.current;
+        const same =
+            current.length === config.profiles.length &&
+            current.every((p, i) => p.name === config.profiles[i].name);
+        if (same) return;
+        info("Profiles reordered").catch(() => {});
+        updateConfig({profiles: current});
+    }, [config.profiles, updateConfig]);
 
     const handleSectionChange = (section: SettingsSection) => {
         debug(`Settings section changed to: ${section}`);
@@ -173,17 +261,27 @@ export default function SettingsPage({ theme, openAbout }: { theme: ITheme | nul
                         <div className="flex-1" style={{borderTop: `1px solid ${colors.glassBorder}`}} />
                     </div>
 
-                    {/* Profile list */}
-                    {config.profiles.map((profile) => (
-                        <SidebarItem
-                            key={profile.name}
-                            isSelected={selectedSection === profile.name}
-                            onClick={() => handleSectionChange(profile.name)}
-                            colors={colors}
-                        >
-                            <span className="truncate">{profile.name}</span>
-                        </SidebarItem>
-                    ))}
+                    {/* Profile list — reorderable via the grip handle that
+                        appears on hover. Single profile hides the handle. */}
+                    <Reorder.Group
+                        as="div"
+                        axis="y"
+                        values={profileOrder}
+                        onReorder={handleReorder}
+                    >
+                        {profileOrder.map((profile) => (
+                            <ProfileSidebarItem
+                                key={profile.name}
+                                profile={profile}
+                                isSelected={selectedSection === profile.name}
+                                onClick={() => handleSectionChange(profile.name)}
+                                onDragEnd={persistReorder}
+                                showHandle={config.profiles.length > 1}
+                                reorderLabel={t["Drag to reorder"]}
+                                colors={colors}
+                            />
+                        ))}
+                    </Reorder.Group>
                     <div className="mb-1" />
 
                     {/* Developer header */}

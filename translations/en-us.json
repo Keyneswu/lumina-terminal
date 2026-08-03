@@ -76,6 +76,7 @@
     "License": "License",
     "Technology Stack": "Technology Stack",
     "Default Profile": "Default Profile",
+    "Drag to reorder": "Drag to reorder",
     "Copy with Ctrl+C": "Copy with Ctrl+C",
     "Swap Ctrl+C and Ctrl+Shift+C for copy and interrupt on non-macOS systems": "Swap Ctrl+C (copy) and Ctrl+Shift+C (interrupt) behavior",
     "Unsaved changes": "Unsaved changes",
