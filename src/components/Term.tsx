@@ -511,10 +511,20 @@ export default function Term(props : TermProps) {
         if (!term.current) return;
         const xtermEl = termRef.current?.querySelector(".xterm") as HTMLElement | null;
         const viewportEl = termRef.current?.querySelector(".xterm-viewport") as HTMLElement | null;
+        // Snapshot the profile theme's original canvas background. The sampled
+        // edge color overrides this base color while a fullscreen TUI is active
+        // (so the canvas itself follows the TUI); on clear we restore it so the
+        // terminal falls back to the configured theme instead of xterm's
+        // built-in default (black). Without this, applying an empty/invalid
+        // background would reset theme.background and drop the whole custom theme.
+        const originalThemeBg = term.current.options.theme?.background;
 
         const apply = (next: string | null) => {
-            // Clearing (empty string) lets the CSS default show through again.
-            const value = next ?? "";
+            // When clearing, fall back to the original theme bg so the xterm
+            // layers and canvas show the configured theme again (NOT "" — an
+            // empty background makes xterm drop the theme and revert to its
+            // built-in black default).
+            const value = next ?? originalThemeBg ?? "";
             if (xtermEl && xtermEl.style.backgroundColor !== value) {
                 xtermEl.style.backgroundColor = value;
             }
@@ -569,6 +579,11 @@ export default function Term(props : TermProps) {
             clearInterval(handle);
             if (xtermEl) xtermEl.style.backgroundColor = "";
             if (viewportEl) viewportEl.style.backgroundColor = "";
+            // Restore the terminal theme's original canvas background so a
+            // remount/tab switch doesn't inherit the last sampled TUI color.
+            if (term.current && originalThemeBg !== undefined && term.current.options.theme?.background !== originalThemeBg) {
+                term.current.options.theme = {...term.current.options.theme, background: originalThemeBg};
+            }
             setContainerBg(null);
         };
     }, [id]);
