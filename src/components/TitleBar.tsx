@@ -7,6 +7,7 @@ import {useGlass} from "../hooks/useGlass.ts";
 import {glassSurface} from "../lib/glass.ts";
 import { info } from "@tauri-apps/plugin-log";
 import IconButton from "./ui/IconButton.tsx";
+import {CHROME_TITLE_BAR_HEIGHT} from "../constants.ts";
 
 interface WindowControlProps {
     size: number;
@@ -110,7 +111,7 @@ export default function TitleBar({
     const {supportsGlass} = useGlass();
     const glass = glassSurface(bg, supportsGlass, {blurPx: 14, spread: bgSpread});
     const macOSTitleButtonMarginLeft = tabBarVisible ? 8 : 88;
-    const size = 36;
+    const size = CHROME_TITLE_BAR_HEIGHT;
     // Brand cinnabar wash for the close button hover — replaces the isolated
     // `text-red-500` literal with the brand accent so window controls feel
     // part of the app identity.

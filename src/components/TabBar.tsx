@@ -3,7 +3,7 @@ import {motion} from "framer-motion";
 import { Plus, X, Settings, Info, Sparkles } from "lucide-react";
 import Icon from "../assets/icon.svg";
 import { isMacOS } from "../lib/platform.ts";
-import { SETTINGS_TAB_ID, ABOUT_TAB_ID } from "../constants.ts";
+import {ABOUT_TAB_ID, CHROME_TITLE_BAR_HEIGHT, SETTINGS_TAB_ID} from "../constants.ts";
 import { useSurfaceColors } from "../hooks/surfaceColors.ts";
 import {useGlass} from "../hooks/useGlass.ts";
 import {glassSurface} from "../lib/glass.ts";
@@ -165,10 +165,15 @@ export default function TabBar(props: TabBarProps) {
                 ...glass,
             }}
         >
+            {/* On macOS this intentionally stays empty: the native Overlay
+                traffic lights occupy this full-width chrome row. Keeping it
+                equal to TitleBar prevents the first terminal tab from sliding
+                underneath the window controls. */}
             <div
                 data-tauri-drag-region
-                className="shrink-0 px-3 flex flex-row items-center pt-2.5"
+                className="shrink-0 px-3 flex flex-row items-center"
                 style={{
+                    height: CHROME_TITLE_BAR_HEIGHT,
                     color: foregroundColor,
                 }}
             >

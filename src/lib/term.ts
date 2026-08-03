@@ -1,6 +1,10 @@
 import {TerminalProfile, TerminalRenderOptions} from "../types/terminal.ts";
 import {ITheme} from "@xterm/xterm";
-import {DEFAULT_TERMINAL_THEME} from "../constants.ts";
+import {
+    DEFAULT_TERMINAL_THEME,
+    TERMINAL_CORNER_CONTENT_INSET,
+    TERMINAL_LEFT_CONTENT_INSET,
+} from "../constants.ts";
 import {invoke} from "@tauri-apps/api/core";
 import {appDataDir, join} from "@tauri-apps/api/path";
 import {error} from "@tauri-apps/plugin-log";
@@ -22,8 +26,16 @@ export function parseProfilePadding(profile: TerminalProfile, paddingOffset: num
             paddingBottom = profile.padding.bottom ?? paddingBottom;
         }
     }
-    paddingLeft += paddingOffset; paddingRight += paddingOffset;
-    paddingTop += paddingOffset; paddingBottom += paddingOffset;
+    // The terminal surface is clipped to a 14px rounded rectangle. A zero
+    // profile padding would put the first/last cells inside those clipped
+    // corners, so preserve a small content-safe inset on every side. The first
+    // column gets a little more room for prompts/cursors. Profile padding
+    // remains the total requested padding: values above the minimum win rather
+    // than having another hidden inset added to them.
+    paddingLeft = Math.max(paddingLeft, TERMINAL_LEFT_CONTENT_INSET) + paddingOffset;
+    paddingRight = Math.max(paddingRight, TERMINAL_CORNER_CONTENT_INSET) + paddingOffset;
+    paddingTop = Math.max(paddingTop, TERMINAL_CORNER_CONTENT_INSET) + paddingOffset;
+    paddingBottom = Math.max(paddingBottom, TERMINAL_CORNER_CONTENT_INSET) + paddingOffset;
     return {
         left: paddingLeft,
         right: paddingRight,

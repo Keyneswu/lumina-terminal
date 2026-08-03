@@ -331,7 +331,7 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
                                     // layer beneath, tying the frame together.
                                     // absolute inset-0 guarantees the surface is
                                     // exactly the same size as the chrome layer
-                                    // beneath (no gap → no spurious border).
+                                    // beneath without adding a visible border.
                                     className="absolute inset-0"
                                 >
                                 <Term
