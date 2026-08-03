@@ -1,4 +1,5 @@
 import type {CSSProperties, ReactNode} from "react";
+import {isMacOS} from "../../lib/platform.ts";
 
 /**
  * Clips its children to a rounded-rectangle shape via an SVG mask, so the
@@ -90,7 +91,17 @@ export default function MaskedSurface({
         : {};
 
     const roundedStyle: CSSProperties = isPlainRounded
-        ? {borderRadius: r, overflow: "hidden"}
+        ? {
+            borderRadius: r,
+            overflow: "hidden",
+            // WKWebView can promote xterm's canvas/WebGL renderer above an
+            // ancestor overflow clip on its first compositing pass. A WebKit
+            // mask forces that clip into the compositor immediately; without
+            // it the rounded corners appear only after a native window resize.
+            ...(isMacOS()
+                ? {WebkitMaskImage: "-webkit-radial-gradient(white, black)"}
+                : {}),
+        }
         : {};
 
     return (

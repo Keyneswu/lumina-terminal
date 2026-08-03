@@ -241,7 +241,9 @@ export default function Term(props : TermProps) {
         if (!hasAppliedInitialWindowSize && getCurrentWindow().label === "main" && !skipForRemembered) {
             hasAppliedInitialWindowSize = true;
             const windowSize = getWindowSizeFromRowsAndColumns();
-            getCurrentWindow().setSize(windowSize).then();
+            getCurrentWindow().setSize(windowSize).catch((e) => {
+                error(`Failed to apply initial window size for terminal ${id}: ${e}`).catch(() => {});
+            });
         } else if (!hasAppliedInitialWindowSize) {
             // Mark as applied even when we skipped, so a later profile change
             // doesn't suddenly resize the window.
@@ -394,15 +396,46 @@ export default function Term(props : TermProps) {
         const container = termRef.current;
         const fit = fitAddonRef.current;
         if (!container || !fit) return;
-        const observer = new ResizeObserver(() => {
-            fit.fit();
-        });
+        let firstFrame: number | null = null;
+        let secondFrame: number | null = null;
+
+        const cancelScheduledFit = () => {
+            if (firstFrame !== null) cancelAnimationFrame(firstFrame);
+            if (secondFrame !== null) cancelAnimationFrame(secondFrame);
+            firstFrame = null;
+            secondFrame = null;
+        };
+        const fitAfterLayout = () => {
+            cancelScheduledFit();
+            if (!isMacOS()) {
+                fit.fit();
+                return;
+            }
+
+            // macOS applies the native Overlay window size asynchronously.
+            // Waiting through two WebKit frames ensures both the flex layout
+            // and the canvas compositing layer have adopted the final size;
+            // fitting earlier leaves xterm slightly too tall and its first
+            // rounded-corner clip does not repaint until a manual resize.
+            firstFrame = requestAnimationFrame(() => {
+                firstFrame = null;
+                secondFrame = requestAnimationFrame(() => {
+                    secondFrame = null;
+                    if (container.isConnected) fit.fit();
+                });
+            });
+        };
+
+        const observer = new ResizeObserver(fitAfterLayout);
         observer.observe(container);
         // Fit once on attach: this catches the case where the OS window was
         // resized (e.g. the initial setSize call) between terminal init and
         // this observer attaching.
-        fit.fit();
-        return () => observer.disconnect();
+        fitAfterLayout();
+        return () => {
+            observer.disconnect();
+            cancelScheduledFit();
+        };
     }, [id]);
 
     // term-command / term-exit event listeners. Lives in its own effect (with
@@ -590,13 +623,21 @@ export default function Term(props : TermProps) {
 
     return (
         <div className="w-full h-full overflow-hidden relative" style={{
-            // Fill the padding region with the terminal's own bg so the chrome
-            // layer beneath only shows through the rounded corners (the mask),
-            // not as a border around the canvas. The sampled edge color (a
+            // Inherit MaskedSurface's radius at this single clipping layer.
+            // The xterm host stays rectangular inside the safe padding;
+            // applying the full radius twice would clip its first cell again.
+            borderRadius: "inherit",
+            // Fill the terminal surface with its own bg so the chrome layer
+            // beneath only shows through the rounded corners (the mask). The
+            // sampled edge color (a
             // fullscreen TUI's own bg) takes priority so the terminal bleeds
             // seamlessly to its own edges even when content doesn't fill the
             // whole region; falls back to fillBg (theme bg / chrome spread).
             background: containerBg ?? props.fillBg,
+            // Keep xterm's absolutely-positioned viewport inside a real CSS
+            // content box. Padding on Terminal.element itself does not inset
+            // that viewport reliably in WebKit and can make its first layout
+            // taller than the surrounding chrome.
             paddingLeft: padding.left,
             paddingRight: padding.right,
             paddingTop: padding.top,

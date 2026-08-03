@@ -32,6 +32,15 @@ export const DEFAULT_TERMINAL_THEME: ITheme = {
 
 export const CONFIG_SAVE_PATH = "config.json";
 
+/** Shared height for the custom chrome and the macOS traffic-light safe area. */
+export const CHROME_TITLE_BAR_HEIGHT = 36;
+
+/** Minimum inset keeping xterm cells clear of the 14px rounded surface corners. */
+export const TERMINAL_CORNER_CONTENT_INSET = 5;
+
+/** Extra leading inset keeping the first terminal column clear and readable. */
+export const TERMINAL_LEFT_CONTENT_INSET = 7;
+
 export const DEFAULT_BINDINGS: Binding[] = [
     {
         key: "t",
