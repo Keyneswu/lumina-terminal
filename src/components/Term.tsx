@@ -489,22 +489,30 @@ export default function Term(props : TermProps) {
     }, [id, isActive]);
 
     // Poll the outermost ring of the buffer. When it is a uniform explicit
-    // color (a fullscreen TUI's own bg), report it up so the whole app
-    // background can follow it, and sync the xterm-owned layers (.xterm and
-    // .xterm-viewport, which otherwise paint theme.background over the sub-cell
-    // gap to the right/bottom of the canvas). Only the active tab reports;
-    // inactive tabs clear it. Disabled entirely when color spread is off.
+    // color (a fullscreen TUI's own bg), sync the xterm-owned layers (.xterm
+    // and .xterm-viewport, which otherwise paint theme.background over the
+    // sub-cell gap to the right/bottom of the canvas) and fill this surface's
+    // own padding region with it, so the terminal interior has no seams
+    // regardless of the spread setting. The color is also reported up so the
+    // whole app chrome (TabBar/TitleBar/window bg) can follow it — but ONLY
+    // when color spread is on; off, sampling + interior sync still happen, the
+    // chrome spread is just suppressed (null reported). Only the active tab
+    // samples/reports; inactive tabs clear it.
     const onEdgeRef = useRef(props.onEdgeBackgroundChange);
     onEdgeRef.current = props.onEdgeBackgroundChange;
     const colorSpreadRef = useRef(config.enableColorSpread !== false);
     colorSpreadRef.current = config.enableColorSpread !== false;
+    // Background painted into this surface's padding region (the gap between the
+    // canvas and the rounded shell). Follows the sampled edge color so the
+    // terminal bleeds seamlessly to its own edges; falls back to props.fillBg
+    // (theme bg / chrome spread color) when nothing is sampled.
+    const [containerBg, setContainerBg] = useState<string | null>(null);
     useEffect(() => {
         if (!term.current) return;
         const xtermEl = termRef.current?.querySelector(".xterm") as HTMLElement | null;
         const viewportEl = termRef.current?.querySelector(".xterm-viewport") as HTMLElement | null;
 
         const apply = (next: string | null) => {
-            onEdgeRef.current?.(next);
             // Clearing (empty string) lets the CSS default show through again.
             const value = next ?? "";
             if (xtermEl && xtermEl.style.backgroundColor !== value) {
@@ -513,31 +521,46 @@ export default function Term(props : TermProps) {
             if (viewportEl && viewportEl.style.backgroundColor !== value) {
                 viewportEl.style.backgroundColor = value;
             }
+            if (term.current && term.current.options.theme?.background !== value) {
+                term.current.options.theme = {
+                    ...term.current.options.theme,
+                    background: value,
+                };
+            }
+            setContainerBg(next);
         };
 
+        let lastApplied: string | null = null;
         let lastReported: string | null = null;
         const tick = () => {
             if (!term.current) return;
-            // When color spread is off, never sample or report — let the
-            // terminal theme's background show everywhere.
-            if (!colorSpreadRef.current) {
-                if (lastReported !== null) {
-                    lastReported = null;
+            if (!isActiveRef.current) {
+                if (lastApplied !== null) {
+                    lastApplied = null;
                     apply(null);
                 }
-                return;
-            }
-            if (!isActiveRef.current) {
                 if (lastReported !== null) {
                     lastReported = null;
-                    apply(null);
+                    onEdgeRef.current?.(null);
                 }
                 return;
             }
             const next = sampleEdgeBackground(term.current);
-            if (next !== lastReported) {
-                lastReported = next;
+            // Always keep xterm's own layers + this surface's padding in sync
+            // with the edge color so the terminal interior has no seams,
+            // regardless of the spread setting.
+            if (next !== lastApplied) {
+                lastApplied = next;
                 apply(next);
+            }
+            // Only report the color up (to spread it across the chrome) when
+            // color spread is enabled. The "reported" color is also tracked so
+            // toggling spread on re-reports without waiting for the edge to
+            // change, and toggling off clears it.
+            const wantReport = colorSpreadRef.current ? next : null;
+            if (wantReport !== lastReported) {
+                lastReported = wantReport;
+                onEdgeRef.current?.(wantReport);
             }
         };
         tick();
@@ -546,6 +569,7 @@ export default function Term(props : TermProps) {
             clearInterval(handle);
             if (xtermEl) xtermEl.style.backgroundColor = "";
             if (viewportEl) viewportEl.style.backgroundColor = "";
+            setContainerBg(null);
         };
     }, [id]);
 
@@ -553,8 +577,11 @@ export default function Term(props : TermProps) {
         <div className="w-full h-full overflow-hidden relative" style={{
             // Fill the padding region with the terminal's own bg so the chrome
             // layer beneath only shows through the rounded corners (the mask),
-            // not as a border around the canvas.
-            background: props.fillBg,
+            // not as a border around the canvas. The sampled edge color (a
+            // fullscreen TUI's own bg) takes priority so the terminal bleeds
+            // seamlessly to its own edges even when content doesn't fill the
+            // whole region; falls back to fillBg (theme bg / chrome spread).
+            background: containerBg ?? props.fillBg,
             paddingLeft: padding.left,
             paddingRight: padding.right,
             paddingTop: padding.top,
