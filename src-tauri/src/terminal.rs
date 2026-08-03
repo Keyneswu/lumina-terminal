@@ -65,6 +65,10 @@ pub fn start_terminal(
             c.args(&["-o", "PubkeyAuthentication=no", "-o", "PreferredAuthentications=password"]);
         }
         c.env("TERM", "xterm-256color");
+        // xterm.js renders 24-bit color natively, so advertise it: programs that
+        // probe COLORTERM (ls --color, bat, vim, fzf, delta, …) will then emit
+        // truecolor escapes instead of falling back to the 256-color palette.
+        c.env("COLORTERM", "truecolor");
         if let Some(ref dir) = cwd {
             c.cwd(dir);
         }
@@ -87,6 +91,10 @@ pub fn start_terminal(
             c.args(&["--login", "-i"]);
         }
         c.env("TERM", "xterm-256color");
+        // xterm.js renders 24-bit color natively, so advertise it: programs that
+        // probe COLORTERM (ls --color, bat, vim, fzf, delta, …) will then emit
+        // truecolor escapes instead of falling back to the 256-color palette.
+        c.env("COLORTERM", "truecolor");
         if let Some(ref dir) = cwd {
             c.cwd(dir);
         }
