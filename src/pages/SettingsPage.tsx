@@ -26,6 +26,7 @@ import GlobalProfileSettings from "../components/settings/GlobalProfileSettings.
 import GeneralSettings from "../components/settings/GeneralSettings.tsx";
 import AddProfileModal from "../components/settings/AddProfileModal.tsx";
 import BindingsSettings from "../components/settings/BindingsSettings.tsx";
+import MaskedSurface from "../components/ui/MaskedSurface.tsx";
 
 type SettingsSection = "general" | "globalProfile" | "bindings" | "developer" | string;
 
@@ -225,23 +226,27 @@ export default function SettingsPage({ theme, openAbout }: { theme: ITheme | nul
             {/* Content Area. Right padding is 0 so the inner scroll container's
                 scrollbar sits flush at the window's right edge; each settings
                 component re-adds right padding for its content/footer. */}
-            <div className="flex-1 pt-6 pb-6 pl-6">
-                {selectedSection === "general" ? (
-                    <GeneralSettings borderColor={colors.borderColor} openAbout={openAbout} />
-                ) : selectedSection === "globalProfile" ? (
-                    <GlobalProfileSettings borderColor={colors.borderColor} />
-                ) : selectedSection === "bindings" ? (
-                    <BindingsSettings borderColor={colors.borderColor} />
-                ) : selectedSection === "developer" ? (
-                    <DeveloperSettings />
-                ) : (
-                    <ProfileSettings
-                        profile={config.profiles.find((p) => p.name === selectedSection)}
-                        onRequestDelete={() => setDeleteTarget(selectedSection)}
-                        onNameChange={(newName) => handleSectionChange(newName)}
-                        borderColor={colors.borderColor}
-                    />
-                )}
+            <div className="flex-1 relative" style={sidebarGlass}>
+                <MaskedSurface className="absolute inset-0 w-full h-full" style={{background: bg}}>
+                    <div className="w-full h-full pt-6 pb-6 pl-6">
+                        {selectedSection === "general" ? (
+                            <GeneralSettings borderColor={colors.borderColor} openAbout={openAbout} />
+                        ) : selectedSection === "globalProfile" ? (
+                            <GlobalProfileSettings borderColor={colors.borderColor} />
+                        ) : selectedSection === "bindings" ? (
+                            <BindingsSettings borderColor={colors.borderColor} />
+                        ) : selectedSection === "developer" ? (
+                            <DeveloperSettings />
+                        ) : (
+                            <ProfileSettings
+                                profile={config.profiles.find((p) => p.name === selectedSection)}
+                                onRequestDelete={() => setDeleteTarget(selectedSection)}
+                                onNameChange={(newName) => handleSectionChange(newName)}
+                                borderColor={colors.borderColor}
+                            />
+                        )}
+                    </div>
+                </MaskedSurface>
             </div>
 
             {/* Delete Confirmation Modal */}
