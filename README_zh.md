@@ -48,6 +48,7 @@ curl -fsSL https://raw.githubusercontent.com/iewnfod/lumina-terminal/master/inst
 
 ### 终端
 * 基于 [portable-pty](https://docs.rs/portable-pty/latest/portable_pty/) 的多标签页终端 — 每个标签页运行一个真实的 Shell 进程
+* **撕离标签页** — 将标签页移到独立窗口（`Ctrl+Shift+L` / `Cmd+Shift+L`），同时保留运行中的进程和滚动历史
 * 每个配置文件可指定不同的 Shell — 支持 PowerShell、WSL、Git Bash 等任意可执行文件
 * [WebGL 渲染器](https://github.com/xtermjs/xterm.js/tree/master/addons/addon-webgl) — GPU 加速渲染（每个配置文件可独立开关）
 * 分块批量输出 — 流畅处理大文本输出，不阻塞 UI
@@ -59,12 +60,14 @@ curl -fsSL https://raw.githubusercontent.com/iewnfod/lumina-terminal/master/inst
 * **标签栏** — 侧边栏显示标签列表，支持拖拽区域和悬停关闭按钮，可通过标题栏或命令面板切换显示
 * **自定义标题栏** — Windows 和 Linux 上窗口控制按钮与终端主题颜色融为一体
 * **自动主题** — UI 明暗模式自动跟随终端背景色
+* **颜色扩散** — 全屏 TUI 程序统一的边缘背景可铺满整个窗口边框，沉浸感更强（可在设置中开关）
 
 ### 键盘快捷键
 * 完全可自定义的快捷键配置，保存在配置文件中
 * 默认快捷键：
   * `Ctrl/Cmd+T` — 新建标签页
   * `Ctrl/Cmd+W` — 关闭当前标签页
+  * `Ctrl/Cmd+Shift+L` — 将当前标签页撕离到新窗口
   * `Ctrl/Cmd+,` — 打开设置
   * `Ctrl/Cmd+Shift+P` — 命令面板
   * `Ctrl/Cmd+1–9` — 按序号切换标签页
@@ -78,6 +81,7 @@ curl -fsSL https://raw.githubusercontent.com/iewnfod/lumina-terminal/master/inst
   * 内边距
   * 字体族、粗细、大小和斜体样式
   * WebGL 渲染器开关
+  * 启动命令 — 启动时运行指定程序（如 `vim`、`opencode`）而非进入交互式 Shell，命令退出时标签页随之关闭（SSH 配置文件会传给远程主机）
 * 自定义终端主题，通过 JSON 文件加载（xterm.js ITheme 格式），支持实时颜色预览
 
 ### 国际化

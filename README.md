@@ -60,6 +60,7 @@ curl -fsSL https://raw.githubusercontent.com/iewnfod/lumina-terminal/master/inst
 * **Tab Bar** — sidebar with tab list, drag region, and hover-close buttons, toggleable via title bar or command palette
 * **Custom Title Bar** — window controls (minimize/maximize/close) integrated with the terminal theme on Windows & Linux
 * **Auto Theme** — UI light/dark mode automatically syncs to the terminal background color
+* **Color Spread** — a fullscreen TUI app's uniform edge background can fill the whole window chrome for an immersive look (toggleable in settings)
 
 ### Keyboard Shortcuts
 * Fully customizable keybindings stored in the config file
@@ -80,6 +81,7 @@ curl -fsSL https://raw.githubusercontent.com/iewnfod/lumina-terminal/master/inst
   * Padding
   * Font family, weight, size, and italic style
   * WebGL renderer toggle
+  * Startup command — run a program (e.g. `vim`, `opencode`) instead of dropping into an interactive shell; the tab closes when the command exits (passed to the remote host for SSH profiles)
 * Custom terminal themes via JSON files (xterm.js ITheme format) with live color preview
 
 ### i18n
