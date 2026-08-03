@@ -161,24 +161,31 @@ jobs:
           PKG: lumina-terminal-bin
         run: |
           set -euo pipefail
-          # `git clone` over the AUR ssh:// URL works whether or not the
-          # package already exists: an empty-but-existing package clones as
-          # an empty repo, and a brand-new package is created on first push.
-          # A first-time clone of a not-yet-created package will fail with
-          # "repository not found" — that's expected; fall through to init.
           # `git clone` over the AUR ssh:// URL works for an existing
           # package. A brand-new package does not yet have a remote repo, so
           # clone fails with "repository not found" — that's expected; fall
           # through to init a local repo and attach the remote by hand. The
           # very first push then creates the package on AUR automatically.
+          #
+          # If clone fails for ANY reason (auth error, network, partial
+          # checkout that left a half-written .git behind), wipe the aur/
+          # directory before re-initializing — otherwise `git -C aur ...`
+          # downstream hits a corrupt repo and dies with
+          # "fatal: not a git repository".
           if git clone "ssh://aur@aur.archlinux.org/${PKG}.git" aur; then
             echo "Cloned existing AUR repo."
           else
-            echo "AUR package does not exist yet — initializing locally."
+            clone_rc=$?
+            echo "::warning::git clone failed (rc=${clone_rc}); initializing a fresh local repo."
+            # Remove any half-written clone leftovers (including a partial .git).
+            rm -rf aur
             mkdir -p aur
             git -C aur init -q -b master
             git -C aur remote add origin "ssh://aur@aur.archlinux.org/${PKG}.git"
           fi
+          # Sanity check: aur/ must now be a usable git repo, otherwise the
+          # later `git -C aur ...` steps will fail with "not a git repository".
+          git -C aur rev-parse --git-dir >/dev/null
 
       - name: Generate .SRCINFO
         run: |
