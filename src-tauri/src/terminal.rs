@@ -265,7 +265,7 @@ pub fn start_terminal(
             // buffer backpressures the child in the meantime, so no data is
             // lost — reading just resumes once the frontend catches up.
             while throttled.load(Ordering::Relaxed) {
-                thread::sleep(Duration::from_millis(5));
+                thread::sleep(Duration::from_millis(2));
             }
             match reader.read(&mut buffer) {
                 Ok(0) => {

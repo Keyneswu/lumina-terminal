@@ -75,19 +75,29 @@ import {warn} from "@tauri-apps/plugin-log";
  * xterm's callbacks bring it back under LOW the brake is released. Hysteresis
  * (HIGH != LOW) avoids on/off thrash around a single point.
  *
- * Sized to (a) never approach xterm's 47 MiB internal discard limit, and (b)
- * absorb normal interactive bursts (which stay well under HIGH) while catching
- * sustained floods early. Tunable: lower both for safer headroom on slow GPUs.
+ * These are deliberately TIGHT (hundreds of KB, not MiB). xterm parses heavy
+ * ANSI/unicode at roughly ~800 KB/s, so a wide band (e.g. 8 MiB → 2 MiB) makes
+ * one backpressure cycle last seconds — the reader stalls while xterm chews
+ * through MiB, producing the bimodal latency seen in vtebench scrolling. A
+ * tight band (256 KB → 128 KB) keeps each cycle to ~150 ms: the brake engages
+ * and releases so fast that output flows smoothly instead of in stop-and-go
+ * bursts. xterm's pending buffer never exceeds MAX_INFLIGHT, so this is also
+ * far below its 47 MiB discard limit — memory is safer, not riskier.
+ *
+ * Tunable: widen both if throughput drops on a fast GPU; narrow for smoother
+ * latency on a slow one.
  */
-const THROTTLE_HIGH = 8 * 1024 * 1024;   // 8 MiB in-flight → apply backpressure
-const THROTTLE_LOW = 2 * 1024 * 1024;    // 2 MiB in-flight → release backpressure
+const THROTTLE_HIGH = 256 * 1024;   // 256 KiB in-flight → apply backpressure
+const THROTTLE_LOW = 128 * 1024;    // 128 KiB in-flight → release backpressure
 
 /**
- * Don't hand xterm more than this many bytes in-flight at once. xterm's own
- * limit is ~47 MiB; capping our handoff well below that gives comfortable
- * headroom even if xterm's parse speed drops mid-stream (GPU contention).
+ * Don't hand xterm more than this many bytes in-flight at once. Caps xterm's
+ * internal pending buffer well below its 47 MiB discard limit and keeps GC
+ * pressure low. Drain stops at this ceiling and resumes on the next parse
+ * callback, so this acts as a natural pacer: feed a chunk → xterm parses a
+ * chunk → callback → feed the next.
  */
-const MAX_INFLIGHT = 16 * 1024 * 1024;   // 16 MiB ceiling on in-flight writes
+const MAX_INFLIGHT = 512 * 1024;   // 512 KiB ceiling on in-flight writes
 
 /**
  * Optional sink notified when the writer wants the backend reader to stop/start.
