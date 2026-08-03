@@ -36,6 +36,15 @@ pub struct TerminalEntry {
     /// by the `set_output_mode` command while the user is interacting
     /// (typing / mouse / resize). Default `false`.
     pub force_low_latency: Arc<AtomicBool>,
+    /// Frontend-driven flag: when true, the reader thread pauses reading
+    /// (backpressure). Set by the `set_throttle` command when the frontend's
+    /// write backlog exceeds a high watermark, and cleared once it drains back
+    /// below a low watermark — so the reader can never outrun xterm and pile
+    /// up unbounded data in the IPC bridge / JS heap (which triggers GC
+    /// stalls and freezes on workloads like vtebench unicode / vim sessions).
+    /// The PTY's own pipe buffer backpressures the child process while we
+    /// stop reading, so no data is lost. Default `false`.
+    pub throttled: Arc<AtomicBool>,
     /// Swappable output channel shared with the reader thread. Replaced in
     /// place by `reattach_terminal` when a tab is torn off into a new window,
     /// so the live PTY process can keep streaming to whichever window now

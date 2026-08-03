@@ -1,19 +1,63 @@
 import {Terminal} from "@xterm/xterm";
 import {safeCodeUnitLength} from "./text.ts";
+import {warn} from "@tauri-apps/plugin-log";
 
 /**
- * Bounded-chunk feeder for `term.write()`.
+ * Bounded-chunk feeder for `term.write()` with flow control.
  *
- * When PTY output arrives in bursts (e.g. `cat bigfile`), feeding it straight
- * to xterm one `write()` per IPC message blocks the main thread for tens of ms
- * per call (jank) while xterm parses thousands of lines. This coalesces pending
- * data into bounded chunks with a microtask gap between them so the main thread
- * stays responsive during large output.
+ * PTY output arrives over an async IPC channel and is decoded to strings by the
+ * backend. This writer hands those strings to xterm in bounded, UTF-16-safe
+ * chunks, and — crucially — applies **backpressure based on xterm's own parsing
+ * backlog** so the backend never outruns xterm.
  *
- * The chunk size is a trade-off: too large and one `term.write()` blocks a
- * frame; too small and per-write overhead dominates. 16KB stays well under a
- * frame while keeping the number of `write()` calls (and parse/render passes)
- * low.
+ * ## Why this exists
+ *
+ * `term.write()` does NOT parse synchronously. xterm has its own internal
+ * `WriteBuffer` that batches writes and parses them on a ~12ms time-sliced loop.
+ * That loop has a **hard limit**: once its internal `_pendingData` exceeds
+ * ~47 MiB, `term.write()` throws `"write data discarded, use flow control to
+ * avoid losing data"` and the offending chunk is dropped. On heavy workloads
+ * (vtebench unicode — per-glyph texture rasterization; vim session replays —
+ * dense cursor/SGR/scroll) xterm parses slower than the reader produces, so its
+ * pending buffer climbs toward that limit. Once it throws, the unhandled error
+ * kills this writer's drain loop and the tab freezes permanently.
+ *
+ * ## Flow control
+ *
+ * The fix is the flow control xterm's own error message asks for. Every
+ * `term.write(chunk, cb)` registers a callback that fires after xterm has
+ * *parsed* that chunk (see xterm's `_innerWrite` — the callback runs right after
+ * `_action(data)`, i.e. after `InputHandler.parse`). So at any moment:
+ *
+ *     inFlight = (bytes handed to term.write) − (bytes whose callback fired)
+ *
+ * is exactly xterm's un-parsed backlog — the same quantity xterm itself checks
+ * against 47 MiB. We track `inFlight` with a counter and drive backpressure from
+ * it (with hysteresis): when `inFlight` crosses `THROTTLE_HIGH` the writer asks
+ * the backend reader to pause; once callbacks bring it back under
+ * `THROTTLE_LOW`, the brake is released. The PTY pipe buffer backpressures the
+ * child while we hold the brake, so no data is lost — this is the natural
+ * flow-control chain for a PTY.
+ *
+ * Because `inFlight` is measured at xterm's own parse boundary, it adapts to
+ * xterm's actual speed: light output never throttles; heavy unicode/vim output
+ * throttles early, well before the 47 MiB cliff.
+ *
+ * ## Scheduling
+ *
+ * `drain()` runs as a `MessageChannel` macrotask and feeds chunks until the
+ * xterm-in-flight budget would be exceeded, then stops and is re-armed by the
+ * next `term.write` callback (which fires after xterm makes progress). This
+ * keeps chunks flowing at exactly the rate xterm can absorb, with no busy-wait:
+ * when xterm is backed up there's nothing to do but wait for its callbacks.
+ *
+ * ## Queue representation
+ *
+ * `pending` is a `string[]` consumed via a `head` index + per-entry `offset`
+ * rather than `Array.shift()`. `shift()` is O(n) (it moves every remaining
+ * element), so a naive shift-based queue is O(n²) over a long backlog.
+ * Consumed entries are reclaimed by `compact()` so the array can't grow
+ * without bound.
  *
  * UTF-16 safety: the cut point never lands between the two halves of a
  * surrogate pair (emoji / astral-plane chars) — otherwise both pieces carry a
@@ -23,72 +67,224 @@ import {safeCodeUnitLength} from "./text.ts";
  *
  * Pure logic (no React) per the lib/ layering rule.
  */
+
+/**
+ * Backpressure watermarks on xterm's *in-flight* (handed to term.write but not
+ * yet parsed) byte count, in UTF-16 code units (a close proxy for bytes). When
+ * in-flight crosses HIGH the writer asks the backend to stop reading; once
+ * xterm's callbacks bring it back under LOW the brake is released. Hysteresis
+ * (HIGH != LOW) avoids on/off thrash around a single point.
+ *
+ * Sized to (a) never approach xterm's 47 MiB internal discard limit, and (b)
+ * absorb normal interactive bursts (which stay well under HIGH) while catching
+ * sustained floods early. Tunable: lower both for safer headroom on slow GPUs.
+ */
+const THROTTLE_HIGH = 8 * 1024 * 1024;   // 8 MiB in-flight → apply backpressure
+const THROTTLE_LOW = 2 * 1024 * 1024;    // 2 MiB in-flight → release backpressure
+
+/**
+ * Don't hand xterm more than this many bytes in-flight at once. xterm's own
+ * limit is ~47 MiB; capping our handoff well below that gives comfortable
+ * headroom even if xterm's parse speed drops mid-stream (GPU contention).
+ */
+const MAX_INFLIGHT = 16 * 1024 * 1024;   // 16 MiB ceiling on in-flight writes
+
+/**
+ * Optional sink notified when the writer wants the backend reader to stop/start.
+ * Only invoked on boolean transitions (false→true / true→false), never per
+ * chunk — so it's cheap to wire straight to a backend `set_throttle` call.
+ */
+export type OnThrottle = (throttled: boolean) => void;
+
 export class ChunkedWriter {
     private readonly term: Terminal;
     private readonly chunkSize: number;
+    /** Incoming data as a queue of strings (append-only; consumed via `head`). */
     private readonly pending: string[] = [];
+    /** Index of the first live entry in `pending` (entries before it are spent). */
+    private head = 0;
+    /** Code units already consumed from `pending[head]`. */
+    private offset = 0;
+    /** Bytes handed to `term.write` whose parse callback hasn't fired yet. */
+    private inFlight = 0;
     private scheduled = false;
+    /** Whether the backend reader is currently held in backpressure. */
+    private throttled = false;
+    private readonly onThrottle?: OnThrottle;
+    // Reused macrotask scheduler. Constructed once so every drain re-arm is a
+    // zero-delay `postMessage` instead of allocating a new channel.
+    private readonly channel: MessageChannel = new MessageChannel();
 
-    constructor(term: Terminal, chunkSize = 1024 * 16) {
+    constructor(term: Terminal, chunkSize = 1024 * 8, onThrottle?: OnThrottle) {
         this.term = term;
         this.chunkSize = chunkSize;
+        this.onThrottle = onThrottle;
+        // `port2.postMessage` triggers `port1.onmessage` as a macrotask on the
+        // next event loop turn. No payload — drain reads shared state, not the
+        // message.
+        this.channel.port1.onmessage = () => this.drain();
     }
+
+    /** Schedule the drain loop if it isn't already. */
+    private schedule(): void {
+        if (!this.scheduled) {
+            this.scheduled = true;
+            this.channel.port2.postMessage(null);
+        }
+    }
+
+    private hasPending(): boolean {
+        return this.head < this.pending.length;
+    }
+
+    /**
+     * Drop consumed entries from the front of `pending` so the array (and the
+     * string refs it holds) can't grow without bound during a long backlog.
+     * Called when fully drained, and periodically while draining.
+     */
+    private compact(): void {
+        if (this.head === 0) return;
+        if (this.hasPending()) {
+            this.pending.splice(0, this.head);
+        } else {
+            this.pending.length = 0;
+        }
+        this.head = 0;
+    }
+
+    /**
+     * Called after xterm finishes parsing a chunk we handed it (via the
+     * `term.write(chunk, cb)` callback). Decrements the in-flight counter and,
+     * if backpressure was applied and the backlog has now receded, releases it.
+     * Also re-arms the drain: xterm made progress, so there's budget to feed it
+     * more if our queue still has data.
+     */
+    private onChunkParsed = (len: number): void => {
+        this.inFlight -= len;
+        // Release backpressure once xterm's in-flight backlog drains below the
+        // low watermark. Hysteresis vs the HIGH threshold prevents on/off thrash.
+        if (this.throttled && this.inFlight <= THROTTLE_LOW) {
+            this.throttled = false;
+            this.onThrottle?.(false);
+        }
+        // xterm just made room — feed it more if we have queued data.
+        if (this.hasPending()) this.schedule();
+    };
 
     /** Enqueue a decoded string chunk of PTY output for writing. */
     push(data: string): void {
         this.pending.push(data);
-        if (!this.scheduled) {
-            this.scheduled = true;
-            queueMicrotask(() => this.drain());
-        }
+        this.schedule();
     }
 
     /** Flush any pending data synchronously (e.g. on dispose). */
     dispose(): void {
-        if (this.pending.length > 0) {
-            // Concatenate and write whatever remains without scheduling.
-            this.term.write(this.pending.join(""));
-            this.pending.length = 0;
-            this.scheduled = false;
+        if (this.hasPending()) {
+            let rest = "";
+            if (this.offset > 0) {
+                rest += this.pending[this.head].slice(this.offset);
+                this.head++;
+            }
+            for (let i = this.head; i < this.pending.length; i++) {
+                rest += this.pending[i];
+            }
+            this.term.write(rest);
+        }
+        this.pending.length = 0;
+        this.head = 0;
+        this.offset = 0;
+        this.scheduled = false;
+        // Release any held backpressure so the backend reader doesn't stay
+        // paused forever after the writer is gone. inFlight is left nonzero —
+        // xterm may still be parsing our final writes, and those callbacks will
+        // decrement it; that's harmless since the writer is being torn down.
+        if (this.throttled) {
+            this.throttled = false;
+            this.onThrottle?.(false);
         }
     }
 
     private drain(): void {
-        if (this.pending.length === 0) {
+        if (!this.hasPending()) {
             this.scheduled = false;
+            this.compact();
             return;
         }
 
-        // Build one chunk by consuming items from the front of the queue.
-        // The cut point is UTF-16-safe: if it would land between the two
-        // halves of a surrogate pair, back up by one code unit so the pair
-        // stays intact.
-        let chunk = "";
-        let taken = 0;
-        while (this.pending.length > 0 && taken < this.chunkSize) {
-            const next = this.pending[0];
-            const remaining = this.chunkSize - taken;
-            if (next.length <= remaining) {
-                chunk += this.pending.shift()!;
-                taken += next.length;
-            } else {
-                const cut = safeCodeUnitLength(next, remaining);
-                chunk += next.slice(0, cut);
-                this.pending[0] = next.slice(cut);
-                taken = this.chunkSize;
-            }
-        }
+        // Feed xterm chunks while we have queued data AND haven't saturated its
+        // in-flight budget. Unlike a wall-clock budget, this directly tracks the
+        // one quantity that matters: how much un-parsed data we've shoved at
+        // xterm. When inFlight hits the ceiling, stop and let xterm's parse
+        // callbacks (→ onChunkParsed) re-arm us once it makes room.
+        do {
+            if (this.inFlight >= MAX_INFLIGHT) break;
 
-        // Drive the queue forward via microtask regardless of whether more
-        // data remains, instead of waiting for term.write()'s render callback.
-        // The callback model serialized writes behind xterm's render time,
-        // which throttled throughput to "one chunk per frame" and made large
-        // chunks *worse* (longer single write blocking). Microtask draining
-        // keeps the queue moving while still yielding between chunks.
-        this.term.write(chunk);
-        this.scheduled = this.pending.length > 0;
-        if (this.scheduled) {
-            queueMicrotask(() => this.drain());
-        }
+            // Build one chunk by consuming entries from the head of the queue,
+            // advancing `head`/`offset` instead of `shift()` (O(1) vs O(n)).
+            // The cut point is UTF-16-safe: if it would land between the two
+            // halves of a surrogate pair, back up by one code unit.
+            let chunk = "";
+            let taken = 0;
+            while (this.head < this.pending.length && taken < this.chunkSize) {
+                const cur = this.pending[this.head];
+                const remaining = this.chunkSize - taken;
+                const avail = cur.length - this.offset;
+                if (avail <= remaining) {
+                    // This entry fits entirely — consume the rest and advance.
+                    chunk += this.offset === 0 ? cur : cur.slice(this.offset);
+                    taken += avail;
+                    this.head++;
+                    this.offset = 0;
+                } else {
+                    // Partial entry: take a UTF-16-safe prefix of `remaining`.
+                    let cut = safeCodeUnitLength(cur, this.offset + remaining);
+                    // Guarantee forward progress even at a surrogate boundary
+                    // (only reachable when remaining <= 1 on a high surrogate;
+                    // accepting the lone surrogate here is harmless and rare).
+                    if (cut <= this.offset) cut = this.offset + 1;
+                    chunk += cur.slice(this.offset, cut);
+                    taken += cut - this.offset;
+                    this.offset = cut;
+                }
+            }
+
+            // Reclaim dead entries periodically so they don't pile up while a
+            // large backlog is mid-drain (compact() is cheap when `head` is
+            // small relative to the live tail).
+            if (this.head > 256) this.compact();
+
+            // Apply backpressure BEFORE handing xterm the chunk: once the
+            // in-flight total crosses HIGH, tell the backend to pause reading so
+            // it doesn't keep shoving data at us while xterm digests. Checked
+            // per chunk (cheap — a counter compare) so the brake engages early.
+            this.inFlight += taken;
+            if (!this.throttled && this.inFlight >= THROTTLE_HIGH) {
+                this.throttled = true;
+                this.onThrottle?.(true);
+            }
+
+            // The callback fires when xterm has PARSED this chunk (after its
+            // internal InputHandler.parse runs). That's the real signal that
+            // xterm made progress — decrement in-flight then, not on write().
+            // Catch the xterm 47MB discard throw so it can't silently kill the
+            // drain loop (the freeze symptom).
+            const len = taken;
+            try {
+                this.term.write(chunk, () => this.onChunkParsed(len));
+            } catch (e) {
+                warn(`[writer] term.write THREW: ${e}  inFlight=${this.inFlight}B  chunk=${chunk.length}B`).catch(() => {});
+                // Drop the chunk we couldn't write; in-flight was already
+                // incremented for it, so roll it back.
+                this.inFlight -= len;
+                break;
+            }
+        } while (this.hasPending() && this.inFlight < MAX_INFLIGHT);
+
+        // Reset the scheduling flag: either we're fully drained, or we stopped
+        // because xterm is saturated (inFlight at the ceiling) and must wait for
+        // one of its parse callbacks to call schedule() again. Clearing the flag
+        // here ensures that schedule() in onChunkParsed will actually post.
+        this.scheduled = false;
+        if (!this.hasPending()) this.compact();
     }
 }

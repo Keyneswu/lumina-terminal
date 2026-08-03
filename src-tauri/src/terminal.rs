@@ -121,6 +121,11 @@ pub fn start_terminal(
         guard.process_id()
     };
     let force_low_latency = Arc::new(AtomicBool::new(false));
+    // Frontend-driven backpressure: when true the reader pauses reading so it
+    // can't outrun xterm and pile up unbounded data in the IPC bridge / JS
+    // heap (which causes GC stalls and freezes on heavy workloads like
+    // vtebench unicode / vim sessions). See `set_throttle` and state.rs.
+    let throttled = Arc::new(AtomicBool::new(false));
     // Output channel shared with the reader thread. Stored as a swappable
     // Option so `reattach_terminal` (tab tear-off) can redirect the live PTY
     // stream to a different window without respawning the process.
@@ -140,6 +145,7 @@ pub fn start_terminal(
                 writer,
                 shell_pid,
                 force_low_latency: force_low_latency.clone(),
+                throttled: throttled.clone(),
                 output_channel: output_channel.clone(),
             },
         );
@@ -157,18 +163,29 @@ pub fn start_terminal(
         log::debug!("Reader thread started for {}", id_reader);
         // 64KB read buffer (was 8KB): fewer, larger reads for bursty output.
         const READ_BUF_SIZE: usize = 1024 * 64;
-        // Enter HighThroughput (coalesce) after this many consecutive full reads.
-        const BURST_FULL_READS: u32 = 2;
+        // Enter HighThroughput (coalesce) after this many consecutive fast
+        // reads. "Fast" = gap between reads under LOW_SPARSE_GAP. This detects a
+        // sustained data stream by READ FREQUENCY rather than read fullness, so
+        // high-rate small-packet sources (e.g. `yes`) coalesce just like large
+        // bursts (`cat bigfile`, vtebench) — instead of firing one tiny IPC
+        // message per partial read.
+        const BURST_FAST_READS: u32 = 4;
         // In HighThroughput, flush once pending reaches this size.
         const HIGH_FLUSH_CAP: usize = 1024 * 64;
-        // Drop back to LowLatency when the gap between reads exceeds this.
-        const LOW_SPARSE_GAP: Duration = Duration::from_millis(100);
+        // Reads closer together than this count as "fast" (a sustained stream).
+        // Tight enough that ordinary interactive typing (gaps ~50ms+) stays in
+        // LowLatency, but a continuous producer like `yes` (gaps ~0ms) crosses
+        // it immediately.
+        const LOW_SPARSE_GAP: Duration = Duration::from_millis(10);
 
         let mut buffer = vec![0u8; READ_BUF_SIZE];
         // Accumulator holding decoded-pending bytes (also carries an unfinished
         // UTF-8 character across a read boundary).
         let mut pending: Vec<u8> = Vec::with_capacity(READ_BUF_SIZE * 2);
-        let mut full_read_streak: u32 = 0;
+        // Consecutive reads that arrived within LOW_SPARSE_GAP of the previous.
+        // Replaces the old full-read-streak: a high rate of reads (regardless of
+        // each read's size) is the real signal of a sustained output stream.
+        let mut fast_read_streak: u32 = 0;
         let mut last_read = Instant::now();
 
         // Flush the longest valid UTF-8 prefix of `pending` over the channel.
@@ -184,9 +201,22 @@ pub fn start_terminal(
             if pending.is_empty() {
                 return;
             }
-            let valid_len = match std::str::from_utf8(pending) {
-                Ok(_) => pending.len(),
-                Err(e) => e.valid_up_to(),
+            // Decode the longest valid UTF-8 prefix. Two failure shapes:
+            //   1. Trailing INCOMPLETE multi-byte sequence (split across a read
+            //      boundary): `error_len` is None — the sequence just needs
+            //      more bytes. Keep the tail for the next read; drain only the
+            //      valid part.
+            //   2. A truly MALFORMED sequence (lone continuation byte, overlong
+            //      encoding, 0xFF, etc.): `error_len` is Some(n). Those n bytes
+            //      can never start a valid sequence, so we must DROP them —
+            //      otherwise `valid_up_to()` returns 0 forever, flush becomes a
+            //      no-op, and `pending` grows unbounded until OOM.
+            //      (Real PTY output is virtually always valid UTF-8, but a torn
+            //      read can leave a stray byte at the front; this is the safety
+            //      net that keeps the buffer bounded.)
+            let (valid_len, malformed_len) = match std::str::from_utf8(pending) {
+                Ok(_) => (pending.len(), 0),
+                Err(e) => (e.valid_up_to(), e.error_len().unwrap_or(0)),
             };
             if valid_len > 0 {
                 let s = std::str::from_utf8(&pending[..valid_len])
@@ -208,9 +238,27 @@ pub fn start_terminal(
                 drop(channel_guard);
                 pending.drain(..valid_len);
             }
+            // Drop a malformed sequence so it can't stall the buffer. Only fire
+            // when error_len was Some(n) — a None error_len means the tail is a
+            // valid-but-incomplete multi-byte char that must be kept.
+            if malformed_len > 0 {
+                log::warn!(
+                    "Terminal {} flush: dropping {} malformed UTF-8 byte(s) at offset {} to unblock pending (len={})",
+                    id_reader, malformed_len, valid_len, pending.len()
+                );
+                pending.drain(..malformed_len);
+            }
         };
 
         loop {
+            // Backpressure: when the frontend signals it's overwhelmed (its
+            // write backlog exceeded the high watermark), pause reading so we
+            // stop piling data into the IPC bridge / JS heap. The PTY pipe
+            // buffer backpressures the child in the meantime, so no data is
+            // lost — reading just resumes once the frontend catches up.
+            while throttled.load(Ordering::Relaxed) {
+                thread::sleep(Duration::from_millis(5));
+            }
             match reader.read(&mut buffer) {
                 Ok(0) => {
                     log::debug!("Terminal {} reader got EOF", id_reader);
@@ -223,17 +271,19 @@ pub fn start_terminal(
                     let gap = now - last_read;
                     last_read = now;
 
-                    // Data-driven mode detection. `full_read_streak` counts
-                    // consecutive reads that returned a full buffer (the pipe
-                    // clearly has more waiting). A partial read usually means
-                    // the pipe drained, so we reset and treat it as sparse.
-                    if n == READ_BUF_SIZE {
-                        full_read_streak = full_read_streak.saturating_add(1);
+                    // Data-driven mode detection. A high rate of reads (each one
+                    // arriving soon after the last) means the PTY has a
+                    // sustained stream to deliver, so we coalesce into bigger
+                    // IPC messages. This keys off READ FREQUENCY, not read size:
+                    // `yes` (many tiny reads) coalesces just like `cat bigfile`
+                    // (few huge reads). A slow/idle shell or interactive typing
+                    // has large gaps, resets the streak, and stays LowLatency.
+                    if gap < LOW_SPARSE_GAP {
+                        fast_read_streak = fast_read_streak.saturating_add(1);
                     } else {
-                        full_read_streak = 0;
+                        fast_read_streak = 0;
                     }
-                    let data_driven_high =
-                        full_read_streak >= BURST_FULL_READS && gap < LOW_SPARSE_GAP;
+                    let data_driven_high = fast_read_streak >= BURST_FAST_READS;
                     let force_low = force_low_latency.load(Ordering::Relaxed);
                     let high_throughput = data_driven_high && !force_low;
 
@@ -459,5 +509,27 @@ pub fn set_output_mode(id: String, low_latency: bool, state: State<TerminalState
         entry.force_low_latency.store(low_latency, Ordering::Relaxed);
     } else {
         log::warn!("set_output_mode: terminal {} not found", id);
+    }
+}
+
+/// Toggle per-terminal read backpressure. While `throttled` is true the reader
+/// thread pauses reading so it can't outrun xterm and pile up unbounded data in
+/// the IPC bridge / JS heap — which causes GC stalls and freezes on heavy
+/// workloads (vtebench unicode / vim sessions, where a single xterm render can
+/// take tens of ms). The frontend's ChunkedWriter drives this with hysteresis:
+/// throttle ON when its backlog exceeds a high watermark, OFF once it drains
+/// below a low one. No data is lost while throttled: the PTY pipe buffer
+/// backpressures the child process naturally. Only called on watermark
+/// transitions, never per chunk.
+#[tauri::command]
+pub fn set_throttle(id: String, throttled: bool, state: State<TerminalState>) {
+    let terminals = state.terminals.try_lock().unwrap_or_else(|e| {
+        log::error!("Failed to lock terminals for set_throttle {}: {}", id, e);
+        panic!("Failed to lock terminals: {}", e);
+    });
+    if let Some(entry) = terminals.get(&id) {
+        entry.throttled.store(throttled, Ordering::Relaxed);
+    } else {
+        log::warn!("set_throttle: terminal {} not found", id);
     }
 }

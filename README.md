@@ -51,6 +51,7 @@ curl -fsSL https://raw.githubusercontent.com/iewnfod/lumina-terminal/master/inst
 * **Tear off tabs** — move a tab into its own window (`Ctrl+Shift+L` / `Cmd+Shift+L`) while keeping the running process and scrollback alive
 * Configurable shell per profile — use PowerShell, WSL, Git Bash, or any executable
 * [WebGL renderer](https://github.com/xtermjs/xterm.js/tree/master/addons/addon-webgl) for GPU-accelerated rendering (optional per-profile)
+* [Unicode 11 width rules](https://github.com/xtermjs/xterm.js/tree/master/addons/addon-unicode11) — correct column widths for modern emoji and symbols (xterm ships only Unicode 6 by default)
 * Chunked output batching — smoothly handles large text dumps without blocking the UI
 * Drag and drop files into the terminal to insert their paths
 * Auto-resize terminal dimensions when the window or container changes

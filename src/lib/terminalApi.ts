@@ -71,3 +71,14 @@ export function reattachTerminal(id: string, onOutput: Channel<string>) {
 export function setOutputMode(id: string, lowLatency: boolean) {
     return invokeWithLog<void>("set_output_mode", id, {lowLatency});
 }
+
+/**
+ * Toggle per-terminal read backpressure. When true the backend reader thread
+ * pauses reading so it can't outrun xterm (which would pile up unbounded data
+ * in the IPC bridge / JS heap and stall the renderer on heavy workloads like
+ * vtebench). The ChunkedWriter drives this with hysteresis — only call on
+ * watermark transitions, never per chunk.
+ */
+export function setThrottle(id: string, throttled: boolean) {
+    return invokeWithLog<void>("set_throttle", id, {throttled});
+}

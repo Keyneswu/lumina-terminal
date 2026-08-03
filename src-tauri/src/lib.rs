@@ -167,6 +167,7 @@ pub fn run() {
             write_to_terminal,
             resize_terminal,
             set_output_mode,
+            set_throttle,
             find_shells,
             path_exist,
             read_file,

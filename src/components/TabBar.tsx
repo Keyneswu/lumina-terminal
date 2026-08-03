@@ -193,7 +193,7 @@ export default function TabBar(props: TabBarProps) {
                 </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto overflow-x-hidden px-1.5 py-1.5" data-tauri-drag-region>
+            <div className={`flex-1 overflow-y-auto overflow-x-hidden px-1.5 ${isMacOS() ? "pt-1.5" : ""}`} data-tauri-drag-region>
                 {tabs.map((tab) => {
                     const isActive = tab.id === activeId;
                     // Only real terminal tabs are draggable for tear-off;

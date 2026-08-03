@@ -24,8 +24,9 @@ import {WebLinksAddon} from "@xterm/addon-web-links";
 import {openUrl} from "@tauri-apps/plugin-opener";
 import {ImageAddon} from "@xterm/addon-image";
 import {SerializeAddon} from "@xterm/addon-serialize";
+import {Unicode11Addon} from "@xterm/addon-unicode11";
 import {IMAGE_ADDON_SETTINGS} from "../constants.ts";
-import {reattachTerminal, resizeTerminal, startTerminal, writeToTerminal} from "../lib/terminalApi.ts";
+import {reattachTerminal, resizeTerminal, setThrottle, startTerminal, writeToTerminal} from "../lib/terminalApi.ts";
 import {CurrentCommandParser} from "../lib/currentCommand.ts";
 
 let hasAppliedInitialWindowSize = false;
@@ -263,6 +264,15 @@ export default function Term(props : TermProps) {
         });
         term.current.loadAddon(webLinksAddon);
 
+        // Unicode 11 width table. xterm ships only Unicode 6 by default, which
+        // mis-measures the width of newer emoji / symbols (renders them as 1
+        // column instead of 2, scrambling cursor position and forcing extra
+        // repaints). Switching the active version to 11 fixes that for any
+        // non-ASCII-heavy output (the vtebench unicode bench in particular).
+        const unicode11Addon = new Unicode11Addon();
+        term.current.loadAddon(unicode11Addon);
+        term.current.unicode.activeVersion = "11";
+
         const imageAddon = new ImageAddon(IMAGE_ADDON_SETTINGS);
         term.current.loadAddon(imageAddon);
 
@@ -310,11 +320,18 @@ export default function Term(props : TermProps) {
             markInteractive();
         });
 
-        // Bounded-chunk feeder for term.write(): coalesces bursts into 16KB
-        // chunks with a microtask gap so large output (cat bigfile) doesn't
-        // block the main thread. See lib/chunkedWriter.ts for the full
-        // rationale (chunk size, microtask draining, UTF-16-safe slicing).
-        const writer = new ChunkedWriter(term.current);
+        // Bounded-chunk feeder for term.write(): coalesces bursts into bounded
+        // chunks drained on a macrotask schedule (time-sliced so the renderer
+        // stays alive) and drives read backpressure on the backend so the
+        // reader can't outrun xterm on heavy workloads (vtebench). See
+        // lib/chunkedWriter.ts for the full rationale.
+        const writer = new ChunkedWriter(term.current, undefined, (throttled) => {
+            // Frontend-driven backpressure: pause/resume the backend reader so
+            // xterm isn't flooded faster than it can render. Fire-and-forget —
+            // invokeWithLog records any failure. ptyId routes to the right PTY
+            // (torn-off tabs reuse the original PTY, not this tab's id).
+            setThrottle(ptyId, throttled).then();
+        });
 
         // Lazily create the OSC parser (one per terminal, kept in a ref).
         if (!commandParserRef.current) {
