@@ -5,6 +5,7 @@ use std::time::{Duration, Instant};
 use portable_pty::{CommandBuilder, PtySize};
 use tauri::{ipc::Channel, AppHandle, Emitter, State};
 
+#[cfg(unix)]
 use crate::command_tracker::{foreground_command, CommandInfo};
 use crate::ssh::SshConfig;
 use crate::state::{CommandChild, OutputChannel, SharedChild, TerminalEntry, TerminalState};
@@ -325,6 +326,7 @@ pub fn start_terminal(
     // the foreground process group of the pty (the fallback path for the
     // "current command" feature) and emits `term-command-<id>` when it changes.
     let term_exit_event_name = format!("term-exit-{}", id);
+    #[cfg(unix)]
     let term_command_event_name = format!("term-command-{}", id);
     let app_watcher = app.clone();
     let state_watcher = state.inner().clone();
@@ -334,7 +336,9 @@ pub fn start_terminal(
         // The last foreground command reported to the frontend. `None` means
         // nothing reported yet; `Some(CommandInfo { command: "", .. })` means
         // idle at the shell prompt.
+        #[cfg(unix)]
         let mut last_command: Option<CommandInfo> = None;
+        #[cfg(unix)]
         let mut tick: u32 = 0;
         loop {
             let exited = {
