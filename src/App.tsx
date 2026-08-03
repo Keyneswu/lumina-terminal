@@ -271,6 +271,7 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
                         bgSpread={isSpread}
                         tabBarVisible={tabBarVisible}
                         onToggleTabBar={() => updateConfig({ showTabBar: !tabBarVisible })}
+                        onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
                         onOpenSettings={openSettings}
                         isMaximized={isMaximized}
                     />

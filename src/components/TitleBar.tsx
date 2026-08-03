@@ -1,4 +1,4 @@
-import {LucideMaximize, LucideMinimize, LucideMinus, LucideX, PanelLeftClose, PanelLeftOpen, Settings} from "lucide-react";
+import {LucideMaximize, LucideMinimize, LucideMinus, LucideX, PanelLeftClose, PanelLeftOpen, Search, Settings} from "lucide-react";
 import {getCurrentWindow} from "@tauri-apps/api/window";
 import {ITheme} from "@xterm/xterm";
 import {isMacOS} from "../lib/platform.ts";
@@ -89,6 +89,7 @@ export default function TitleBar({
     bgSpread,
     tabBarVisible,
     onToggleTabBar,
+    onOpenCommandPalette,
     onOpenSettings,
     isMaximized,
 } : {
@@ -98,6 +99,7 @@ export default function TitleBar({
     bgSpread?: boolean,
     tabBarVisible: boolean,
     onToggleTabBar: () => void,
+    onOpenCommandPalette: () => void,
     onOpenSettings: () => void,
     isMaximized: boolean,
 }) {
@@ -139,6 +141,16 @@ export default function TitleBar({
                     size={28}
                     hoverOverlay={hoverOverlay}
                     activeOverlay={activeOverlay}
+                    style={{color: fg}}
+                    onClick={() => { info("Command palette opened from title bar"); onOpenCommandPalette(); }}
+                    aria-label="Command Palette"
+                >
+                    <Search size={18} />
+                </IconButton>
+                <IconButton
+                    size={28}
+                    hoverOverlay={hoverOverlay}
+                    activeOverlay={activeOverlay}
                     style={{color: fg, marginRight: 8}}
                     onClick={() => { info("Settings opened from title bar"); onOpenSettings(); }}
                 >
@@ -169,6 +181,16 @@ export default function TitleBar({
             </IconButton>
             <div className="flex-1" data-tauri-drag-region />
             <div className="flex flex-row items-center h-full">
+                <IconButton
+                    size={size}
+                    hoverOverlay={hoverOverlay}
+                    activeOverlay={activeOverlay}
+                    style={{color: fg, borderRadius: 0}}
+                    onClick={() => { info("Command palette opened from title bar"); onOpenCommandPalette(); }}
+                    aria-label="Command Palette"
+                >
+                    <Search size={18} />
+                </IconButton>
                 <IconButton
                     size={size}
                     hoverOverlay={hoverOverlay}
