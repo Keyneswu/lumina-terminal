@@ -87,6 +87,8 @@
     "Render Settings": "Render Settings",
     "webgl description": "Use WebGL to accelerate terminal rendering for better performance",
     "Custom": "Custom",
+    "Rename": "Rename",
+    "Click the pencil or double-click to rename": "Click the pencil or double-click to rename",
     "Profile Type": "Profile Type",
     "Local": "Local",
     "Remote (SSH)": "Remote (SSH)",

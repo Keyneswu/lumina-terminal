@@ -87,6 +87,8 @@
     "Render Settings": "渲染设置",
     "webgl description": "使用 WebGL 加速终端渲染以获取更高性能",
     "Custom": "自定义",
+    "Rename": "重命名",
+    "Click the pencil or double-click to rename": "点击铅笔图标或双击来重命名",
     "Profile Type": "配置类型",
     "Local": "本地",
     "Remote (SSH)": "远程 (SSH)",

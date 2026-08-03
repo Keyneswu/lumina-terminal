@@ -8,7 +8,7 @@ import {Button, Input, Label, ListBox, Select} from "@heroui/react";
 import RenderSettings from "./RenderSettings.tsx";
 import ShellSelector from "./ShellSelector.tsx";
 import SshFields from "./SshFields.tsx";
-import {Trash2} from "lucide-react";
+import {Trash2, Pencil} from "lucide-react";
 import SettingsShell from "../ui/SettingsShell.tsx";
 import SettingRow from "../ui/SettingRow.tsx";
 import SaveFooter from "../ui/SaveFooter.tsx";
@@ -157,11 +157,23 @@ export default function ProfileSettings({
                 />
             ) : (
                 <h2
-                    className="text-lg font-semibold mb-6 cursor-pointer select-none"
+                    className="group lum-title-row flex items-center gap-2 text-lg font-semibold mb-6 cursor-pointer select-none"
                     onDoubleClick={() => setIsEditingName(true)}
-                    title="Double-click to rename"
+                    title={t["Click the pencil or double-click to rename"]}
                 >
-                    {draft.name}
+                    <span className="truncate">{draft.name}</span>
+                    <button
+                        type="button"
+                        // The edit button is the visible affordance for rename;
+                        // double-click on the title still works for power users.
+                        // Appears on hover (opacity-0 → group-hover:opacity-100).
+                        className="lum-title-edit opacity-0 group-hover:opacity-100 transition-opacity duration-[var(--duration-fast)] ease-[var(--ease-glass)] p-1 rounded-[var(--radius-xs)] hover:bg-[var(--lum-title-hover)] cursor-pointer"
+                        style={{"--lum-title-hover": "rgba(128,128,128,0.18)"} as React.CSSProperties}
+                        onClick={() => setIsEditingName(true)}
+                        aria-label={t["Rename"]}
+                    >
+                        <Pencil size={14} className="text-muted" />
+                    </button>
                 </h2>
             )}
 
