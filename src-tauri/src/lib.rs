@@ -1,5 +1,6 @@
 mod command_tracker;
 mod file_manager;
+mod fonts;
 mod install_source;
 mod shells;
 mod ssh;
@@ -9,6 +10,7 @@ mod terminal;
 mod utils;
 
 use crate::file_manager::*;
+use crate::fonts::*;
 use crate::install_source::*;
 use crate::shells::*;
 use crate::ssh::*;
@@ -178,6 +180,7 @@ pub fn run() {
             get_commit_hash,
             parse_ssh_config,
             open_in_file_manager,
+            find_font,
             #[cfg(debug_assertions)]
             open_devtools,
         ])

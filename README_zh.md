@@ -53,7 +53,7 @@ curl -fsSL https://raw.githubusercontent.com/iewnfod/lumina-terminal/master/inst
 * [WebGL 渲染器](https://github.com/xtermjs/xterm.js/tree/master/addons/addon-webgl) — GPU 加速渲染（每个配置文件可独立开关）
 * [Unicode 11 宽度规则](https://github.com/xtermjs/xterm.js/tree/master/addons/addon-unicode11) — 正确计算现代 emoji 和符号的列宽（xterm 默认仅内置 Unicode 6）
 * 可选的[字形簇](https://github.com/xtermjs/xterm.js/tree/master/addons/addon-unicode-graphemes)渲染（实验性）— 正确聚类 Unicode 11 仍会拆分的复杂 emoji ZWJ 序列、旗帜和组合字符
-* 可选的[编程连体字](https://github.com/xtermjs/xterm.js/tree/master/addons/addon-ligatures)渲染 — 渲染常见连体字（`->`、`=>`、`!=` 等）；建议搭配 Fira Code 或 JetBrains Mono 等连体字体使用
+* 可选的[编程连体字](https://github.com/princjef/font-ligatures)渲染 — 通过字体真实的 OpenType GSUB 表实现完整的字体特定连体字支持（Fira Code 的 `www`、`//`，JetBrains Mono 的 `==` 等），由 Rust 后端读取字体文件、`opentype.js` 在前端解析
 * 分块批量输出 — 流畅处理大文本输出，不阻塞 UI
 * 拖放文件到终端即可插入文件路径
 * 窗口或容器大小变化时自动调整终端尺寸

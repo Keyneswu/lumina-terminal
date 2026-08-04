@@ -24,12 +24,14 @@ export interface TerminalRenderOptions extends ITerminalOptions {
      * combining marks) that Unicode 11 still splits, at the cost of higher CPU.
      * Off by default; when on it supersedes the Unicode 11 width table. */
     graphemeClusters?: boolean;
-    /** Enable programming-ligature rendering (xterm.js addon-ligatures). In a
-     * Tauri webview there is no Node.js fs, so the addon can't read the font's
-     * GSUB table — it falls back to a hardcoded list of ~50 common programming
-     * ligatures (->, =>, !=, <=, etc.) that works for any font. For full
-     * font-specific ligatures the user must also pick a ligature font (Fira Code,
-     * JetBrains Mono, …). Off by default. */
+    /** Enable programming-ligature rendering. Uses the font's real GSUB table
+     * for precise, font-specific ligatures (Fira Code's `www`, `//`, etc.):
+     * the Rust backend reads the font file and returns its binary, then
+     * `font-ligatures` parses the GSUB `calt` lookups client-side via
+     * `opentype.js`. If the font can't be found, falls back to a hardcoded
+     * list of ~50 common programming ligatures. Best results require a
+     * ligature font (Fira Code, JetBrains Mono, …) set in `fontFamily`.
+     * Off by default. */
     ligatures?: boolean;
     padding?: TerminalPadding;
     themePath?: string;

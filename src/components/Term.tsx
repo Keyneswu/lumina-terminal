@@ -27,7 +27,7 @@ import {SerializeAddon} from "@xterm/addon-serialize";
 import {Unicode11Addon} from "@xterm/addon-unicode11";
 import {UnicodeGraphemesAddon} from "@xterm/addon-unicode-graphemes";
 import {IMAGE_ADDON_SETTINGS} from "../constants.ts";
-import {reattachTerminal, resizeTerminal, setThrottle, startTerminal, writeToTerminal} from "../lib/terminalApi.ts";
+import {findFont, reattachTerminal, resizeTerminal, setThrottle, startTerminal, writeToTerminal} from "../lib/terminalApi.ts";
 import {CurrentCommandParser} from "../lib/currentCommand.ts";
 
 let hasAppliedInitialWindowSize = false;
@@ -320,26 +320,34 @@ export default function Term(props : TermProps) {
         }
 
         // Optional programming-ligature rendering. MUST load after open() — the
-        // addon's activate() requires terminal.element to exist. In a Tauri
-        // webview (no Node.js fs) it can't read the font's GSUB table, so it
-        // falls back to a hardcoded list of ~50 common programming ligatures
-        // (->, =>, !=, …). The character joiner it registers works with both the
-        // WebGL and canvas renderers. For best results the user should also pick
-        // a ligature font (Fira Code, JetBrains Mono, …) in the font setting.
+        // character joiner needs terminal.element to exist. Uses the font's real
+        // GSUB table for precise, font-specific ligatures (Fira Code's `www`,
+        // `//`, JetBrains Mono's `==`, etc.): the Rust backend finds the font
+        // file by family name and returns its binary, then font-ligatures parses
+        // the GSUB `calt` lookups client-side via opentype.js. If the font can't
+        // be found, falls back to a hardcoded list of ~50 common ligatures.
         //
-        // Dynamically imported: the addon bundles a ~200 KB OpenType font parser
-        // (for GSUB table access via Node.js fs) that's dead weight in a webview.
-        // Lazy-loading keeps it out of the main bundle — it's only fetched when a
-        // profile actually has ligatures enabled.
-        if (profile.ligatures) {
-            import("@xterm/addon-ligatures").then(({LigaturesAddon}) => {
-                try {
-                    term.current?.loadAddon(new LigaturesAddon());
-                } catch (e) {
-                    info(`Ligatures addon failed to load: ${e}`);
-                }
+        // Dynamically imported: font-ligatures + opentype.js (~200 KB) are
+        // code-split so they only load when a profile has ligatures enabled.
+        if (profile.ligatures && profile.fontFamily) {
+            const family = profile.fontFamily;
+            import("../lib/ligatures.ts").then(({enableLigatures}) => {
+                if (!term.current) return;
+                const fontData = findFont(family)
+                    .then((bytes) => bytes.length > 0 ? new Uint8Array(bytes).buffer : null)
+                    .catch(() => null);
+                enableLigatures(term.current, fontData);
             }).catch((e) => {
-                info(`Failed to load ligatures addon: ${e}`);
+                info(`Failed to load ligatures module: ${e}`);
+            });
+        } else if (profile.ligatures) {
+            // No fontFamily set — can't find a font file, but still register the
+            // fallback joiner so common ligatures work regardless.
+            import("../lib/ligatures.ts").then(({enableLigatures}) => {
+                if (!term.current) return;
+                enableLigatures(term.current, Promise.resolve(null));
+            }).catch((e) => {
+                info(`Failed to load ligatures module: ${e}`);
             });
         }
 

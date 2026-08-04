@@ -82,3 +82,13 @@ export function setOutputMode(id: string, lowLatency: boolean) {
 export function setThrottle(id: string, throttled: boolean) {
     return invokeWithLog<void>("set_throttle", id, {throttled});
 }
+
+/**
+ * Find a system font file by CSS family name and return its binary contents.
+ * Used by the ligature feature to parse the font's GSUB table client-side.
+ * Not PTY-scoped (keyed on font family, not terminal id), so it bypasses
+ * `invokeWithLog`. The caller handles errors via `.catch`.
+ */
+export function findFont(family: string): Promise<number[]> {
+    return invoke<number[]>("find_font", {family});
+}
