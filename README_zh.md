@@ -49,6 +49,7 @@ curl -fsSL https://raw.githubusercontent.com/iewnfod/lumina-terminal/master/inst
 ### 终端
 * 基于 [portable-pty](https://docs.rs/portable-pty/latest/portable_pty/) 的多标签页终端 — 每个标签页运行一个真实的 Shell 进程
 * **撕离标签页** — 将标签页移到独立窗口（`Ctrl+Shift+L` / `Cmd+Shift+L`），同时保留运行中的进程和滚动历史
+* **终端内查找** — 搜索滚动历史（`Ctrl+Shift+F` / `Cmd+Shift+F`），支持区分大小写 / 全字匹配 / 正则，并显示实时结果计数，基于 [addon-search](https://github.com/xtermjs/xterm.js/tree/master/addons/addon-search)
 * 每个配置文件可指定不同的 Shell — 支持 PowerShell、WSL、Git Bash 等任意可执行文件
 * [WebGL 渲染器](https://github.com/xtermjs/xterm.js/tree/master/addons/addon-webgl) — GPU 加速渲染（每个配置文件可独立开关）
 * [Unicode 11 宽度规则](https://github.com/xtermjs/xterm.js/tree/master/addons/addon-unicode11) — 正确计算现代 emoji 和符号的列宽（xterm 默认仅内置 Unicode 6）
@@ -71,6 +72,7 @@ curl -fsSL https://raw.githubusercontent.com/iewnfod/lumina-terminal/master/inst
   * `Ctrl/Cmd+T` — 新建标签页
   * `Ctrl/Cmd+W` — 关闭当前标签页
   * `Ctrl/Cmd+Shift+L` — 将当前标签页撕离到新窗口
+  * `Ctrl/Cmd+Shift+F` — 在终端中查找
   * `Ctrl/Cmd+,` — 打开设置
   * `Ctrl/Cmd+Shift+P` — 命令面板
   * `Ctrl/Cmd+1–9` — 按序号切换标签页

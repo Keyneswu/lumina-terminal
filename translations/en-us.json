@@ -161,5 +161,14 @@
     "None": "None",
     "Available": "Available",
     "Up to Date": "Up to Date",
-    "Error": "Error"
+    "Error": "Error",
+    "Find in Terminal": "Find in Terminal",
+    "Find next": "Find next",
+    "Find previous": "Find previous",
+    "Search in terminal...": "Search in terminal...",
+    "Match Case": "Match Case",
+    "Whole Word": "Whole Word",
+    "Regular Expression": "Regular Expression",
+    "No results": "No results",
+    "{n} of {m}": "{n} of {m}"
 }

@@ -1,6 +1,6 @@
 import Term from "./components/Term.tsx";
 import MaskedSurface from "./components/ui/MaskedSurface.tsx";
-import {useCallback, useEffect, useMemo, useState} from "react";
+import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {getCurrentWindow} from "@tauri-apps/api/window";
 import {useGlobalConfig} from "./hooks/config.tsx";
 import {useI18n} from "./hooks/i18n.tsx";
@@ -65,6 +65,14 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
     );
     const tabBarVisible = config.showTabBar ?? false;
     const parsedBindings = useMemo(() => parseBindings(config.bindings), [config.bindings]);
+    // Per-tab "open search" triggers, registered by each Term (mirrors the
+    // serialize-fns map in useTerminalManager). The command palette's
+    // "Find in Terminal" calls the active tab's trigger to open its bar.
+    const openSearchFns = useRef<Map<string, () => void>>(new Map());
+    const openSearch = useCallback(() => {
+        if (!currentId) return;
+        openSearchFns.current.get(currentId)?.();
+    }, [currentId]);
     // Check for updates once on startup unless the user opted out. Runs after
     // config loads; only checks (never auto-installs).
     useStartupUpdateCheck(config.autoUpdateOnStartup !== false);
@@ -161,6 +169,10 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
                 // shows this action when currentId is a real terminal, and
                 // Term handles the keybinding via its own onTearOff. No-op here.
                 break;
+            case "search":
+                // Search is handled inside each Term; on a non-terminal tab there
+                // is no terminal to search, so this is a no-op here.
+                break;
         }
     }, [currentId, mgr, findProfile, openSettings, tabBarVisible, updateConfig]);
     useKeyboardBindings(parsedBindings, handleNonTerminalAction, isNonTerminalTab);
@@ -195,6 +207,7 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
         tearOffTab: (id) => { mgr.tearOffTab(id); },
         openSettings,
         openAbout,
+        openSearch,
         updateConfig,
     });
 
@@ -351,6 +364,16 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
                                     onToTab={mgr.toTab}
                                     onToggleSidebar={() => updateConfig({ showTabBar: !tabBarVisible })}
                                     onTearOff={() => mgr.tearOffTab(id)}
+                                    onRegisterSearch={(open) => {
+                                        openSearchFns.current.set(id, open);
+                                        return () => {
+                                            // Only delete if it's still ours (avoids wiping a
+                                            // re-registered fn after a rapid remount).
+                                            if (openSearchFns.current.get(id) === open) {
+                                                openSearchFns.current.delete(id);
+                                            }
+                                        };
+                                    }}
                                     onRegisterSerialize={(fn) => {
                                         mgr.serializeFns.current.set(id, fn);
                                         return () => {

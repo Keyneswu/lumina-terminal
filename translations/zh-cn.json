@@ -161,5 +161,14 @@
     "None": "无",
     "Available": "有新版本",
     "Up to Date": "最新版",
-    "Error": "错误"
+    "Error": "错误",
+    "Find in Terminal": "在终端中查找",
+    "Find next": "查找下一个",
+    "Find previous": "查找上一个",
+    "Search in terminal...": "在终端中搜索…",
+    "Match Case": "区分大小写",
+    "Whole Word": "全字匹配",
+    "Regular Expression": "正则表达式",
+    "No results": "无结果",
+    "{n} of {m}": "第 {n} 项，共 {m} 项"
 }

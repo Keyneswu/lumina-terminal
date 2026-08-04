@@ -49,6 +49,7 @@ curl -fsSL https://raw.githubusercontent.com/iewnfod/lumina-terminal/master/inst
 ### Terminal
 * Multi-tab terminal backed by [portable-pty](https://docs.rs/portable-pty/latest/portable_pty/) — each tab runs a real shell process
 * **Tear off tabs** — move a tab into its own window (`Ctrl+Shift+L` / `Cmd+Shift+L`) while keeping the running process and scrollback alive
+* **Find in terminal** — search the scrollback (`Ctrl+Shift+F` / `Cmd+Shift+F`) with match-case / whole-word / regex toggles and a live result counter, powered by [addon-search](https://github.com/xtermjs/xterm.js/tree/master/addons/addon-search)
 * Configurable shell per profile — use PowerShell, WSL, Git Bash, or any executable
 * [WebGL renderer](https://github.com/xtermjs/xterm.js/tree/master/addons/addon-webgl) for GPU-accelerated rendering (optional per-profile)
 * [Unicode 11 width rules](https://github.com/xtermjs/xterm.js/tree/master/addons/addon-unicode11) — correct column widths for modern emoji and symbols (xterm ships only Unicode 6 by default)
@@ -71,6 +72,7 @@ curl -fsSL https://raw.githubusercontent.com/iewnfod/lumina-terminal/master/inst
   * `Ctrl/Cmd+T` — New tab
   * `Ctrl/Cmd+W` — Close current tab
   * `Ctrl/Cmd+Shift+L` — Tear off current tab into a new window
+  * `Ctrl/Cmd+Shift+F` — Find in terminal
   * `Ctrl/Cmd+,` — Open settings
   * `Ctrl/Cmd+Shift+P` — Command palette
   * `Ctrl/Cmd+1–9` — Switch to tab by index

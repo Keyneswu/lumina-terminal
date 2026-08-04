@@ -1,4 +1,5 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from "react";
+import {AnimatePresence} from "framer-motion";
 import {Terminal} from "@xterm/xterm";
 import {listen} from "@tauri-apps/api/event";
 import {Channel} from "@tauri-apps/api/core";
@@ -24,11 +25,13 @@ import {WebLinksAddon} from "@xterm/addon-web-links";
 import {openUrl} from "@tauri-apps/plugin-opener";
 import {ImageAddon} from "@xterm/addon-image";
 import {SerializeAddon} from "@xterm/addon-serialize";
+import {SearchAddon} from "@xterm/addon-search";
 import {Unicode11Addon} from "@xterm/addon-unicode11";
 import {UnicodeGraphemesAddon} from "@xterm/addon-unicode-graphemes";
 import {IMAGE_ADDON_SETTINGS} from "../constants.ts";
 import {reattachTerminal, resizeTerminal, setThrottle, startTerminal, writeToTerminal} from "../lib/terminalApi.ts";
 import {CurrentCommandParser} from "../lib/currentCommand.ts";
+import SearchBar from "./SearchBar.tsx";
 
 let hasAppliedInitialWindowSize = false;
 
@@ -70,6 +73,10 @@ interface TermProps {
     // with the parent. The parent stores it and calls it right before tearing
     // the tab off. Returns a cleanup that deregisters the function.
     onRegisterSerialize?: (fn: () => string) => () => void;
+    // Register an "open search" trigger with the parent so the command palette
+    // (which lives in App) can open this terminal's in-terminal search bar.
+    // Returns a cleanup that deregisters the trigger. Mirrors onRegisterSerialize.
+    onRegisterSearch?: (open: () => void) => () => void;
     // Tear this tab off into its own window. Wired to the `tearOffTab` action.
     onTearOff?: () => void;
 }
@@ -82,6 +89,9 @@ export default function Term(props : TermProps) {
     // SerializeAddon instance (loaded once at init). Used by the parent to
     // capture the buffer when tearing this tab off into a new window.
     const serializeAddonRef = useRef<SerializeAddon | null>(null);
+    // SearchAddon instance (loaded once at init). Drives the in-terminal search
+    // bar overlay (findNext/findPrevious + live match decorations).
+    const searchAddonRef = useRef<SearchAddon | null>(null);
     // FitAddon instance (loaded once at init). Held in a ref so the separate
     // resize-observer effect (which re-runs normally under StrictMode, unlike
     // the one-shot init effect) can call fit() without re-deriving it.
@@ -91,6 +101,7 @@ export default function Term(props : TermProps) {
     const t = useI18n();
     const {markInteractive} = useOutputMode(id);
     const [isDragOver, setIsDragOver] = useState(false);
+    const [searchOpen, setSearchOpen] = useState(false);
     const isActiveRef = useRef(isActive);
     isActiveRef.current = isActive;
 
@@ -133,6 +144,9 @@ export default function Term(props : TermProps) {
                 break;
             case "tearOffTab":
                 props.onTearOff?.();
+                break;
+            case "search":
+                setSearchOpen((o) => !o);
                 break;
         }
     };
@@ -313,6 +327,12 @@ export default function Term(props : TermProps) {
         term.current.loadAddon(serializeAddon);
         serializeAddonRef.current = serializeAddon;
 
+        // SearchAddon powers the in-terminal search bar overlay. Headless: we
+        // drive findNext/findPrevious from our own SearchBar component.
+        const searchAddon = new SearchAddon();
+        term.current.loadAddon(searchAddon);
+        searchAddonRef.current = searchAddon;
+
         if (termRef.current) {
             term.current.open(termRef.current);
             fitAddon.fit();
@@ -432,6 +452,13 @@ export default function Term(props : TermProps) {
         };
         return props.onRegisterSerialize(serialize);
     }, [props.onRegisterSerialize, id]);
+
+    // Register an "open search" trigger with the parent so the command palette
+    // can open this terminal's search bar. Mirrors the serialize registration.
+    useEffect(() => {
+        if (!props.onRegisterSearch) return;
+        return props.onRegisterSearch(() => setSearchOpen(true));
+    }, [props.onRegisterSearch]);
 
     // ResizeObserver: refit the terminal whenever its container changes size.
     // Lives in its own effect (NOT inside the one-shot init effect) so that:
@@ -716,6 +743,16 @@ export default function Term(props : TermProps) {
                         </div>
                     </div>
                 )}
+                <AnimatePresence>
+                    {searchOpen && (
+                        <SearchBar
+                            searchAddon={searchAddonRef.current}
+                            terminal={term.current}
+                            fillBg={containerBg ?? props.fillBg}
+                            onClose={() => setSearchOpen(false)}
+                        />
+                    )}
+                </AnimatePresence>
         </div>
     );
 }

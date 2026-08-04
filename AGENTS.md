@@ -94,6 +94,9 @@ src/
 │   │   ├── SectionTitle.tsx     # <h2> heading + optional subtitle (consistent mb)
 │   │   └── SaveFooter.tsx       # Save (disabled-when-clean) + unsaved hint + trailing action slot
 │   ├── Term.tsx             # Single xterm instance: addons, PTY lifecycle, edge bg polling
+│   ├── SearchBar.tsx        # In-terminal search overlay (Ctrl+Shift+F): drives the headless
+│   │                        #   @xterm/addon-search via a glass top slide-down bar (case /
+│   │                        #   whole-word / regex toggles + result counter). Mounted in Term.
 │   ├── TabBar.tsx           # Sidebar tab list
 │   ├── TitleBar.tsx         # Drag region + window controls (per-platform)
 │   ├── CommandPalette.tsx   # Ctrl+Shift+P modal

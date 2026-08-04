@@ -121,6 +121,11 @@ export const DEFAULT_BINDINGS: Binding[] = [
         with: ["CtrlOrCommand", "shift"],
         action: "tearOffTab",
     },
+    {
+        key: "f",
+        with: ["CtrlOrCommand"],
+        action: "search",
+    },
 ];
 
 export const DEFAULT_CONFIG: GlobalConfig = {

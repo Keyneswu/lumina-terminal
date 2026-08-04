@@ -1,5 +1,5 @@
 import {useMemo} from "react";
-import {Terminal as TerminalIcon, X, PanelLeftClose, PanelLeftOpen, Monitor, MonitorOff, Settings as SettingsIcon, Info, ExternalLink} from "lucide-react";
+import {Terminal as TerminalIcon, X, PanelLeftClose, PanelLeftOpen, Monitor, MonitorOff, Settings as SettingsIcon, Info, ExternalLink, Search} from "lucide-react";
 import type {CommandAction} from "../components/CommandPalette.tsx";
 import {TerminalProfile} from "../types/terminal.ts";
 import {Binding, Actions} from "../types/config.ts";
@@ -25,12 +25,13 @@ export function useCommandPaletteActions(opts: {
     tearOffTab: (id: string) => void;
     openSettings: () => void;
     openAbout: () => void;
+    openSearch: () => void;
     updateConfig: (patch: {showTabBar?: boolean; closeWindowOnLastTab?: boolean}) => void;
 }): CommandAction[] {
     const {
         profiles, currentId, terminals, parsedBindings, tabBarVisible,
         closeWindowOnLastTab, t,
-        newTerminal, closeTerminal, tearOffTab, openSettings, openAbout, updateConfig,
+        newTerminal, closeTerminal, tearOffTab, openSettings, openAbout, openSearch, updateConfig,
     } = opts;
 
     return useMemo(() => {
@@ -84,6 +85,18 @@ export function useCommandPaletteActions(opts: {
                     category: t["Terminal"],
                     keywords: ["tear off", "window", "窗口", "拖出", "分离", "detach", "pop out"],
                     onSelect: () => tearOffTab(currentId),
+                });
+
+                // Find in terminal (terminal tabs only).
+                const searchBinding = findBinding(parsedBindings, "search");
+                actions.push({
+                    id: "find-in-terminal",
+                    label: t["Find in Terminal"],
+                    icon: <Search size={18} />,
+                    shortcut: searchBinding ? bindingToShortcut(searchBinding) : undefined,
+                    category: t["Terminal"],
+                    keywords: ["find", "search", "查找", "搜索", "grep"],
+                    onSelect: () => openSearch(),
                 });
             }
         }
@@ -152,7 +165,7 @@ export function useCommandPaletteActions(opts: {
         });
 
         return actions;
-    }, [profiles, currentId, terminals, tabBarVisible, closeWindowOnLastTab, parsedBindings, t, newTerminal, closeTerminal, tearOffTab, openSettings, openAbout, updateConfig]);
+    }, [profiles, currentId, terminals, tabBarVisible, closeWindowOnLastTab, parsedBindings, t, newTerminal, closeTerminal, tearOffTab, openSettings, openAbout, openSearch, updateConfig]);
 }
 
 /** Re-export so callers can name-import the action type alongside the hook. */
