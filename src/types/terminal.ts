@@ -24,6 +24,13 @@ export interface TerminalRenderOptions extends ITerminalOptions {
      * combining marks) that Unicode 11 still splits, at the cost of higher CPU.
      * Off by default; when on it supersedes the Unicode 11 width table. */
     graphemeClusters?: boolean;
+    /** Enable programming-ligature rendering (xterm.js addon-ligatures). In a
+     * Tauri webview there is no Node.js fs, so the addon can't read the font's
+     * GSUB table — it falls back to a hardcoded list of ~50 common programming
+     * ligatures (->, =>, !=, <=, etc.) that works for any font. For full
+     * font-specific ligatures the user must also pick a ligature font (Fira Code,
+     * JetBrains Mono, …). Off by default. */
+    ligatures?: boolean;
     padding?: TerminalPadding;
     themePath?: string;
     fontStyle?: FontStyle;

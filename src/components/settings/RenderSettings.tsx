@@ -231,6 +231,26 @@ export default function RenderSettings({
                     </Switch.Control>
                 </Switch>
             </div>
+
+            {/* Ligatures */}
+            <div className="flex flex-row items-center justify-between">
+                <div className="flex flex-col gap-0.5">
+                    <Label className="cursor-pointer">
+                        {t["Ligatures"]}
+                    </Label>
+                    <p className="text-xs text-muted">
+                        {t["ligatures description"]}
+                    </p>
+                </div>
+                <Switch
+                    isSelected={draft.ligatures ?? false}
+                    onChange={(v) => updateDraft({ ligatures: v })}
+                >
+                    <Switch.Control>
+                        <Switch.Thumb />
+                    </Switch.Control>
+                </Switch>
+            </div>
         </div>
     );
 

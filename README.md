@@ -53,6 +53,7 @@ curl -fsSL https://raw.githubusercontent.com/iewnfod/lumina-terminal/master/inst
 * [WebGL renderer](https://github.com/xtermjs/xterm.js/tree/master/addons/addon-webgl) for GPU-accelerated rendering (optional per-profile)
 * [Unicode 11 width rules](https://github.com/xtermjs/xterm.js/tree/master/addons/addon-unicode11) — correct column widths for modern emoji and symbols (xterm ships only Unicode 6 by default)
 * Optional [grapheme-cluster](https://github.com/xtermjs/xterm.js/tree/master/addons/addon-unicode-graphemes) rendering (experimental) — correctly clusters complex emoji ZWJ sequences, flags, and combining marks that Unicode 11 still splits
+* Optional [programming ligatures](https://github.com/xtermjs/xterm.js/tree/master/addons/addon-ligatures) — renders common ligatures (`->`, `=>`, `!=`, …); best with a ligature font like Fira Code or JetBrains Mono
 * Chunked output batching — smoothly handles large text dumps without blocking the UI
 * Drag and drop files into the terminal to insert their paths
 * Auto-resize terminal dimensions when the window or container changes

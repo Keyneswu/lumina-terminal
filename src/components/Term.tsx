@@ -319,6 +319,30 @@ export default function Term(props : TermProps) {
             debug(`Terminal opened: id=${id}`);
         }
 
+        // Optional programming-ligature rendering. MUST load after open() — the
+        // addon's activate() requires terminal.element to exist. In a Tauri
+        // webview (no Node.js fs) it can't read the font's GSUB table, so it
+        // falls back to a hardcoded list of ~50 common programming ligatures
+        // (->, =>, !=, …). The character joiner it registers works with both the
+        // WebGL and canvas renderers. For best results the user should also pick
+        // a ligature font (Fira Code, JetBrains Mono, …) in the font setting.
+        //
+        // Dynamically imported: the addon bundles a ~200 KB OpenType font parser
+        // (for GSUB table access via Node.js fs) that's dead weight in a webview.
+        // Lazy-loading keeps it out of the main bundle — it's only fetched when a
+        // profile actually has ligatures enabled.
+        if (profile.ligatures) {
+            import("@xterm/addon-ligatures").then(({LigaturesAddon}) => {
+                try {
+                    term.current?.loadAddon(new LigaturesAddon());
+                } catch (e) {
+                    info(`Ligatures addon failed to load: ${e}`);
+                }
+            }).catch((e) => {
+                info(`Failed to load ligatures addon: ${e}`);
+            });
+        }
+
         // Load keybindings right after terminal is ready
         loadBindings(term.current, bindings, (action, args) => {
             handleActionsRef.current(action, args);

@@ -89,6 +89,8 @@
     "webgl description": "Use WebGL to accelerate terminal rendering for better performance",
     "Grapheme Clusters": "Grapheme Clusters",
     "grapheme clusters description": "Experimental: correct width for complex emoji (ZWJ sequences, flags) at higher CPU cost",
+    "Ligatures": "Ligatures",
+    "ligatures description": "Render programming ligatures (->, =>, !=, …). Best with a ligature font like Fira Code or JetBrains Mono",
     "Custom": "Custom",
     "Rename": "Rename",
     "Click the pencil or double-click to rename": "Click the pencil or double-click to rename",

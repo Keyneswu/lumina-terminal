@@ -89,6 +89,8 @@
     "webgl description": "使用 WebGL 加速终端渲染以获取更高性能",
     "Grapheme Clusters": "字形簇",
     "grapheme clusters description": "实验性：正确计算复杂 emoji（ZWJ 序列、旗帜）的宽度，但 CPU 开销更高",
+    "Ligatures": "连体字",
+    "ligatures description": "渲染编程连体字（->、=>、!= 等）。建议搭配 Fira Code 或 JetBrains Mono 等连体字体使用",
     "Custom": "自定义",
     "Rename": "重命名",
     "Click the pencil or double-click to rename": "点击铅笔图标或双击来重命名",
