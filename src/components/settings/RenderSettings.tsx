@@ -1,13 +1,14 @@
 import {FontStyle, TerminalRenderOptions} from "../../types/terminal.ts";
 import {useI18n} from "../../hooks/i18n.tsx";
 import {useEffect, useState} from "react";
-import {type FontWeight, ITheme} from "@xterm/xterm";
+import {type FontWeight, type ITerminalOptions, ITheme} from "@xterm/xterm";
 import {parseProfileTheme} from "../../lib/term.ts";
 import {Input, Label, ListBox, Select, Switch} from "@heroui/react";
 import ThemePreview from "../ThemePreview.tsx";
 import { ChevronDown } from "lucide-react";
 
 const FONT_WEIGHT_OPTIONS: FontWeight[] = ["normal", "bold", "100", "200", "300", "400", "500", "600", "700", "800", "900"];
+const CURSOR_STYLE_OPTIONS: NonNullable<ITerminalOptions["cursorStyle"]>[] = ["block", "underline", "bar"];
 
 export default function RenderSettings({
     draft,
@@ -172,6 +173,49 @@ export default function RenderSettings({
                             </ListBox>
                         </Select.Popover>
                     </Select>
+                </div>
+            </div>
+
+            {/* Cursor Style + Blink */}
+            <div className="flex flex-row gap-5 items-end">
+                <div className="flex flex-col gap-1.5">
+                    <Label>{t["Cursor Style"]}</Label>
+                    <Select
+                        selectedKey={draft.cursorStyle ?? "block"}
+                        onSelectionChange={(key) => {
+                            if (key) {
+                                updateDraft({ cursorStyle: key as NonNullable<ITerminalOptions["cursorStyle"]> });
+                            }
+                        }}
+                        className="w-32"
+                    >
+                        <Select.Trigger>
+                            <Select.Value />
+                            <Select.Indicator />
+                        </Select.Trigger>
+                        <Select.Popover>
+                            <ListBox>
+                                {CURSOR_STYLE_OPTIONS.map((style) => (
+                                    <ListBox.Item id={style} key={style} textValue={style}>
+                                        {t[`cursor_${style}`]}
+                                    </ListBox.Item>
+                                ))}
+                            </ListBox>
+                        </Select.Popover>
+                    </Select>
+                </div>
+                <div className="flex flex-row items-center justify-between gap-2 pb-1.5">
+                    <Label className="cursor-pointer">
+                        {t["Cursor Blink"]}
+                    </Label>
+                    <Switch
+                        isSelected={draft.cursorBlink ?? false}
+                        onChange={(v) => updateDraft({ cursorBlink: v })}
+                    >
+                        <Switch.Control>
+                            <Switch.Thumb />
+                        </Switch.Control>
+                    </Switch>
                 </div>
             </div>
 
