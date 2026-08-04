@@ -8,9 +8,11 @@ import WelcomePage from "./pages/WelcomePage.tsx";
 import TitleBar from "./components/TitleBar.tsx";
 import TabBar, { type TabInfo } from "./components/TabBar.tsx";
 import {getShellType} from "./lib/shellIcon.ts";
+import {getAppIcon} from "./lib/appIcon.ts";
 import {visibleRed} from "./lib/color.ts";
 import CommandPalette from "./components/CommandPalette.tsx";
 import {useEffectiveTheme} from "./hooks/useEffectiveTheme.ts";
+import {useSystemTheme} from "./hooks/useSystemTheme.ts";
 import {parseBindings, useKeyboardBindings, matchBinding} from "./lib/bindings.ts";
 import {Actions} from "./types/config.ts";
 import SettingsPage from "./pages/SettingsPage.tsx";
@@ -47,7 +49,26 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
             return null;
         }
     }, [currentId, terminals]);
-    const {theme: effectiveTheme, bg: effectiveBg, fg: effectiveFg, isSpread, setEdgeBg} = useEffectiveTheme(currentProfile, currentId, config.enableColorSpread !== false);
+    const systemTheme = useSystemTheme();
+    const themeMode = config.themeMode ?? "terminal";
+    // Translate the theme mode into a dark override for useEffectiveTheme.
+    // "terminal" → null (derive from bg, the legacy behavior). "system" → null
+    // until the OS theme resolves, then the resolved value.
+    const darkOverride =
+        themeMode === "light" ? false
+        : themeMode === "dark" ? true
+        : themeMode === "system" ? (systemTheme === "light" ? false : systemTheme === "dark" ? true : null)
+        : null;
+    // A forced background color makes the whole window (incl. the terminal
+    // canvas) follow the theme mode, not just the chrome text. "terminal" mode
+    // leaves the bg to the profile/TUI. Neutral base colors that harmonize with
+    // most terminal palettes.
+    const forceBg =
+        themeMode === "terminal" ? null
+        : darkOverride === true ? "#1a1a1a"
+        : darkOverride === false ? "#fafafa"
+        : null; // system unresolved → briefly fall back to terminal bg
+    const {theme: effectiveTheme, bg: effectiveBg, fg: effectiveFg, isSpread, setEdgeBg} = useEffectiveTheme(currentProfile, currentId, config.enableColorSpread !== false, darkOverride, forceBg);
     // Glass material filling the terminal area. The terminal surface is clipped
     // to a rounded rectangle via clip-path; its four corners are transparent,
     // exposing this chrome layer beneath — so the chrome reads as a continuous
@@ -233,6 +254,18 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
                         subtitle: cmd ? cmd.command : undefined,
                         commandPrivileged: cmd ? cmd.privileged : false,
                         shellType: getShellType(terminals[id]),
+                        // App icon: prefer the running command (more precise —
+                        // reflects what's actually foreground), but fall back to
+                        // the profile's startupCommand. The fallback matters
+                        // because a startup command runs via `<shell> -c <cmd>`,
+                        // where the shell often stays the foreground process-
+                        // group leader, so foreground_command can't see the
+                        // child and term-command never reports it. The static
+                        // startupCommand is the user's declared intent for this
+                        // tab, so it's a reliable signal in that case.
+                        appIcon: (cmd && getAppIcon(cmd.command))
+                            ?? getAppIcon(terminals[id].startupCommand ?? "")
+                            ?? undefined,
                     };
                 }
                 return null;
@@ -351,6 +384,7 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
                                     id={id}
                                     profile={terminals[id]}
                                     fillBg={effectiveBg}
+                                    forceBg={forceBg}
                                     paddingOffset={paddingOffset}
                                     isActive={id === currentId}
                                     bindings={parsedBindings}

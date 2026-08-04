@@ -168,10 +168,10 @@ export default function UpdateModal({
 												onClick={() => copyCommand(updateCommand)}
 												aria-label={t["Copied"]}
 												title={t["Copied"]}
-												className="shrink-0 flex items-center justify-center h-7 w-7 rounded transition-colors hover:bg-white/10 text-muted hover:text-current cursor-pointer"
+												className="shrink-0 flex items-center justify-center h-7 w-7 rounded transition-colors hover:bg-default/10 text-muted hover:text-current cursor-pointer"
 											>
 												{copied ? (
-													<Check size={14} className="text-green-500" />
+													<Check size={14} className="text-success" />
 												) : (
 													<Copy size={14} />
 												)}
@@ -223,7 +223,7 @@ export default function UpdateModal({
 									{status === "error" && error && (
 										<span
 											className="flex items-center gap-1.5 text-xs"
-											style={{color: "var(--color-danger-500, #ef4444)"}}
+											style={{color: "var(--danger)"}}
 										>
 											<AlertCircle size={14} />
 											{error}

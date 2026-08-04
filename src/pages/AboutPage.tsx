@@ -176,8 +176,7 @@ export default function AboutPage({ theme, updater, installSource, onShowUpdateM
 							</span>
                             ) : updater.status === "upToDate" ? (
                                 <span
-                                    className="flex items-center gap-1.5 cursor-pointer select-none"
-                                    style={{ color: "#22c55e" }}
+                                    className="flex items-center gap-1.5 cursor-pointer select-none text-success"
                                     title={t["What's New"]}
                                     onDoubleClick={openCurrentReleaseNotes}
                                 >
@@ -185,7 +184,7 @@ export default function AboutPage({ theme, updater, installSource, onShowUpdateM
                                     {t["You're up to date"]}
                                 </span>
                             ) : updater.status === "error" ? (
-                                <span className="flex items-center gap-1.5" style={{color: "var(--color-danger-500, #ef4444)"}}>
+                                <span className="flex items-center gap-1.5" style={{color: "var(--danger)"}}>
                                     <AlertCircle size={14} />
                                     {t["Update check failed"]}
                                 </span>
@@ -209,7 +208,7 @@ export default function AboutPage({ theme, updater, installSource, onShowUpdateM
                                     // row taller than the text-only rows. So we fix the box to the
                                     // line height and use negative vertical margin to keep the
                                     // surrounding flex row's height driven by the text, not the button.
-                                    className="-my-2 flex items-center justify-center h-8 w-8 rounded transition-colors hover:bg-white/10 text-muted hover:text-current cursor-pointer"
+                                    className="-my-2 flex items-center justify-center h-8 w-8 rounded transition-colors hover:bg-default/10 text-muted hover:text-current cursor-pointer"
                                 >
                                     <RefreshCw size={14} />
                                 </button>

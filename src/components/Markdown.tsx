@@ -62,15 +62,15 @@ const components: Components = {
 		</blockquote>
 	),
 	code: ({ children }) => (
-		<code className="px-1 py-0.5 rounded text-[0.85em] bg-black/10 font-mono">
-			{children}
-		</code>
-	),
+			<code className="px-1 py-0.5 rounded text-[0.85em] bg-default/20 font-mono">
+				{children}
+			</code>
+		),
 	pre: ({ children }) => (
-		<pre className="my-2 p-2.5 rounded-md overflow-x-auto bg-black/20 text-[0.85em]">
-			{children}
-		</pre>
-	),
+			<pre className="my-2 p-2.5 rounded-md overflow-x-auto bg-default/20 text-[0.85em]">
+				{children}
+			</pre>
+		),
 	hr: () => <hr className="my-3 border-current opacity-20" />,
 	table: ({ children }) => (
 		<div className="overflow-x-auto my-2">

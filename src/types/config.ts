@@ -23,6 +23,15 @@ export interface GlobalConfig {
      *  across the whole window chrome. When false, the app keeps the terminal
      *  theme's background and the sampling/polling is disabled. */
     enableColorSpread?: boolean;
+    /** How the app's light/dark appearance is decided. This controls only the
+     *  light/dark *rendering* of chrome (text, icons, glass, overlays); the
+     *  background *color* still follows the terminal / fullscreen TUI.
+     *  - "system"   → follow the OS light/dark preference
+     *  - "terminal" → derive from the terminal background color (legacy)
+     *  - "light"    → always light
+     *  - "dark"     → always dark
+     *  Default "terminal" preserves existing behavior. */
+    themeMode?: "system" | "terminal" | "light" | "dark";
     autoUpdateOnStartup?: boolean;
     /** When true, restore the main window to its last position on startup
      * (main window only; tear-off windows are positioned by their spawner). */

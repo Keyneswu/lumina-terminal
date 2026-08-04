@@ -134,6 +134,7 @@ export const DEFAULT_CONFIG: GlobalConfig = {
     showTabBar: false,
     copyWithCtrl: false,
     enableColorSpread: false,
+    themeMode: "terminal",
     autoUpdateOnStartup: true,
     rememberWindowPosition: false,
     rememberWindowSize: false,

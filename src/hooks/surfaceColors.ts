@@ -22,8 +22,16 @@ export interface SurfaceColors {
     accentOverlay: string;
 }
 
-export function useSurfaceColors(backgroundColor: string): SurfaceColors {
+export function useSurfaceColors(
+    backgroundColor: string,
+): SurfaceColors {
     return useMemo(() => {
+        // Derive light/dark from the bg's REAL luminance, not from the theme
+        // mode. Surface colors (text, borders, overlays) must stay legible
+        // against the actual background; forcing them to follow the mode while
+        // the bg disagrees (e.g. "always dark" + a light terminal bg) makes
+        // white text/overlays vanish on a light bg. The theme mode only drives
+        // HeroUI's `.dark` class (app-framework controls), not these.
         const dark = isColorDark(backgroundColor);
         const borderColor = adjustColor(backgroundColor, dark ? 20 : -20);
         const activeOverlay = dark

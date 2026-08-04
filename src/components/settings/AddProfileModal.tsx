@@ -88,7 +88,7 @@ export default function AddProfileModal({ isOpen, onOpenChange, onCreate, border
                                             >
                                                 <Cloud size={18} className="shrink-0 text-muted" />
                                                 <div className="flex flex-col min-w-0">
-                                                    <span className="text-medium font-semibold">{entry.host}</span>
+                                                    <span className="font-semibold">{entry.host}</span>
                                                     <span className="text-xs text-muted truncate">
                                                         {formatSshEntry(entry)}
                                                     </span>

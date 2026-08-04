@@ -10,7 +10,10 @@ import {glassSurface} from "../lib/glass.ts";
 import {whileHoverTap} from "../lib/motion.ts";
 import {useI18n} from "../hooks/i18n.tsx";
 import ShellIcon from "./ShellIcon.tsx";
+import AppIcon from "./AppIcon.tsx";
 import {ShellType} from "../lib/shellIcon.ts";
+import {AppIconId} from "../lib/appIcon.ts";
+import {isColorDark} from "../lib/color.ts";
 import {info} from "@tauri-apps/plugin-log";
 import {emit, emitTo, listen} from "@tauri-apps/api/event";
 import {cursorPosition, getCurrentWindow} from "@tauri-apps/api/window";
@@ -34,6 +37,10 @@ export interface TabInfo {
     /** Shell category used to pick the leading tab icon. Falls back to the
      * generic terminal icon when absent. Ignored for Settings/About tabs. */
     shellType?: ShellType;
+    /** App brand icon shown when a recognized app is running in this terminal.
+     * Takes precedence over {@link shellType}; absent → shell icon is used.
+     * Computed by App from the running command (see `lib/appIcon.ts`). */
+    appIcon?: AppIconId;
 }
 
 interface TabBarProps {
@@ -352,11 +359,20 @@ export default function TabBar(props: TabBarProps) {
                                         <Info size={14} className="shrink-0 mt-0.5" />
                                     )}
                                     {tab.id !== SETTINGS_TAB_ID && tab.id !== ABOUT_TAB_ID && (
-                                        <ShellIcon
-                                            shell={tab.shellType ?? "default"}
-                                            size={14}
-                                            className="shrink-0 mt-0.5"
-                                        />
+                                        tab.appIcon ? (
+                                            <AppIcon
+                                                app={tab.appIcon}
+                                                dark={isColorDark(backgroundColor)}
+                                                size={14}
+                                                className="shrink-0 mt-0.5"
+                                            />
+                                        ) : (
+                                            <ShellIcon
+                                                shell={tab.shellType ?? "default"}
+                                                size={14}
+                                                className="shrink-0 mt-0.5"
+                                            />
+                                        )
                                     )}
                                     <div className="flex flex-col min-w-0">
                                     <span

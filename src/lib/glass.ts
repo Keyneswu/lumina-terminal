@@ -88,6 +88,8 @@ export function glassSurface(
     supportsGlass: boolean,
     opts?: GlassSurfaceOptions,
 ): GlassStyle {
+    // Derive light/dark from the bg's real luminance — see useSurfaceColors
+    // for why surface colors must not follow the theme mode.
     const dark = isColorDark(bg);
     const blurPx = opts?.blurPx ?? defaultBlurPx();
     const saturate = opts?.saturate ?? defaultSaturate();
@@ -123,6 +125,9 @@ export function glassSurface(
  * A thin hairline border that reads on both light and dark bgs, derived from
  * the bg the surface overlays. Kept here so glass surfaces and their borders
  * stay in sync.
+ *
+ * @param darkOverride forces the light/dark decision (theme mode); omit to
+ *   derive from `bg`.
  */
 export function glassBorder(bg: string): string {
     const dark = isColorDark(bg);

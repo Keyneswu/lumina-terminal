@@ -153,7 +153,7 @@ export default function ProfileSettings({
                         }
                     }}
                     className="text-lg font-semibold mb-6 bg-transparent border-b outline-none w-full max-w-xs"
-                    style={{borderColor: "var(--color-default-200, #333)", color: "inherit"}}
+                    style={{borderColor, color: "inherit"}}
                 />
             ) : (
                 <h2

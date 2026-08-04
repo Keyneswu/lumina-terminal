@@ -14,6 +14,11 @@ export interface EffectiveTheme {
     bg: string | undefined;
     // Effective foreground color — a readable contrast color for bg.
     fg: string | undefined;
+    /** Resolved light/dark decision for the whole app. Comes from
+     *  {@link darkOverride} when set (theme mode = system/light/dark), otherwise
+     *  derived from {@link bg} via isColorDark (theme mode = terminal). Chrome
+     *  consumers should prefer this over re-deriving from bg. */
+    dark: boolean;
     /** True when `bg` comes from a fullscreen TUI's edge background (the TUI
      *  has "spread" its color across the whole window). Chrome uses this to
      *  skip its glass tint so the TUI's color passes through unmodified. */
@@ -39,6 +44,17 @@ export function useEffectiveTheme(
     /** When false, the TUI edge-background spread is disabled: edge reports are
      *  ignored and the effective theme falls back to the terminal theme. */
     enabled: boolean = true,
+    /** Forces the light/dark decision regardless of the background color, for
+     *  theme modes "system" / "light" / "dark". `null`/`undefined` = derive
+     *  from the background (theme mode "terminal", the legacy behavior). This
+     *  drives HeroUI's `.dark` class (app-framework controls). */
+    darkOverride: boolean | null = null,
+    /** Forces the effective background COLOR to this value, overriding both the
+     *  terminal theme bg and fullscreen-TUI edge spread. Used by theme modes
+     *  "system"/"light"/"dark" so the whole window (including the terminal
+     *  canvas) follows the mode, not just the chrome text. `null`/`undefined` =
+     *  bg follows the terminal/TUI (theme mode "terminal"). */
+    forceBg: string | null = null,
 ): EffectiveTheme & { setEdgeBg: (color: string | null) => void } {
     const [currentTheme, setCurrentTheme] = useState<ITheme | null>(null);
     // Uniform background color sampled from the active terminal's outer ring
@@ -64,14 +80,24 @@ export function useEffectiveTheme(
         setEdgeBg(null);
     }, [currentId]);
 
-    // Effective background = TUI edge color if present (and spread enabled),
-    // else terminal theme bg.
-    const activeEdgeBg = enabled ? edgeBg : null;
-    const effectiveBg = activeEdgeBg ?? currentTheme?.background;
-    // Effective foreground: when a TUI overrides the background, pick a
-    // readable contrast color for it instead of trusting the terminal theme's
-    // foreground (which may clash, e.g. black text on a now-dark TUI bg).
-    const effectiveFg = activeEdgeBg && effectiveBg
+    // Effective background. A forced bg (theme mode system/light/dark) wins
+    // over everything — the whole window, including the terminal canvas, takes
+    // that color so the mode is visually consistent. Otherwise: TUI edge color
+    // if present (and spread enabled), else terminal theme bg.
+    const activeEdgeBg = forceBg ? null : (enabled ? edgeBg : null);
+    const effectiveBg = forceBg ?? activeEdgeBg ?? currentTheme?.background;
+    // Resolved light/dark decision. With a dark override (theme mode system/
+    // light/dark) the rendering follows the mode even if the bg color says
+    // otherwise (e.g. a light TUI bg spreading while mode is "dark"). Without
+    // an override, derive from the bg as before.
+    const resolvedDark = darkOverride ?? isColorDark(effectiveBg ?? "#000000");
+    // Effective foreground: always pick a readable contrast color for the
+    // EFFECTIVE background, regardless of theme mode. Text legibility must
+    // follow the bg's real luminance — forcing fg to match the mode (e.g. white
+    // text under "always dark" while the bg is actually light) makes text
+    // unreadable. When a TUI overrides the bg, contrast against that; otherwise
+    // prefer the resolved contrast color, falling back to the theme's fg.
+    const effectiveFg = effectiveBg
         ? foregroundFor(effectiveBg)
         : currentTheme?.foreground;
     // Theme object with bg/fg overridden to the effective values, so children
@@ -80,23 +106,22 @@ export function useEffectiveTheme(
         ? {...currentTheme, background: effectiveBg ?? currentTheme.background, foreground: effectiveFg ?? currentTheme.foreground}
         : currentTheme;
 
-    // Sync HeroUI theme class with the effective background. When a fullscreen
-    // TUI sets its own background, the light/dark decision follows that color so
-    // text/icons stay legible against it.
+    // Sync HeroUI theme class with the resolved light/dark decision. When a
+    // fullscreen TUI sets its own background and no override is active, the
+    // decision follows that color; with an override it follows the mode.
     useEffect(() => {
-        const bg = effectiveBg;
-        if (!bg) return;
-        const dark = isColorDark(bg);
+        if (!effectiveBg) return;
         const root = document.documentElement;
-        root.classList.toggle("dark", dark);
-        root.classList.toggle("light", !dark);
-        root.setAttribute("data-theme", dark ? "dark" : "light");
-    }, [effectiveBg]);
+        root.classList.toggle("dark", resolvedDark);
+        root.classList.toggle("light", !resolvedDark);
+        root.setAttribute("data-theme", resolvedDark ? "dark" : "light");
+    }, [effectiveBg, resolvedDark]);
 
     return {
         theme: effectiveTheme,
         bg: effectiveBg,
         fg: effectiveFg,
+        dark: resolvedDark,
         isSpread: activeEdgeBg !== null,
         setEdgeBg,
     };

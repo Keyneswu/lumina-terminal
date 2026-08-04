@@ -12,6 +12,7 @@ import {profileWindowSize} from "../lib/terminalGeometry.ts";
 import {ChunkedWriter} from "../lib/chunkedWriter.ts";
 import {sampleEdgeBackground} from "../lib/edgeBackground.ts";
 import {loadBindings} from "../lib/bindings.ts";
+import {foregroundFor, isColorDark} from "../lib/color.ts";
 import type {Binding} from "../types/config.ts";
 import {Actions} from "../types/config.ts";
 import {isMacOS} from "../lib/platform.ts";
@@ -43,6 +44,11 @@ interface TermProps {
     // transparent and the chrome layer beneath shows through as a border.
     // Comes from App's effective bg (theme bg, or the TUI edge bg when spread).
     fillBg?: string;
+    // When set (theme mode system/light/dark), forces the terminal canvas to
+    // this background color, overriding the profile theme and fullscreen-TUI
+    // edge sampling. The foreground is auto-adjusted for readability. null =
+    // canvas follows the profile/TUI as usual (theme mode "terminal").
+    forceBg?: string | null;
     // Pre-parsed bindings (merged defaults + user overrides), shared from App
     // so every terminal uses the same parsed set instead of re-parsing each.
     bindings: Binding[];
@@ -613,6 +619,11 @@ export default function Term(props : TermProps) {
     onEdgeRef.current = props.onEdgeBackgroundChange;
     const colorSpreadRef = useRef(config.enableColorSpread !== false);
     colorSpreadRef.current = config.enableColorSpread !== false;
+    // Forced bg (theme mode system/light/dark). When set, the canvas takes
+    // this color and TUI edge sampling is suppressed so a light TUI can't
+    // override a "always dark" window.
+    const forceBgRef = useRef<string | null>(props.forceBg ?? null);
+    forceBgRef.current = props.forceBg ?? null;
     // Background painted into this surface's padding region (the gap between the
     // canvas and the rounded shell). Follows the sampled edge color so the
     // terminal bleeds seamlessly to its own edges; falls back to props.fillBg
@@ -642,11 +653,25 @@ export default function Term(props : TermProps) {
             if (viewportEl && viewportEl.style.backgroundColor !== value) {
                 viewportEl.style.backgroundColor = value;
             }
-            if (term.current && term.current.options.theme?.background !== value) {
-                term.current.options.theme = {
-                    ...term.current.options.theme,
-                    background: value,
-                };
+            if (term.current) {
+                const cur = term.current.options.theme;
+                const bgChanged = cur?.background !== value;
+                // If the new background and the current foreground fall on the
+                // same luminance side, text would be unreadable — pick a
+                // contrasting foreground. This covers the forced-bg case where
+                // a light-theme profile (dark fg) is repainted onto a dark bg.
+                const fg = cur?.foreground;
+                const contrastFg = fg && isColorDark(value) === isColorDark(fg)
+                    ? foregroundFor(value)
+                    : fg;
+                const fgChanged = contrastFg !== fg;
+                if (bgChanged || fgChanged) {
+                    term.current.options.theme = {
+                        ...cur,
+                        background: value,
+                        ...(fgChanged ? {foreground: contrastFg} : {}),
+                    };
+                }
             }
             setContainerBg(next);
         };
@@ -659,6 +684,21 @@ export default function Term(props : TermProps) {
                 if (lastApplied !== null) {
                     lastApplied = null;
                     apply(null);
+                }
+                if (lastReported !== null) {
+                    lastReported = null;
+                    onEdgeRef.current?.(null);
+                }
+                return;
+            }
+            // Forced bg (theme mode system/light/dark): paint the canvas with
+            // the forced color and suppress both TUI edge sampling and chrome
+            // spread, so a light TUI can't break an "always dark" window.
+            const forced = forceBgRef.current;
+            if (forced) {
+                if (lastApplied !== forced) {
+                    lastApplied = forced;
+                    apply(forced);
                 }
                 if (lastReported !== null) {
                     lastReported = null;

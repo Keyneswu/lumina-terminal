@@ -17,11 +17,17 @@ interface GeneralDraft {
     closeWindowOnLastTab: boolean;
     defaultProfile: string;
     copyWithCtrl: boolean;
+    themeMode: "system" | "terminal" | "light" | "dark";
     enableColorSpread: boolean;
     autoUpdateOnStartup: boolean;
     rememberWindowPosition: boolean;
     rememberWindowSize: boolean;
 }
+
+/** Theme-mode options shown in the Select below. Kept here (near the only
+ *  consumer) rather than in constants.ts because the ids + labels are purely a
+ *  settings-UI concern. Order is the display order. */
+const THEME_MODES = ["system", "terminal", "light", "dark"] as const;
 
 export default function GeneralSettings({borderColor, openAbout}: {borderColor: string, openAbout: () => void}) {
     const {config, updateConfig} = useGlobalConfig();
@@ -41,6 +47,7 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
         closeWindowOnLastTab: config.closeWindowOnLastTab !== false,
         defaultProfile: currentDefault,
         copyWithCtrl: config.copyWithCtrl ?? false,
+        themeMode: config.themeMode ?? "terminal",
         enableColorSpread: config.enableColorSpread !== false,
         autoUpdateOnStartup: config.autoUpdateOnStartup !== false,
         rememberWindowPosition: config.rememberWindowPosition ?? false,
@@ -56,6 +63,7 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
                 showTabBar: d.showTabBar,
                 closeWindowOnLastTab: d.closeWindowOnLastTab,
                 copyWithCtrl: d.copyWithCtrl,
+                themeMode: d.themeMode,
                 enableColorSpread: d.enableColorSpread,
                 autoUpdateOnStartup: d.autoUpdateOnStartup,
                 rememberWindowPosition: d.rememberWindowPosition,
@@ -72,7 +80,7 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
             }
             updateConfig(updated);
         },
-        [config.language, config.showTabBar, config.closeWindowOnLastTab, config.copyWithCtrl, config.enableColorSpread, config.autoUpdateOnStartup, config.rememberWindowPosition, config.rememberWindowSize, currentDefault],
+        [config.language, config.showTabBar, config.closeWindowOnLastTab, config.copyWithCtrl, config.themeMode, config.enableColorSpread, config.autoUpdateOnStartup, config.rememberWindowPosition, config.rememberWindowSize, currentDefault],
     );
 
     return (
@@ -241,6 +249,37 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
                     </SettingRow>
                 )}
 
+                {/* Theme Mode: how the app's light/dark appearance is decided.
+                    Controls only rendering (text/icons/glass); the background
+                    color still follows the terminal/TUI. */}
+                <SettingRow
+                    label={<Label>{t["Theme Mode"]}</Label>}
+                    description={t["Decide light/dark appearance: follow the OS, the terminal background, or force one"]}
+                >
+                    <Select
+                        selectedKey={draft.themeMode}
+                        onSelectionChange={(key) => {
+                            if (key) {
+                                setDraft((prev) => ({...prev, themeMode: key as GeneralDraft["themeMode"]}));
+                            }
+                        }}
+                    >
+                        <Select.Trigger>
+                            <Select.Value />
+                            <Select.Indicator />
+                        </Select.Trigger>
+                        <Select.Popover>
+                            <ListBox>
+                                {THEME_MODES.map((mode) => (
+                                    <ListBox.Item id={mode} key={mode} textValue={mode}>
+                                        {themeModeLabel(mode, t)}
+                                    </ListBox.Item>
+                                ))}
+                            </ListBox>
+                        </Select.Popover>
+                    </Select>
+                </SettingRow>
+
                 {/* Color spread: let a fullscreen TUI's background bleed to the
                     window edges. */}
                 <SettingRow
@@ -278,4 +317,14 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
             </div>
         </SettingsShell>
     );
+}
+
+/** Map a theme-mode id to its localized display name for the Select. */
+function themeModeLabel(mode: "system" | "terminal" | "light" | "dark", t: ReturnType<typeof useI18n>): string {
+    switch (mode) {
+        case "system": return t["Follow System"];
+        case "terminal": return t["Follow Terminal"];
+        case "light": return t["Always Light"];
+        case "dark": return t["Always Dark"];
+    }
 }

@@ -131,7 +131,10 @@ export default function BindingsSettings({borderColor}: { borderColor: string })
         });
     }, [draft, hasConflicts, hasMissingAccelerator, updateConfig]);
 
-    const dangerColor = "var(--color-danger-500, #ef4444)";
+    // HeroUI semantic danger token — redefined under .dark so it tracks the
+    // theme mode (unlike the old --color-danger-500, which was never defined
+    // and silently fell back to a static #ef4444).
+    const dangerColor = "var(--danger)";
 
     return (
         <SettingsShell
@@ -308,10 +311,9 @@ export default function BindingsSettings({borderColor}: { borderColor: string })
                             {/* Shortcut display / recorder */}
                             {isRecording ? (
                                 <div
-                                    className="flex items-center gap-2 px-2.5 py-1.5 rounded-md text-sm select-none"
+                                    className="flex items-center gap-2 px-2.5 py-1.5 rounded-md text-sm select-none bg-default/10"
                                     style={{
                                         border: `1px solid ${borderColor}`,
-                                        background: "var(--color-default-100, transparent)",
                                         minWidth: 140,
                                         justifyContent: "space-between",
                                     }}
@@ -327,7 +329,7 @@ export default function BindingsSettings({borderColor}: { borderColor: string })
                                 </div>
                             ) : (
                                 <button
-                                    className="flex items-center gap-0.5 px-2.5 py-1.5 rounded-md cursor-pointer shrink-0 hover:bg-[var(--color-default-100,rgba(125,125,125,0.1))]"
+                                    className="flex items-center gap-0.5 px-2.5 py-1.5 rounded-md cursor-pointer shrink-0 hover:bg-default/10"
                                     style={{border: `1px solid ${borderColor}`}}
                                     onClick={() => setRecordingIndex(i)}
                                     title={t["Press keys to record..."]}
@@ -352,14 +354,14 @@ export default function BindingsSettings({borderColor}: { borderColor: string })
                             {!isRecording && (
                                 <div className="flex items-center gap-1 shrink-0">
                                     <button
-                                        className="cursor-pointer p-1.5 rounded-md hover:bg-[var(--color-default-100,rgba(125,125,125,0.1))] text-muted"
+                                        className="cursor-pointer p-1.5 rounded-md hover:bg-default/10 text-muted"
                                         onClick={() => setRecordingIndex(i)}
                                         title={t["Press keys to record..."]}
                                     >
                                         <Pencil size={15}/>
                                     </button>
                                     <button
-                                        className="cursor-pointer p-1.5 rounded-md hover:bg-[var(--color-default-100,rgba(125,125,125,0.1))] text-muted"
+                                        className="cursor-pointer p-1.5 rounded-md hover:bg-default/10 text-muted"
                                         onClick={() => handleDelete(i)}
                                         title={b.__isDefault ? t["Restore default"] : t["Delete"]}
                                     >
