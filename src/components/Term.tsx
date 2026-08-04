@@ -27,7 +27,7 @@ import {SerializeAddon} from "@xterm/addon-serialize";
 import {Unicode11Addon} from "@xterm/addon-unicode11";
 import {UnicodeGraphemesAddon} from "@xterm/addon-unicode-graphemes";
 import {IMAGE_ADDON_SETTINGS} from "../constants.ts";
-import {findFont, reattachTerminal, resizeTerminal, setThrottle, startTerminal, writeToTerminal} from "../lib/terminalApi.ts";
+import {reattachTerminal, resizeTerminal, setThrottle, startTerminal, writeToTerminal} from "../lib/terminalApi.ts";
 import {CurrentCommandParser} from "../lib/currentCommand.ts";
 
 let hasAppliedInitialWindowSize = false;
@@ -319,36 +319,22 @@ export default function Term(props : TermProps) {
             debug(`Terminal opened: id=${id}`);
         }
 
-        // Optional programming-ligature rendering. MUST load after open() — the
-        // character joiner needs terminal.element to exist. Uses the font's real
-        // GSUB table for precise, font-specific ligatures (Fira Code's `www`,
-        // `//`, JetBrains Mono's `==`, etc.): the Rust backend finds the font
-        // file by family name and returns its binary, then font-ligatures parses
-        // the GSUB `calt` lookups client-side via opentype.js. If the font can't
-        // be found, falls back to a hardcoded list of ~50 common ligatures.
-        //
-        // Dynamically imported: font-ligatures + opentype.js (~200 KB) are
-        // code-split so they only load when a profile has ligatures enabled.
-        if (profile.ligatures && profile.fontFamily) {
+        // Optional programming-ligature rendering. Deferred to after terminal
+        // startup so PTY spawn + first paint aren't blocked. Uses a module-level
+        // font cache (lib/ligatures.ts): if the global font was preloaded at app
+        // startup (config.tsx), the cache hit is instant and there's zero lag.
+        // Per-profile fonts that weren't preloaded are loaded on first use and
+        // then shared across all terminals using that font.
+        if (profile.ligatures) {
             const family = profile.fontFamily;
-            import("../lib/ligatures.ts").then(({enableLigatures}) => {
-                if (!term.current) return;
-                const fontData = findFont(family)
-                    .then((bytes) => bytes.length > 0 ? new Uint8Array(bytes).buffer : null)
-                    .catch(() => null);
-                enableLigatures(term.current, fontData);
-            }).catch((e) => {
-                info(`Failed to load ligatures module: ${e}`);
-            });
-        } else if (profile.ligatures) {
-            // No fontFamily set — can't find a font file, but still register the
-            // fallback joiner so common ligatures work regardless.
-            import("../lib/ligatures.ts").then(({enableLigatures}) => {
-                if (!term.current) return;
-                enableLigatures(term.current, Promise.resolve(null));
-            }).catch((e) => {
-                info(`Failed to load ligatures module: ${e}`);
-            });
+            setTimeout(() => {
+                import("../lib/ligatures.ts").then(({enableLigatures}) => {
+                    if (!term.current) return;
+                    enableLigatures(term.current, family);
+                }).catch((e) => {
+                    info(`Failed to load ligatures module: ${e}`);
+                });
+            }, 0);
         }
 
         // Load keybindings right after terminal is ready

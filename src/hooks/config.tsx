@@ -41,6 +41,15 @@ export function GlobalConfigProvider({ children }: { children: ReactNode }) {
             store.set("config", loadedConfig).then();
             info(`Config loaded: language=${loadedConfig.language}, profiles=${loadedConfig.profiles.length}`);
             setIsLoading(false);
+            // Preload the global profile's font for ligature support so the
+            // first terminal (and all subsequent ones sharing the global font)
+            // find it already parsed — no startup lag from findFont + loadBuffer.
+            // The module-level font cache in ligatures.ts dedupes this.
+            if (loadedConfig.globalProfile?.ligatures && loadedConfig.globalProfile?.fontFamily) {
+                import("../lib/ligatures.ts")
+                    .then(({preloadFont}) => preloadFont(loadedConfig.globalProfile!.fontFamily!))
+                    .catch(() => {});
+            }
         };
         loadConfig().catch((e) => {
             error(`Failed to load config: ${e}`).catch(() => {});
