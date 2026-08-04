@@ -119,6 +119,14 @@ Lumina Terminal 的渲染管线针对高负载输出做了调优 —— 大文�
 
 作为 xterm.js + webview 架构，Lumina 与 Alacritty 的差距在预期范围内，但**在大多数 cell/scroll 测试中明显优于 Tabby 和 VS Code 内置终端** —— 快约 1.5-6 倍 —— 而它们运行的是同样的底层 Web 渲染技术栈。
 
+作为纯渲染压力测试，[DOOM Fire](https://github.com/const-void/DOOM-fire-node)（持续全屏 ANSI 动画，模拟 DOOM 火焰效果）测量持续帧率（越高越好）：
+
+| | Lumina | Alacritty | Tabby | VS Code |
+|---|-------:|----------:|------:|--------:|
+| fps | ~320 | ~1800 | ~175 | ~60 |
+
+在持续重度重绘下，Lumina 保持着 **Tabby 和 VS Code 约 5 倍的帧率** —— WebGL 渲染器和时间片输出管线让动画保持流畅，而其他 Web 技术终端会出现卡顿。
+
 ## 开发
 1. 克隆此仓库并进入目录
 ```shell
