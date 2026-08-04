@@ -133,7 +133,7 @@ export const DEFAULT_CONFIG: GlobalConfig = {
     profiles: [],
     showTabBar: false,
     copyWithCtrl: false,
-    enableColorSpread: true,
+    enableColorSpread: false,
     autoUpdateOnStartup: true,
     rememberWindowPosition: false,
     rememberWindowSize: false,
