@@ -88,7 +88,8 @@ curl -fsSL https://raw.githubusercontent.com/iewnfod/lumina-terminal/master/inst
 * Custom terminal themes via JSON files (xterm.js ITheme format) with live color preview
 
 ### i18n
-* English & Simplified Chinese (简体中文)
+* English
+* Simplified Chinese (简体中文)
 
 ### Welcome Wizard
 * First-run onboarding with language selection, profile creation, and a confetti finish
@@ -126,6 +127,8 @@ For a pure rendering-stress test, [DOOM Fire](https://github.com/const-void/DOOM
 | fps | ~320 | ~1800 | ~175 | ~60 |
 
 Lumina sustains **~5× the framerate of Tabby and VS Code** under continuous heavy repaint — the WebGL renderer and time-sliced output pipeline keep the animation smooth where other web-tech terminals stutter.
+
+> Tested on `AMD Ryzen™ AI 9 HX 370 w`, `NVIDIA GeForce RTX™ 5080 Laptop GPU`, Arch Linux.
 
 ## Development
 1. Clone the repo and enter it.

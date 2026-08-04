@@ -88,7 +88,8 @@ curl -fsSL https://raw.githubusercontent.com/iewnfod/lumina-terminal/master/inst
 * 自定义终端主题，通过 JSON 文件加载（xterm.js ITheme 格式），支持实时颜色预览
 
 ### 国际化
-* 英语 & 简体中文
+* 英语
+* 简体中文
 
 ### 欢迎向导
 * 首次启动引导流程：语言选择 → 创建配置文件 → 撒花完成
@@ -126,6 +127,8 @@ Lumina Terminal 的渲染管线针对高负载输出做了调优 —— 大文�
 | fps | ~320 | ~1800 | ~175 | ~60 |
 
 在持续重度重绘下，Lumina 保持着 **Tabby 和 VS Code 约 5 倍的帧率** —— WebGL 渲染器和时间片输出管线让动画保持流畅，而其他 Web 技术终端会出现卡顿。
+
+> 测试平台：`AMD Ryzen™ AI 9 HX 370 w`, `NVIDIA GeForce RTX™ 5080 Laptop GPU`, Arch Linux
 
 ## 开发
 1. 克隆此仓库并进入目录
