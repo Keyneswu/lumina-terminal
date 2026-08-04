@@ -211,6 +211,26 @@ export default function RenderSettings({
                     </Switch.Control>
                 </Switch>
             </div>
+
+            {/* Grapheme Clusters (experimental) */}
+            <div className="flex flex-row items-center justify-between">
+                <div className="flex flex-col gap-0.5">
+                    <Label className="cursor-pointer">
+                        {t["Grapheme Clusters"]}
+                    </Label>
+                    <p className="text-xs text-muted">
+                        {t["grapheme clusters description"]}
+                    </p>
+                </div>
+                <Switch
+                    isSelected={draft.graphemeClusters ?? false}
+                    onChange={(v) => updateDraft({ graphemeClusters: v })}
+                >
+                    <Switch.Control>
+                        <Switch.Thumb />
+                    </Switch.Control>
+                </Switch>
+            </div>
         </div>
     );
 

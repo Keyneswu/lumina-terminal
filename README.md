@@ -52,6 +52,7 @@ curl -fsSL https://raw.githubusercontent.com/iewnfod/lumina-terminal/master/inst
 * Configurable shell per profile — use PowerShell, WSL, Git Bash, or any executable
 * [WebGL renderer](https://github.com/xtermjs/xterm.js/tree/master/addons/addon-webgl) for GPU-accelerated rendering (optional per-profile)
 * [Unicode 11 width rules](https://github.com/xtermjs/xterm.js/tree/master/addons/addon-unicode11) — correct column widths for modern emoji and symbols (xterm ships only Unicode 6 by default)
+* Optional [grapheme-cluster](https://github.com/xtermjs/xterm.js/tree/master/addons/addon-unicode-graphemes) rendering (experimental) — correctly clusters complex emoji ZWJ sequences, flags, and combining marks that Unicode 11 still splits
 * Chunked output batching — smoothly handles large text dumps without blocking the UI
 * Drag and drop files into the terminal to insert their paths
 * Auto-resize terminal dimensions when the window or container changes
@@ -102,18 +103,18 @@ Benchmarks below use [vtebench](https://github.com/alacritty/vtebench) (the same
 
 | Benchmark | Lumina | Alacritty | Tabby | VS Code |
 |-----------|-------:|----------:|------:|--------:|
-| cursor_motion | 44ms | 9ms | 89ms | 165ms |
-| light_cells | 26ms | 8ms | 60ms | 138ms |
-| medium_cells | 65ms | 8ms | 73ms | 320ms |
-| dense_cells | 104ms | 25ms | 247ms | 473ms |
-| scrolling_fullscreen | 37ms | 10ms | 74ms | 139ms |
+| cursor_motion | 46ms | 9ms | 89ms | 165ms |
+| light_cells | 29ms | 8ms | 60ms | 138ms |
+| medium_cells | 64ms | 8ms | 73ms | 320ms |
+| dense_cells | 116ms | 25ms | 247ms | 473ms |
+| scrolling_fullscreen | 70ms | 10ms | 74ms | 139ms |
 | scrolling | 357ms | 158ms | 198ms | 730ms |
-| scrolling_top_region | 407ms | 172ms | 191ms | 1296ms |
-| scrolling_bottom_region | 417ms | 128ms | 198ms | 1250ms |
-| scrolling_top_small_region | 404ms | 138ms | 175ms | 1391ms |
-| scrolling_bottom_small_region | 1430ms | 190ms | 181ms | 1364ms |
-| sync_medium_cells | 63ms | 9ms | 72ms | 164ms |
-| unicode | 45ms | 7ms | 73ms | 56ms |
+| scrolling_top_region | 425ms | 172ms | 191ms | 1296ms |
+| scrolling_bottom_region | 304ms | 128ms | 198ms | 1250ms |
+| scrolling_top_small_region | 400ms | 138ms | 175ms | 1391ms |
+| scrolling_bottom_small_region | 309ms | 190ms | 181ms | 1364ms |
+| sync_medium_cells | 65ms | 9ms | 72ms | 164ms |
+| unicode | 29ms | 7ms | 73ms | 56ms |
 
 Lumina trails Alacritty by the expected margin for an xterm.js + webview architecture, but **comfortably outperforms both Tabby and the VS Code integrated terminal** — roughly 1.5-6× faster on most cell/scroll benchmarks — while running the same underlying web rendering stack.
 

@@ -25,6 +25,7 @@ import {openUrl} from "@tauri-apps/plugin-opener";
 import {ImageAddon} from "@xterm/addon-image";
 import {SerializeAddon} from "@xterm/addon-serialize";
 import {Unicode11Addon} from "@xterm/addon-unicode11";
+import {UnicodeGraphemesAddon} from "@xterm/addon-unicode-graphemes";
 import {IMAGE_ADDON_SETTINGS} from "../constants.ts";
 import {reattachTerminal, resizeTerminal, setThrottle, startTerminal, writeToTerminal} from "../lib/terminalApi.ts";
 import {CurrentCommandParser} from "../lib/currentCommand.ts";
@@ -272,6 +273,21 @@ export default function Term(props : TermProps) {
         const unicode11Addon = new Unicode11Addon();
         term.current.loadAddon(unicode11Addon);
         term.current.unicode.activeVersion = "11";
+
+        // Optional grapheme-cluster width rules (experimental). Unicode 11 still
+        // splits wide grapheme clusters — emoji ZWJ sequences (🏳️‍🌈), flag pairs,
+        // combining marks — each part on its own cell, which mis-aligns them.
+        // This addon switches to a grapheme-based provider ("15-graphemes") that
+        // treats such a cluster as one cell. On activate it remembers the current
+        // version ("11") and restores it on dispose. Higher CPU than 11, so it's
+        // opt-in via the profile's `graphemeClusters` render setting.
+        if (profile.graphemeClusters) {
+            try {
+                term.current.loadAddon(new UnicodeGraphemesAddon());
+            } catch (e) {
+                info(`Grapheme clusters addon failed to load: ${e}`);
+            }
+        }
 
         const imageAddon = new ImageAddon(IMAGE_ADDON_SETTINGS);
         term.current.loadAddon(imageAddon);

@@ -51,6 +51,8 @@ curl -fsSL https://raw.githubusercontent.com/iewnfod/lumina-terminal/master/inst
 * **撕离标签页** — 将标签页移到独立窗口（`Ctrl+Shift+L` / `Cmd+Shift+L`），同时保留运行中的进程和滚动历史
 * 每个配置文件可指定不同的 Shell — 支持 PowerShell、WSL、Git Bash 等任意可执行文件
 * [WebGL 渲染器](https://github.com/xtermjs/xterm.js/tree/master/addons/addon-webgl) — GPU 加速渲染（每个配置文件可独立开关）
+* [Unicode 11 宽度规则](https://github.com/xtermjs/xterm.js/tree/master/addons/addon-unicode11) — 正确计算现代 emoji 和符号的列宽（xterm 默认仅内置 Unicode 6）
+* 可选的[字形簇](https://github.com/xtermjs/xterm.js/tree/master/addons/addon-unicode-graphemes)渲染（实验性）— 正确聚类 Unicode 11 仍会拆分的复杂 emoji ZWJ 序列、旗帜和组合字符
 * 分块批量输出 — 流畅处理大文本输出，不阻塞 UI
 * 拖放文件到终端即可插入文件路径
 * 窗口或容器大小变化时自动调整终端尺寸
@@ -101,18 +103,18 @@ Lumina Terminal 的渲染管线针对高负载输出做了调优 —— 大文�
 
 | 测试 | Lumina | Alacritty | Tabby | VS Code |
 |------|-------:|----------:|------:|--------:|
-| cursor_motion | 44ms | 9ms | 89ms | 165ms |
-| light_cells | 26ms | 8ms | 60ms | 138ms |
-| medium_cells | 65ms | 8ms | 73ms | 320ms |
-| dense_cells | 104ms | 25ms | 247ms | 473ms |
-| scrolling_fullscreen | 37ms | 10ms | 74ms | 139ms |
+| cursor_motion | 46ms | 9ms | 89ms | 165ms |
+| light_cells | 29ms | 8ms | 60ms | 138ms |
+| medium_cells | 64ms | 8ms | 73ms | 320ms |
+| dense_cells | 116ms | 25ms | 247ms | 473ms |
+| scrolling_fullscreen | 70ms | 10ms | 74ms | 139ms |
 | scrolling | 357ms | 158ms | 198ms | 730ms |
-| scrolling_top_region | 407ms | 172ms | 191ms | 1296ms |
-| scrolling_bottom_region | 417ms | 128ms | 198ms | 1250ms |
-| scrolling_top_small_region | 404ms | 138ms | 175ms | 1391ms |
-| scrolling_bottom_small_region | 1430ms | 190ms | 181ms | 1364ms |
-| sync_medium_cells | 63ms | 9ms | 72ms | 164ms |
-| unicode | 45ms | 7ms | 73ms | 56ms |
+| scrolling_top_region | 425ms | 172ms | 191ms | 1296ms |
+| scrolling_bottom_region | 304ms | 128ms | 198ms | 1250ms |
+| scrolling_top_small_region | 400ms | 138ms | 175ms | 1391ms |
+| scrolling_bottom_small_region | 309ms | 190ms | 181ms | 1364ms |
+| sync_medium_cells | 65ms | 9ms | 72ms | 164ms |
+| unicode | 29ms | 7ms | 73ms | 56ms |
 
 作为 xterm.js + webview 架构，Lumina 与 Alacritty 的差距在预期范围内，但**在大多数 cell/scroll 测试中明显优于 Tabby 和 VS Code 内置终端** —— 快约 1.5-6 倍 —— 而它们运行的是同样的底层 Web 渲染技术栈。
 

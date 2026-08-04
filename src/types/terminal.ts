@@ -19,6 +19,11 @@ export interface SSHHostEntry {
 export interface TerminalRenderOptions extends ITerminalOptions {
     cols?: number; rows?: number;
     webgl?: boolean;
+    /** Enable grapheme-cluster unicode width rules (xterm.js addon-unicode-
+     * graphemes). Experimental: correctly measures complex emoji (ZWJ sequences,
+     * combining marks) that Unicode 11 still splits, at the cost of higher CPU.
+     * Off by default; when on it supersedes the Unicode 11 width table. */
+    graphemeClusters?: boolean;
     padding?: TerminalPadding;
     themePath?: string;
     fontStyle?: FontStyle;
