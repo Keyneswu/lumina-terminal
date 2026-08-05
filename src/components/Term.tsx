@@ -345,22 +345,23 @@ export default function Term(props : TermProps) {
             debug(`Terminal opened: id=${id}`);
         }
 
-        // Optional programming-ligature rendering. Deferred to after terminal
-        // startup so PTY spawn + first paint aren't blocked. Uses a module-level
-        // font cache (lib/ligatures.ts): if the global font was preloaded at app
-        // startup (config.tsx), the cache hit is instant and there's zero lag.
-        // Per-profile fonts that weren't preloaded are loaded on first use and
-        // then shared across all terminals using that font.
+        // Optional programming-ligature rendering. Kicked off right after
+        // term.open() — the dynamic import is itself async, so it doesn't block
+        // this synchronous path, and the ~50ms font parse (loadBuffer, inside
+        // lib/ligatures.ts) lands inside the PTY spawn + IPC round-trip window,
+        // where the main thread is otherwise idle waiting for first output.
+        // The module-level font cache means a preloaded global font (warmed at
+        // app startup in config.tsx) is an instant cache hit. registerCharacter
+        // Joiner installs synchronously and serves fallback ranges immediately;
+        // the real font swaps in lazily on the next natural render.
         if (profile.ligatures) {
             const family = profile.fontFamily;
-            setTimeout(() => {
-                import("../lib/ligatures.ts").then(({enableLigatures}) => {
-                    if (!term.current) return;
-                    enableLigatures(term.current, family);
-                }).catch((e) => {
-                    info(`Failed to load ligatures module: ${e}`);
-                });
-            }, 0);
+            import("../lib/ligatures.ts").then(({enableLigatures}) => {
+                if (!term.current) return;
+                enableLigatures(term.current, family);
+            }).catch((e) => {
+                info(`Failed to load ligatures module: ${e}`);
+            });
         }
 
         // Load keybindings right after terminal is ready
@@ -403,7 +404,7 @@ export default function Term(props : TermProps) {
         // the same OSC parse → writer.push the old `term-write` event
         // listener did.
         const outputChannel = new Channel<string>();
-        outputChannel.onmessage = (data) => {
+        outputChannel.onmessage = (data: string) => {
             if (term.current && data) {
                 // Parse shell-integration sequences BEFORE writing to xterm;
                 // xterm drops unknown OSC, so the visible output is unaffected.

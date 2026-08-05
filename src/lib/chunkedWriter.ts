@@ -69,33 +69,47 @@ import {warn} from "@tauri-apps/plugin-log";
  */
 
 /**
- * Backpressure watermarks on xterm's *in-flight* (handed to term.write but not
- * yet parsed) byte count, in UTF-16 code units (a close proxy for bytes). When
- * in-flight crosses HIGH the writer asks the backend to stop reading; once
- * xterm's callbacks bring it back under LOW the brake is released. Hysteresis
- * (HIGH != LOW) avoids on/off thrash around a single point.
+ * Two independent backpressure signals, each protecting a different layer:
  *
- * These are deliberately TIGHT (hundreds of KB, not MiB). xterm parses heavy
- * ANSI/unicode at roughly ~800 KB/s, so a wide band (e.g. 8 MiB → 2 MiB) makes
- * one backpressure cycle last seconds — the reader stalls while xterm chews
- * through MiB, producing the bimodal latency seen in vtebench scrolling. A
- * tight band (256 KB → 128 KB) keeps each cycle to ~150 ms: the brake engages
- * and releases so fast that output flows smoothly instead of in stop-and-go
- * bursts. xterm's pending buffer never exceeds MAX_INFLIGHT, so this is also
- * far below its 47 MiB discard limit — memory is safer, not riskier.
+ * 1. **`inFlight` watermarks** (THROTTLE_HIGH/LOW) — bytes handed to
+ *    `term.write` whose xterm parse callback hasn't fired yet. Protects
+ *    xterm's internal WriteBuffer (hard limit ~47 MiB, after which it THROWS
+ *    "write data discarded"). This is the layer the original backpressure
+ *    covered.
  *
- * Tunable: widen both if throughput drops on a fast GPU; narrow for smoother
- * latency on a slow one.
+ * 2. **`pendingBytes` watermarks** (PENDING_HIGH/LOW) — total bytes sitting in
+ *    this writer's `pending` queue, i.e. data the backend already pushed over
+ *    the IPC Channel that xterm hasn't even SEEN yet. Protects a different and
+ *    subtler limit: Tauri's `Channel` reorders out-of-order messages into a
+ *    sparse `_pendingMessages[index]` array on the JS heap. Under high
+ *    throughput the reader can outrun the frontend so messages arrive out of
+ *    order, and that reordering buffer grows unbounded — observed as a memory
+ *    leak / GC-storm freeze in release builds (where xterm is fast enough that
+ *    the in-flight signal alone rarely trips). `pendingBytes` is the direct
+ *    proxy for that heap pressure, so backpressuring on it keeps the IPC
+ *    stream ordered and the reordering buffer near-empty.
+ *
+ * Backpressure engages when EITHER signal crosses its HIGH watermark; it only
+ * releases once BOTH have drained below their LOW watermark. Hysteresis per
+ * signal (HIGH != LOW) avoids on/off thrash.
+ *
+ * Tunable: widen if throughput drops on a fast GPU; narrow for smoother latency
+ * on a slow one. The two bands are intentionally staggered (in-flight tighter
+ * than pending) so the xterm-parse layer trips first under mixed load.
  */
 const THROTTLE_HIGH = 256 * 1024;   // 256 KiB in-flight → apply backpressure
 const THROTTLE_LOW = 128 * 1024;    // 128 KiB in-flight → release backpressure
+const PENDING_HIGH = 512 * 1024;    // 512 KiB queued → apply backpressure
+const PENDING_LOW = 256 * 1024;     // 256 KiB queued → release backpressure
 
 /**
  * Don't hand xterm more than this many bytes in-flight at once. Caps xterm's
  * internal pending buffer well below its 47 MiB discard limit and keeps GC
- * pressure low. Drain stops at this ceiling and resumes on the next parse
- * callback, so this acts as a natural pacer: feed a chunk → xterm parses a
- * chunk → callback → feed the next.
+ * pressure low. This is the per-drain ceiling on the xterm-parse layer; the
+ * IPC/heap layer is governed separately by the `pendingBytes` watermarks
+ * above. Drain stops at this ceiling and resumes on the next parse callback,
+ * so this acts as a natural pacer: feed a chunk → xterm parses a chunk →
+ * callback → feed the next.
  */
 const MAX_INFLIGHT = 512 * 1024;   // 512 KiB ceiling on in-flight writes
 
@@ -117,6 +131,13 @@ export class ChunkedWriter {
     private offset = 0;
     /** Bytes handed to `term.write` whose parse callback hasn't fired yet. */
     private inFlight = 0;
+    /**
+     * Total bytes currently sitting in `pending` (data the backend pushed over
+     * the IPC Channel that xterm hasn't seen yet). Direct proxy for the
+     * Channel→JS heap pressure that Tauri's message-reordering buffer turns
+     * into a memory leak under high throughput. See PENDING_HIGH/LOW.
+     */
+    private pendingBytes = 0;
     private scheduled = false;
     /** Whether the backend reader is currently held in backpressure. */
     private throttled = false;
@@ -171,9 +192,14 @@ export class ChunkedWriter {
      */
     private onChunkParsed = (len: number): void => {
         this.inFlight -= len;
-        // Release backpressure once xterm's in-flight backlog drains below the
-        // low watermark. Hysteresis vs the HIGH threshold prevents on/off thrash.
-        if (this.throttled && this.inFlight <= THROTTLE_LOW) {
+        // Release backpressure only once BOTH layers have drained below their
+        // low watermarks. Engaging on either signal but releasing on both keeps
+        // the protective brake on as long as either layer is under pressure
+        // (e.g. xterm caught up but the pending queue is still full, or vice
+        // versa). Hysteresis per signal prevents on/off thrash.
+        if (this.throttled
+            && this.inFlight <= THROTTLE_LOW
+            && this.pendingBytes <= PENDING_LOW) {
             this.throttled = false;
             this.onThrottle?.(false);
         }
@@ -184,6 +210,16 @@ export class ChunkedWriter {
     /** Enqueue a decoded string chunk of PTY output for writing. */
     push(data: string): void {
         this.pending.push(data);
+        this.pendingBytes += data.length;
+        // Engage backpressure from the IPC/heap signal immediately — don't wait
+        // for drain(). Under high throughput the Channel can pile megabytes
+        // into our queue (and Tauri's reordering buffer) before a single drain
+        // tick runs, which is exactly the leak we're preventing. Checking here
+        // caps the queue the moment data lands.
+        if (!this.throttled && this.pendingBytes >= PENDING_HIGH) {
+            this.throttled = true;
+            this.onThrottle?.(true);
+        }
         this.schedule();
     }
 
@@ -203,6 +239,7 @@ export class ChunkedWriter {
         this.pending.length = 0;
         this.head = 0;
         this.offset = 0;
+        this.pendingBytes = 0;
         this.scheduled = false;
         // Release any held backpressure so the backend reader doesn't stay
         // paused forever after the writer is gone. inFlight is left nonzero —
@@ -263,11 +300,15 @@ export class ChunkedWriter {
             // small relative to the live tail).
             if (this.head > 256) this.compact();
 
-            // Apply backpressure BEFORE handing xterm the chunk: once the
-            // in-flight total crosses HIGH, tell the backend to pause reading so
-            // it doesn't keep shoving data at us while xterm digests. Checked
-            // per chunk (cheap — a counter compare) so the brake engages early.
+            // Move `taken` bytes from the pending queue (IPC/heap layer) into
+            // xterm's in-flight budget (parse layer): decrement pendingBytes,
+            // increment inFlight. inFlight's HIGH check here is the parse-layer
+            // trip; pendingBytes's HIGH check already fired in push() the moment
+            // data landed, so we only re-check it on the release side
+            // (onChunkParsed). Both layers must be clear of their LOW watermark
+            // before backpressure releases.
             this.inFlight += taken;
+            this.pendingBytes -= taken;
             if (!this.throttled && this.inFlight >= THROTTLE_HIGH) {
                 this.throttled = true;
                 this.onThrottle?.(true);

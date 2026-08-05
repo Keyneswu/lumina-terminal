@@ -297,6 +297,19 @@ pub fn start_terminal(
                     let high_throughput = data_driven_high && !force_low;
 
                     if high_throughput {
+                        // Backpressure fast-path: if the frontend has already
+                        // signalled it's overwhelmed, do NOT flush — flushing
+                        // would push more messages onto the IPC Channel, which
+                        // is exactly the heap pressure we're being asked to
+                        // relieve (Tauri's out-of-order reordering buffer grows
+                        // on the JS side). Hold `pending` here and let the loop
+                        // top spin in the `while throttled` wait until the
+                        // frontend catches up, then flush the accumulated bytes
+                        // in one go once the brake releases. The PTY pipe buffer
+                        // backpressures the child meanwhile, so nothing is lost.
+                        if throttled.load(Ordering::Relaxed) {
+                            continue;
+                        }
                         // Coalesce: flush only once we've accumulated enough, or
                         // when this read was partial (pipe likely drained →
                         // finish the burst so the tail isn't delayed until the

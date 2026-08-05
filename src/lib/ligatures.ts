@@ -136,9 +136,14 @@ export function enableLigatures(
     if (family) {
         getOrLoadFont(family).then((f) => {
             font = f;
-            // Force a re-render so existing text picks up real ligatures (the
-            // joiner is called lazily during render, so refresh forces it).
-            if (f) term.refresh(0, term.rows - 1);
+            // NOTE: deliberately NOT calling term.refresh() here. The character
+            // joiner is lazy — xterm re-invokes it on the next natural render
+            // (scroll, new output, cursor move, keystroke), so real ligatures
+            // replace the fallback ranges within a frame or two with zero extra
+            // cost. A forced full-viewport refresh here would make the joiner
+            // re-evaluate every visible line in one synchronous burst, which is
+            // exactly the "stutter on ligature load" we're avoiding. This lets
+            // the switch happen quietly spread over normal rendering instead.
         });
     }
 
