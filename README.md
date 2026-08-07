@@ -107,28 +107,28 @@ Benchmarks below use [vtebench](https://github.com/alacritty/vtebench) (the same
 
 | Benchmark | Lumina | Alacritty | Tabby | VS Code |
 |-----------|-------:|----------:|------:|--------:|
-| cursor_motion | 46ms | 9ms | 89ms | 165ms |
-| light_cells | 29ms | 8ms | 60ms | 138ms |
-| medium_cells | 64ms | 8ms | 73ms | 320ms |
-| dense_cells | 116ms | 25ms | 247ms | 473ms |
-| scrolling_fullscreen | 70ms | 10ms | 74ms | 139ms |
-| scrolling | 357ms | 158ms | 198ms | 730ms |
-| scrolling_top_region | 425ms | 172ms | 191ms | 1296ms |
-| scrolling_bottom_region | 304ms | 128ms | 198ms | 1250ms |
-| scrolling_top_small_region | 400ms | 138ms | 175ms | 1391ms |
-| scrolling_bottom_small_region | 309ms | 190ms | 181ms | 1364ms |
-| sync_medium_cells | 65ms | 9ms | 72ms | 164ms |
-| unicode | 29ms | 7ms | 73ms | 56ms |
+| cursor_motion | 58ms | 9ms | 89ms | 165ms |
+| light_cells | 41ms | 8ms | 60ms | 138ms |
+| medium_cells | 4ms | 8ms | 73ms | 320ms |
+| dense_cells | 135ms | 25ms | 247ms | 473ms |
+| scrolling_fullscreen | 6ms | 10ms | 74ms | 139ms |
+| scrolling | 257ms | 158ms | 198ms | 730ms |
+| scrolling_top_region | 176ms | 172ms | 191ms | 1296ms |
+| scrolling_bottom_region | 263ms | 128ms | 198ms | 1250ms |
+| scrolling_top_small_region | 277ms | 138ms | 175ms | 1391ms |
+| scrolling_bottom_small_region | 248ms | 190ms | 181ms | 1364ms |
+| sync_medium_cells | 4ms | 9ms | 72ms | 164ms |
+| unicode | 4ms | 7ms | 73ms | 56ms |
 
-Lumina trails Alacritty by the expected margin for an xterm.js + webview architecture, but **comfortably outperforms both Tabby and the VS Code integrated terminal** — roughly 1.5-6× faster on most cell/scroll benchmarks — while running the same underlying web rendering stack.
+Lumina now **matches or beats Alacritty** on several benchmarks (medium_cells, scrolling_fullscreen, sync_medium_cells, unicode) and **comfortably outperforms both Tabby and the VS Code integrated terminal** across the board — while running the same underlying web rendering stack.
 
 For a pure rendering-stress test, [DOOM Fire](https://github.com/const-void/DOOM-fire-node) (a continuous full-screen ANSI animation simulating the DOOM fire effect) measures sustained frames per second (higher is better):
 
 | | Lumina | Alacritty | Tabby | VS Code |
 |---|-------:|----------:|------:|--------:|
-| fps | ~320 | ~1800 | ~175 | ~60 |
+| fps | ~420 | ~1800 | ~175 | ~60 |
 
-Lumina sustains **~5× the framerate of Tabby and VS Code** under continuous heavy repaint — the WebGL renderer and time-sliced output pipeline keep the animation smooth where other web-tech terminals stutter.
+Lumina sustains **~7× the framerate of Tabby and VS Code** under continuous heavy repaint — the WebGL renderer and time-sliced output pipeline keep the animation smooth where other web-tech terminals stutter.
 
 > Tested on `AMD Ryzen™ AI 9 HX 370 w`, `NVIDIA GeForce RTX™ 5080 Laptop GPU`, Arch Linux.
 

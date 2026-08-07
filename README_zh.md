@@ -107,28 +107,28 @@ Lumina Terminal 的渲染管线针对高负载输出做了调优 —— 大文�
 
 | 测试 | Lumina | Alacritty | Tabby | VS Code |
 |------|-------:|----------:|------:|--------:|
-| cursor_motion | 46ms | 9ms | 89ms | 165ms |
-| light_cells | 29ms | 8ms | 60ms | 138ms |
-| medium_cells | 64ms | 8ms | 73ms | 320ms |
-| dense_cells | 116ms | 25ms | 247ms | 473ms |
-| scrolling_fullscreen | 70ms | 10ms | 74ms | 139ms |
-| scrolling | 357ms | 158ms | 198ms | 730ms |
-| scrolling_top_region | 425ms | 172ms | 191ms | 1296ms |
-| scrolling_bottom_region | 304ms | 128ms | 198ms | 1250ms |
-| scrolling_top_small_region | 400ms | 138ms | 175ms | 1391ms |
-| scrolling_bottom_small_region | 309ms | 190ms | 181ms | 1364ms |
-| sync_medium_cells | 65ms | 9ms | 72ms | 164ms |
-| unicode | 29ms | 7ms | 73ms | 56ms |
+| cursor_motion | 58ms | 9ms | 89ms | 165ms |
+| light_cells | 41ms | 8ms | 60ms | 138ms |
+| medium_cells | 4ms | 8ms | 73ms | 320ms |
+| dense_cells | 135ms | 25ms | 247ms | 473ms |
+| scrolling_fullscreen | 6ms | 10ms | 74ms | 139ms |
+| scrolling | 257ms | 158ms | 198ms | 730ms |
+| scrolling_top_region | 176ms | 172ms | 191ms | 1296ms |
+| scrolling_bottom_region | 263ms | 128ms | 198ms | 1250ms |
+| scrolling_top_small_region | 277ms | 138ms | 175ms | 1391ms |
+| scrolling_bottom_small_region | 248ms | 190ms | 181ms | 1364ms |
+| sync_medium_cells | 4ms | 9ms | 72ms | 164ms |
+| unicode | 4ms | 7ms | 73ms | 56ms |
 
-作为 xterm.js + webview 架构，Lumina 与 Alacritty 的差距在预期范围内，但**在大多数 cell/scroll 测试中明显优于 Tabby 和 VS Code 内置终端** —— 快约 1.5-6 倍 —— 而它们运行的是同样的底层 Web 渲染技术栈。
+Lumina 现在在多个测试中**追平甚至超越 Alacritty**（medium_cells、scrolling_fullscreen、sync_medium_cells、unicode），并**全面优于 Tabby 和 VS Code 内置终端** —— 而它们运行的是同样的底层 Web 渲染技术栈。
 
 作为纯渲染压力测试，[DOOM Fire](https://github.com/const-void/DOOM-fire-node)（持续全屏 ANSI 动画，模拟 DOOM 火焰效果）测量持续帧率（越高越好）：
 
 | | Lumina | Alacritty | Tabby | VS Code |
 |---|-------:|----------:|------:|--------:|
-| fps | ~320 | ~1800 | ~175 | ~60 |
+| fps | ~420 | ~1800 | ~175 | ~60 |
 
-在持续重度重绘下，Lumina 保持着 **Tabby 和 VS Code 约 5 倍的帧率** —— WebGL 渲染器和时间片输出管线让动画保持流畅，而其他 Web 技术终端会出现卡顿。
+在持续重度重绘下，Lumina 保持着 **Tabby 和 VS Code 约 7 倍的帧率** —— WebGL 渲染器和时间片输出管线让动画保持流畅，而其他 Web 技术终端会出现卡顿。
 
 > 测试平台：`AMD Ryzen™ AI 9 HX 370 w`, `NVIDIA GeForce RTX™ 5080 Laptop GPU`, Arch Linux
 
