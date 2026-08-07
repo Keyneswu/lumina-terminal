@@ -10,13 +10,15 @@
  * `components/AppIcon.tsx` and take precedence over the shell icon when set.
  */
 
-/** Supported app brand icons. Add an id here, a row in {@link APP_COMMANDS},
- * and a case in `AppIcon.tsx` to register a new app. */
-export type AppIconId = "opencode";
+/** Icon id — a string matching a directory name under
+ * `src/assets/app-icons/<id>/`. Add an id there (drop `<id>/<id>-light.svg` +
+ * `<id>-dark.svg`) and a row in {@link APP_COMMANDS} to register a new app. */
+export type AppIconId = string;
 
 /** Command basename (lowercase) → app icon id. The single mapping table; all
  * matching goes through this. Keys are argv[0] basenames as reported by the
- * backend's `foreground_command` / shell-integration CurrentCommand stream. */
+ * backend's `foreground_command` / shell-integration CurrentCommand stream.
+ * The id must match an icon directory under `src/assets/app-icons/`. */
 const APP_COMMANDS: Record<string, AppIconId> = {
     opencode: "opencode",
 };

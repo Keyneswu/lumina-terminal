@@ -1,46 +1,37 @@
 import {AppIconId} from "../lib/appIcon.ts";
+import {getAppIconSrc} from "../assets/app-icons/index.ts";
 
 interface AppIconProps {
     app: AppIconId;
-    /** True when the icon renders on a dark background. Brand logos ship a
-     * light and a dark variant; pass the effective-bg darkness so the logo
-     * stays legible (e.g. when a fullscreen TUI spreads its own bg color). */
+    /** True when the icon renders on a dark background. The matching SVG
+     *  variant (dark-bg vs light-bg) is picked from the asset registry. */
     dark: boolean;
     size?: number;
     className?: string;
 }
 
 /**
- * Branded app logo icons, shown in the tab when a recognized app is running.
- * Unlike {@link ShellIcon}, these keep each app's brand colors (the point of a
- * brand logo is recognizability), so they do NOT use currentColor. Each app
- * provides a light-on-dark and dark-on-light variant; pick via {@link dark}.
- *
- * Add a `case` per {@link AppIconId}; SVGs are inlined to inherit size/className
- * and to avoid an extra asset load. Paths are simplified from the official
- * brand SVGs (masks/clips dropped — only the visible geometry is kept).
+ * Branded app logo icon, shown in the tab when a recognized app is running.
+ * The SVGs live as files under `src/assets/app-icons/<id>/` and are looked up
+ * by id + background darkness — so adding an icon needs no change here (see
+ * `lib/appIcon.ts` for the command→id mapping and the asset registry for the
+ * SVG file convention).
  *
  * Takes precedence over ShellIcon: when a tab has a running command that maps
- * to a known app (see `lib/appIcon.ts`), this icon replaces the shell icon.
+ * to a known app, this icon replaces the shell icon.
  */
 export default function AppIcon({app, dark, size = 14, className}: AppIconProps) {
-    switch (app) {
-        case "opencode":
-            // Official opencode mark: an outer rounded frame with a smaller
-            // rectangle nested in its lower-left. The brand ships two variants
-            // named after the logo's OWN tone (not the bg it's placed on):
-            //   - light variant: frame #211E1E (deep) + inset #CFCECD (pale)
-            //   - dark variant:  frame #F1ECEC (pale) + inset #4B4646 (deep)
-            // Pick by the surrounding background: dark bg → dark variant,
-            // light bg → light variant. viewBox 0 0 240 300 (source SVG).
-            return (
-                <svg width={size} height={size} viewBox="0 0 240 300" fill="none"
-                    className={className} aria-hidden>
-                    <path d="M180 60H60V240H180V60ZM240 300H0V0H240V300Z"
-                        fill={dark ? "#F1ECEC" : "#211E1E"} />
-                    <path d="M180 240H60V120H180V240Z"
-                        fill={dark ? "#4B4646" : "#CFCECD"} />
-                </svg>
-            );
-    }
+    const src = getAppIconSrc(app, dark);
+    if (!src) return null; // unknown id — shouldn't happen (getAppIcon filters)
+    return (
+        <img
+            src={src}
+            alt=""
+            width={size}
+            height={size}
+            className={className}
+            style={{objectFit: "contain"}}
+            draggable={false}
+        />
+    );
 }
