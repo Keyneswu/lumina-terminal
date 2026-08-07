@@ -147,6 +147,27 @@ pnpm install
 pnpm tauri dev
 ```
 
+### 添加应用图标
+
+当标签页中运行已识别的 TUI/CLI 应用时，Lumina 会显示该应用的品牌图标，而非默认的终端图标。图标注册是数据驱动的——添加一个图标只需两步，无需改动任何组件。
+
+1. 把应用的 SVG 文件放进 `src/assets/app-icons/<id>/`。id 就是目录名（如 `vim`）。按图标**所放置的背景**选择变体（而非 logo 自身的色调）：
+   - `<id>-light.svg` —— 用于**浅色**背景（logo 本身偏深色）
+   - `<id>-dark.svg` —— 用于**深色**背景（logo 本身偏浅色）
+   - `<id>.svg` —— 中性单色变体，在缺少对应的 light/dark 文件时使用。单色 logo 只放这一个文件即可。
+
+   彩色品牌 logo 通常提供 light/dark 一对；单色图标可以只放一个 `<id>.svg`。缺失的变体会自动回退。
+2. 在 [`src/lib/appIcon.ts`](src/lib/appIcon.ts) 的 `APP_COMMANDS` 里注册命令名 → 图标 id：
+   ```ts
+   const APP_COMMANDS: Record<string, AppIconId> = {
+       opencode: "opencode",
+       vim: "vim",          // ← 命令 basename → 图标 id（目录名）
+   };
+   ```
+   key 是命令的 argv[0] basename（小写），由 shell 或进程追踪器上报。包装器（`sudo`、`env`、`nohup` 等）会被自动跳过，因此 `sudo vim` 也能正确显示 vim 图标。
+
+然后 `pnpm build`（或 `pnpm tauri dev`）—— 图标在构建时被收集，当该命令在标签页中处于前台时即显示，包括作为配置文件的启动命令时。
+
 ## 使用的技术
 * [Tauri & Tauri Plugins](https://tauri.app/)
 * [Rust](https://rust-lang.org/)

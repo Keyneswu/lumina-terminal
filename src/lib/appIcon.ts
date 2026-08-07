@@ -21,6 +21,10 @@ export type AppIconId = string;
  * The id must match an icon directory under `src/assets/app-icons/`. */
 const APP_COMMANDS: Record<string, AppIconId> = {
     opencode: "opencode",
+    vim: "vim",
+    nvim: "neovim",
+    neovim: "neovim",
+    claude: "claudecode"
 };
 
 /** argv[0] basenames that wrap another command. When extracting the "real"

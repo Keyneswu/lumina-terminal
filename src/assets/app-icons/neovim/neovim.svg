@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg width="214px" height="214px" viewBox="0 0 214 214" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:sketch="http://www.bohemiancoding.com/sketch/ns">
+    <defs>
+        <linearGradient x1="50%" y1="0%" x2="50%" y2="100%" id="linearGradient-1">
+            <stop stop-color="#16B0ED" stop-opacity="0.800235524" offset="0%"></stop>
+            <stop stop-color="#0F59B2" stop-opacity="0.83700023" offset="100%"></stop>
+        </linearGradient>
+        <linearGradient x1="50%" y1="0%" x2="50%" y2="100%" id="linearGradient-2">
+            <stop stop-color="#7DB643" offset="0%"></stop>
+            <stop stop-color="#367533" offset="100%"></stop>
+        </linearGradient>
+        <linearGradient x1="50%" y1="0%" x2="50%" y2="100%" id="linearGradient-3">
+            <stop stop-color="#88C649" stop-opacity="0.8" offset="0%"></stop>
+            <stop stop-color="#439240" stop-opacity="0.84" offset="100%"></stop>
+        </linearGradient>
+    </defs>
+    <g id="Page-1" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd" sketch:type="MSPage">
+        <g id="mark" sketch:type="MSLayerGroup" transform="translate(1.000000, 1.000000)">
+            <path d="M0.0271406286,45.4585443 L45.2236471,-0.172976207 L45.2236462,211.998335 L0.0271406286,166.893838 L0.0271406286,45.4585443 Z" id="Left---green" fill="url(#linearGradient-1)" sketch:type="MSShapeGroup"></path>
+            <path d="M129.336706,45.889361 L175.152342,-0.148332039 L174.223646,211.998335 L129.027141,166.893838 L129.336706,45.889361 Z" id="Right---blue" fill="url(#linearGradient-2)" sketch:type="MSShapeGroup" transform="translate(152.000000, 106.000000) scale(-1, 1) translate(-152.000000, -106.000000) "></path>
+            <path d="M45.1935106,-0.136678135 L162.699692,179.17338 L129.817917,212.054331 L12.2502441,33.141173 L45.1935106,-0.136678135 Z" id="Cross---blue" fill="url(#linearGradient-3)" sketch:type="MSShapeGroup"></path>
+            <path d="M45.2339478,83.0321045 L45.1714478,90.0946045 L8.89086914,36.5321045 L12.2502441,33.1099243 L45.2339478,83.0321045 Z" id="Shadow" fill-opacity="0.13" fill="#000000" sketch:type="MSShapeGroup"></path>
+        </g>
+    </g>
+</svg>

@@ -147,6 +147,38 @@ pnpm install
 pnpm tauri dev
 ```
 
+### Adding an App Icon
+
+When a recognized TUI/CLI app is running in a tab, Lumina shows its brand icon
+instead of the shell icon. The icon registry is data-driven — adding one takes
+two steps and no component changes.
+
+1. Drop the app's SVG file(s) under `src/assets/app-icons/<id>/`. The id is the
+   directory name (e.g. `vim`). Pick a variant based on what background the
+   icon sits on (not the logo's own tone):
+   - `<id>-light.svg` — for **light** backgrounds (logo itself tends dark)
+   - `<id>-dark.svg` — for **dark** backgrounds (logo itself tends light)
+   - `<id>.svg` — neutral single-color variant, used when a dedicated
+     light/dark file is missing. A monochrome logo can ship just this one file.
+
+   A colored brand logo usually ships a light/dark pair; a monochrome icon can
+   ship a single `<id>.svg`. Missing variants fall back gracefully.
+2. Register the command name → icon id in `APP_COMMANDS` in
+   [`src/lib/appIcon.ts`](src/lib/appIcon.ts):
+   ```ts
+   const APP_COMMANDS: Record<string, AppIconId> = {
+       opencode: "opencode",
+       vim: "vim",          // ← command basename → icon id (directory name)
+   };
+   ```
+   The key is the command's argv[0] basename (lowercase), as reported by the
+   shell or the process tracker. Wrappers (`sudo`, `env`, `nohup`, ...) are
+   skipped automatically, so `sudo vim` resolves to the vim icon.
+
+Then `pnpm build` (or `pnpm tauri dev`) — the icon is picked up at build time
+and shown whenever that command is foreground in a tab, including when it is
+the profile's startup command.
+
 ## Technology Used
 * [Tauri & Tauri Plugins](https://tauri.app/)
 * [Rust](https://rust-lang.org/)
