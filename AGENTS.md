@@ -40,7 +40,8 @@ src/
 ├── constants.ts             # Default config, default bindings, tab-id sentinels
 ├── types/
 │   ├── config.ts            # GlobalConfig, Binding, Actions, WithKeys
-│   └── terminal.ts          # TerminalProfile, TerminalRenderOptions, SSHConfig
+│   └── terminal.ts          # TerminalProfile (+ keepAfterExit: "exit"|"freeze"|"shell" — what
+│                            #   happens after startupCommand finishes), TerminalRenderOptions, SSHConfig
 │
 ├── lib/                     # Pure, framework-agnostic logic (NO React)
 │   ├── platform.ts          # isMacOS() / isLinux()

@@ -48,6 +48,18 @@ export interface TerminalProfile extends TerminalRenderOptions {
      * → the tab closes); for SSH profiles it is passed to the remote host
      * (`ssh user@host <cmd>`). Empty/undefined = interactive shell. */
     startupCommand?: string;
+    /** What happens after the startup command finishes. Only meaningful when
+     *  `startupCommand` is set.
+     *  - undefined / "exit" → the shell exits with the command, the backend
+     *    emits `term-exit-<id>`, and (by default) the tab closes. The legacy
+     *    behavior, ideal for a single-shot launch (vim / opencode).
+     *  - "shell" → instead of letting the shell exit, the command is followed
+     *    by `exec` into an interactive shell, so the user can read the output
+     *    AND keep working; the tab closes only when that shell exits.
+     *  - "freeze" → let the command + shell exit naturally, but the frontend
+     *    suppresses the auto-close so the frozen output stays on screen for
+     *    reading (read-only; the PTY is gone). The user closes it manually. */
+    keepAfterExit?: "exit" | "shell" | "freeze";
     default?: boolean;
     type?: ProfileType;
     ssh?: SSHConfig;

@@ -23,6 +23,7 @@ pub fn start_terminal(
     ssh_config: Option<SshConfig>,
     cwd: Option<String>,
     startup_command: Option<String>,
+    keep_after_exit: Option<String>,
 ) {
     {
         let terminals = state.terminals.try_lock().unwrap_or_else(|e| {
@@ -75,19 +76,75 @@ pub fn start_terminal(
         }
         // Run a command on the remote host instead of an interactive session.
         // `ssh user@host <cmd>` runs the command then disconnects on exit, so
-        // the tab closes (matching local startup_command behavior).
+        // the tab closes (matching local startup_command behavior). With
+        // keepAfterExit "shell", append `; exec $SHELL -l` so the remote
+        // command is followed by an interactive login shell: the SSH session
+        // (and thus the PTY) stays alive until the user exits that shell.
+        let keep_shell = keep_after_exit.as_deref() == Some("shell");
         if let Some(ref cmd) = startup_command {
-            c.arg(cmd);
+            if keep_shell {
+                c.arg(format!("{}; exec $SHELL -l", cmd));
+            } else {
+                c.arg(cmd);
+            }
         }
         log::debug!("Creating terminal with ssh");
         c
     } else {
         let mut c = CommandBuilder::new(&exe_path);
+        let keep_shell = keep_after_exit.as_deref() == Some("shell");
+        // Coarse shell family from the exe basename — decides how a "drop to
+        // shell after the command" is expressed (POSIX exec vs PowerShell
+        // -NoExit vs fish/nu syntax). Lowercased once, reused below.
+        let shell_base = std::path::Path::new(&exe_path)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_lowercase();
+        let is_pwsh = shell_base.contains("powershell") || shell_base == "pwsh";
         if let Some(ref cmd) = startup_command {
-            // Run a single command then exit: the shell exits when the command
-            // does, so the watcher emits `term-exit-<id>` and the tab closes —
-            // the desired behavior for a "launch opencode/vim" profile.
-            c.args(&["--login", "-i", "-c", cmd]);
+            if keep_shell && is_pwsh {
+                // PowerShell has no `exec`; its native "run then stay" flag is
+                // -NoExit. -Command <cmd> runs the command and -NoExit keeps
+                // the session interactive afterwards, so the PTY (and thus the
+                // tab) stays alive until the user exits pwsh.
+                c.args(&["-NoExit", "-Command", cmd]);
+            } else if keep_shell {
+                // POSIX & fish/nu: run the command via `-c`, then `exec` into a
+                // fresh interactive shell so the PTY does NOT end with the
+                // command — the user can read the output and keep working, and
+                // the tab closes only when that shell exits. The exec target is
+                // shell-specific:
+                //   - fish: `exec fish -i` (fish -c parses fish syntax; `;` and
+                //     `exec` work, but `$0` is empty and `--login` is rejected,
+                //     so the POSIX `$0` trick below does NOT apply to fish).
+                //   - nu: `exec nu` (nu -c + exec; nu rejects --login/-i).
+                //   - POSIX (bash/zsh/sh/dash/…): `exec "$0" --login -i`, where
+                //     $0 is set by passing exe_path as an extra argv[0] arg
+                //     after the -c script (no path escaping needed).
+                let script = if shell_base.contains("fish") {
+                    format!("{}; exec fish -i", cmd)
+                } else if shell_base == "nu" {
+                    format!("{}; exec nu", cmd)
+                } else {
+                    format!("{}; exec \"$0\" --login -i", cmd)
+                };
+                // POSIX shells read the trailing arg as argv[0] ($0) for the
+                // -c script; fish/nu ignore it, so only pass it for POSIX.
+                let is_posix = !(shell_base.contains("fish") || shell_base == "nu");
+                if is_posix {
+                    c.args(&["--login", "-i", "-c", &script, &exe_path]);
+                } else {
+                    c.args(&["--login", "-i", "-c", &script]);
+                }
+            } else {
+                // Run a single command then exit: the shell exits when the
+                // command does, so the watcher emits `term-exit-<id>` and the
+                // tab closes — the desired behavior for a "launch opencode/vim"
+                // profile (keepAfterExit "exit"/"freeze" both let the shell
+                // exit; "freeze" only suppresses the frontend's auto-close).
+                c.args(&["--login", "-i", "-c", cmd]);
+            }
         } else {
             c.args(&["--login", "-i"]);
         }

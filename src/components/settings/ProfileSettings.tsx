@@ -95,6 +95,7 @@ export default function ProfileSettings({
             fontStyle: draft.fontStyle || undefined,
             themePath: draft.themePath?.trim() || undefined,
             startupCommand: draft.startupCommand?.trim() || undefined,
+            keepAfterExit: draft.startupCommand?.trim() ? draft.keepAfterExit : undefined,
             type: draft.type ?? "local",
             ssh: draft.type === "remote" ? draft.ssh : undefined,
         }));
@@ -253,6 +254,45 @@ export default function ProfileSettings({
                         placeholder={profileType === "remote" ? "e.g. top" : "e.g. vim, opencode"}
                     />
                 </SettingRow>
+
+                {/* On Command Exit — only meaningful when a startup command
+                    is set. Decides what happens after it finishes: close the
+                    tab (default), freeze the output for reading, or drop into
+                    an interactive shell so the user can keep working. */}
+                {draft.startupCommand?.trim() && (
+                    <SettingRow
+                        label={<Label>{t["On Command Exit"]}</Label>}
+                        description={t["What happens after the startup command finishes"]}
+                    >
+                        <Select
+                            selectedKey={draft.keepAfterExit ?? "exit"}
+                            onSelectionChange={(key) => {
+                                if (key) {
+                                    updateDraft({keepAfterExit: key as "exit" | "shell" | "freeze"});
+                                }
+                            }}
+                            className="max-w-sm"
+                        >
+                            <Select.Trigger>
+                                <Select.Value />
+                                <Select.Indicator />
+                            </Select.Trigger>
+                            <Select.Popover>
+                                <ListBox>
+                                    <ListBox.Item id="exit" key="exit" textValue="exit">
+                                        {t["Close on Exit"]}
+                                    </ListBox.Item>
+                                    <ListBox.Item id="freeze" key="freeze" textValue="freeze">
+                                        {t["Freeze Output"]}
+                                    </ListBox.Item>
+                                    <ListBox.Item id="shell" key="shell" textValue="shell">
+                                        {t["Drop to Shell"]}
+                                    </ListBox.Item>
+                                </ListBox>
+                            </Select.Popover>
+                        </Select>
+                    </SettingRow>
+                )}
 
                 {/* SSH Config Fields */}
                 {profileType === "remote" && (

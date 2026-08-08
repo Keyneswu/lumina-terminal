@@ -165,6 +165,14 @@ export default function Term(props : TermProps) {
     const onCloseRef = useRef(props.onClose);
     onCloseRef.current = props.onClose;
 
+    // keepAfterExit mode (frozen after the command/shell exits). Kept as a ref
+    // so the term-exit listener (set up once) reads the current value without
+    // a stale closure. `frozenRef` guards against re-triggering if multiple
+    // term-exit events ever arrive for the same PTY.
+    const keepAfterExitRef = useRef(profile.keepAfterExit);
+    keepAfterExitRef.current = profile.keepAfterExit;
+    const frozenRef = useRef(false);
+
     // Keep onCommandChange ref fresh and track the current command.
     const onCommandChangeRef = useRef(props.onCommandChange);
     onCommandChangeRef.current = props.onCommandChange;
@@ -547,7 +555,27 @@ export default function Term(props : TermProps) {
         });
 
         listen(`term-exit-${ptyId}`, () => {
+            // A PTY can legitimately emit term-exit more than once: React
+            // StrictMode (dev) mounts the listener twice before the first
+            // cleanup runs, and an old listener can also linger briefly across
+            // a fast tab teardown. So this handler MUST be idempotent — a
+            // duplicate event must never close a tab we decided to keep.
+            if (frozenRef.current) {
+                debug(`term-exit duplicate for frozen ptyId=${ptyId}, ignoring`);
+                return;
+            }
             info(`Terminal exited: ptyId=${ptyId}`);
+            // "freeze": suppress the auto-close so the user can read the
+            // command's final output. The PTY is gone (so the terminal is
+            // read-only), but the xterm buffer + scrollback stay on screen
+            // until the user closes the tab manually (Ctrl+W / tab close).
+            // "shell" never reaches here until the user exits the dropped-to
+            // shell, so it falls through to the normal close.
+            if (keepAfterExitRef.current === "freeze") {
+                frozenRef.current = true;
+                info(`Terminal frozen after exit (keepAfterExit=freeze): ptyId=${ptyId}`);
+                return;
+            }
             onCloseRef.current?.();
         }).then((fn) => {
             unlistenExit = fn;
