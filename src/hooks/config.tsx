@@ -10,7 +10,11 @@ const store = new LazyStore(CONFIG_SAVE_PATH);
 
 interface GlobalConfigContextType {
     config: GlobalConfig;
-    updateConfig: (newConfig: Partial<GlobalConfig>) => void;
+    /** Merge `newConfig` into the current config and persist it to disk.
+     *  Returns a Promise that resolves once the store flush has settled, so
+     *  callers that need the write durable before tearing down (e.g. the
+     *  session close hook remembering a choice) can await it. */
+    updateConfig: (newConfig: Partial<GlobalConfig>) => Promise<void>;
     newProfile: (profile: TerminalProfile) => void;
     isLoading: boolean;
 }
@@ -57,23 +61,35 @@ export function GlobalConfigProvider({ children }: { children: ReactNode }) {
         });
     }, []);
 
-    const saveConfig = (newConfig: GlobalConfig) => {
-        store.set("config", newConfig).then(() => {
-            store.save().then(undefined, (e: unknown) => {
+    const saveConfig = (newConfig: GlobalConfig): Promise<void> => {
+        // Resolve once the flush to disk has settled (success or failure). The
+        // store APIs reject on errors; we log and swallow so a disk hiccup
+        // never throws into callers — the Promise resolves either way, which
+        // lets the session close hook await durability before destroying the
+        // window.
+        return store.set("config", newConfig).then(() => store.save()).then(
+            () => {},
+            (e: unknown) => {
                 error(`Failed to persist config to disk: ${e}`).catch(() => {});
-            });
-        }).catch((e: unknown) => {
-            error(`Failed to save config: ${e}`).catch(() => {});
-        });
+            },
+        );
     };
 
-    const updateConfig = (newConfig: Partial<GlobalConfig>) => {
+    const updateConfig = (newConfig: Partial<GlobalConfig>): Promise<void> => {
         debug(`updateConfig: ${JSON.stringify(newConfig)}`);
-        setConfig((prevState) => {
-            const updated: GlobalConfig = {...prevState, ...newConfig};
-            saveConfig(updated);
-            return updated;
+        // We need the *current* prevState to build the merged config before
+        // persisting; capture it from the functional updater, then flush. The
+        // returned Promise resolves once the disk flush settles so callers
+        // (e.g. the session close hook remembering a choice) can await
+        // durability before tearing down the window.
+        const flush = new Promise<void>((resolve) => {
+            setConfig((prevState) => {
+                const updated: GlobalConfig = {...prevState, ...newConfig};
+                saveConfig(updated).then(() => resolve());
+                return updated;
+            });
         });
+        return flush;
     };
 
     const newProfile = (profile: TerminalProfile) => {

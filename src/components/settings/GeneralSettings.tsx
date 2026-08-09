@@ -23,12 +23,18 @@ interface GeneralDraft {
     inheritWorkingDirectory: boolean;
     rememberWindowPosition: boolean;
     rememberWindowSize: boolean;
+    sessionSaveMode: "never" | "always" | "ask";
+    sessionSaveScrollback: boolean;
 }
 
 /** Theme-mode options shown in the Select below. Kept here (near the only
  *  consumer) rather than in constants.ts because the ids + labels are purely a
  *  settings-UI concern. Order is the display order. */
 const THEME_MODES = ["system", "terminal", "light", "dark"] as const;
+
+/** Session-save mode options shown in the Select below. Same convention as
+ *  THEME_MODES: kept local to the only consumer. */
+const SESSION_SAVE_MODES = ["never", "always", "ask"] as const;
 
 export default function GeneralSettings({borderColor, openAbout}: {borderColor: string, openAbout: () => void}) {
     const {config, updateConfig} = useGlobalConfig();
@@ -54,6 +60,8 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
         inheritWorkingDirectory: config.inheritWorkingDirectory ?? false,
         rememberWindowPosition: config.rememberWindowPosition ?? false,
         rememberWindowSize: config.rememberWindowSize ?? false,
+        sessionSaveMode: config.sessionSaveMode ?? "ask",
+        sessionSaveScrollback: config.sessionSaveScrollback ?? false,
     };
 
     const {draft, setDraft, isDirty, save} = useSettingsDraft<GeneralDraft>(
@@ -71,6 +79,8 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
                 inheritWorkingDirectory: d.inheritWorkingDirectory,
                 rememberWindowPosition: d.rememberWindowPosition,
                 rememberWindowSize: d.rememberWindowSize,
+                sessionSaveMode: d.sessionSaveMode,
+                sessionSaveScrollback: d.sessionSaveScrollback,
             };
             // Default-profile change rewrites the profiles array (only one may
             // be default at a time), so apply it here rather than via a flat
@@ -83,7 +93,7 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
             }
             updateConfig(updated);
         },
-        [config.language, config.showTabBar, config.closeWindowOnLastTab, config.copyWithCtrl, config.themeMode, config.enableColorSpread, config.autoUpdateOnStartup, config.inheritWorkingDirectory, config.rememberWindowPosition, config.rememberWindowSize, currentDefault],
+        [config.language, config.showTabBar, config.closeWindowOnLastTab, config.copyWithCtrl, config.themeMode, config.enableColorSpread, config.autoUpdateOnStartup, config.inheritWorkingDirectory, config.rememberWindowPosition, config.rememberWindowSize, config.sessionSaveMode, config.sessionSaveScrollback, currentDefault],
     );
 
     return (
@@ -271,6 +281,59 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
                     </Switch>
                 </SettingRow>
 
+                {/* Session Restore: whether open tabs are saved on exit and
+                    restored on next launch. See lib/session.ts. */}
+                <SettingRow
+                    label={<Label>{t["Save Tabs on Exit"]}</Label>}
+                    description={t["Choose what happens to your open tabs when quitting Lumina"]}
+                >
+                    <Select
+                        selectedKey={draft.sessionSaveMode}
+                        onSelectionChange={(key) => {
+                            if (key) {
+                                setDraft((prev) => ({...prev, sessionSaveMode: key as GeneralDraft["sessionSaveMode"]}));
+                            }
+                        }}
+                    >
+                        <Select.Trigger>
+                            <Select.Value />
+                            <Select.Indicator />
+                        </Select.Trigger>
+                        <Select.Popover>
+                            <ListBox>
+                                {SESSION_SAVE_MODES.map((mode) => (
+                                    <ListBox.Item id={mode} key={mode} textValue={mode}>
+                                        {sessionSaveModeLabel(mode, t)}
+                                    </ListBox.Item>
+                                ))}
+                            </ListBox>
+                        </Select.Popover>
+                    </Select>
+                </SettingRow>
+
+                {/* Save Terminal History (scrollback): only meaningful when a
+                    save actually happens. Disabled when mode is "never" so the
+                    toggle can't be left on with no effect. */}
+                <SettingRow
+                    variant="toggle"
+                    label={<Label className={draft.sessionSaveMode === "never" ? "cursor-pointer opacity-50" : "cursor-pointer"}>{t["Save Terminal History"]}</Label>}
+                    description={t["Replay each tab's scrollback when restoring (increases session file size)"]}
+                    onClick={() => {
+                        if (draft.sessionSaveMode === "never") return;
+                        setDraft((prev) => ({...prev, sessionSaveScrollback: !prev.sessionSaveScrollback}));
+                    }}
+                >
+                    <Switch
+                        isSelected={draft.sessionSaveScrollback}
+                        isDisabled={draft.sessionSaveMode === "never"}
+                        onChange={(v) => setDraft((prev) => ({...prev, sessionSaveScrollback: v}))}
+                    >
+                        <Switch.Control>
+                            <Switch.Thumb />
+                        </Switch.Control>
+                    </Switch>
+                </SettingRow>
+
                 {/* Theme Mode: how the app's light/dark appearance is decided.
                     Controls only rendering (text/icons/glass); the background
                     color still follows the terminal/TUI. */}
@@ -348,5 +411,14 @@ function themeModeLabel(mode: "system" | "terminal" | "light" | "dark", t: Retur
         case "terminal": return t["Follow Terminal"];
         case "light": return t["Always Light"];
         case "dark": return t["Always Dark"];
+    }
+}
+
+/** Map a session-save mode id to its localized display name for the Select. */
+function sessionSaveModeLabel(mode: "never" | "always" | "ask", t: ReturnType<typeof useI18n>): string {
+    switch (mode) {
+        case "never": return t["Never"];
+        case "always": return t["Always"];
+        case "ask": return t["Ask Every Time"];
     }
 }

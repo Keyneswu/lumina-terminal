@@ -183,5 +183,17 @@
     "Whole Word": "Whole Word",
     "Regular Expression": "Regular Expression",
     "No results": "No results",
-    "{n} of {m}": "{n} of {m}"
+    "{n} of {m}": "{n} of {m}",
+    "Session Restore": "Session Restore",
+    "Save Tabs on Exit": "Save Tabs on Exit",
+    "Choose what happens to your open tabs when quitting Lumina": "Choose what happens to your open tabs when quitting Lumina",
+    "Never": "Never",
+    "Always": "Always",
+    "Ask Every Time": "Ask Every Time",
+    "Save Terminal History": "Save Terminal History",
+    "Replay each tab's scrollback when restoring (increases session file size)": "Replay each tab's scrollback when restoring (increases session file size)",
+    "Save Tabs?": "Save Tabs?",
+    "Save your {n} open tab(s) and restore them next time?": "Save your {n} open tab(s) and restore them next time?",
+    "Don't Save": "Don't Save",
+    "Remember this choice": "Remember this choice"
 }

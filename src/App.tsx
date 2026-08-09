@@ -11,6 +11,7 @@ import {getShellType} from "./lib/shellIcon.ts";
 import {getAppIcon} from "./lib/appIcon.ts";
 import {visibleRed} from "./lib/color.ts";
 import CommandPalette from "./components/CommandPalette.tsx";
+import SessionSaveDialog from "./components/SessionSaveDialog.tsx";
 import {useEffectiveTheme} from "./hooks/useEffectiveTheme.ts";
 import {useSystemTheme} from "./hooks/useSystemTheme.ts";
 import {parseBindings, useKeyboardBindings, matchBinding} from "./lib/bindings.ts";
@@ -41,7 +42,7 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
     // Terminal lifecycle: tab list, profiles, active id, tear-off + merge.
     // All the create/close/switch state + cross-window listeners live here.
     const mgr = useTerminalManager();
-    const {ids, terminals, currentId, commands, reattachTabs} = mgr;
+    const {ids, terminals, currentId, commands, reattachTabs, initialScrollbackTabs} = mgr;
     const currentProfile = useMemo(() => {
         if (currentId) {
             return terminals[currentId] ?? null;
@@ -296,6 +297,13 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
                     installSource={installSource}
                     theme={effectiveTheme}
                 />
+                <SessionSaveDialog
+                    open={mgr.sessionDialog.open}
+                    count={mgr.sessionDialog.count}
+                    onResolve={mgr.sessionDialog.resolve}
+                    backgroundColor={effectiveBg ?? "#000000"}
+                    foregroundColor={effectiveFg ?? "#ffffff"}
+                />
                 <TabBar
                     tabs={tabs}
                     activeId={currentId}
@@ -389,6 +397,7 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
                                     isActive={id === currentId}
                                     bindings={parsedBindings}
                                     reattach={reattach}
+                                    initialScrollback={initialScrollbackTabs[id]}
                                     onClose={() => mgr.closeTerminal(id)}
                                     onNewTab={(profileName?: string) => {
                                         mgr.newTerminal(findProfile(profileName));

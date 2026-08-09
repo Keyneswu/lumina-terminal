@@ -52,4 +52,16 @@ export interface GlobalConfig {
      * runtime resize listener while rememberWindowSize is on; read once at
      * startup to restore. */
     rememberedWindowSize?: {width: number; height: number};
+    /** Whether to save open terminal tabs on exit and restore them on the next
+     * launch. See lib/session.ts for the saved-session file.
+     *  - "never"  → never persist
+     *  - "always" → always save every terminal tab on window close
+     *  - "ask"    → prompt the user on close (default; the dialog may rewrite
+     *               this to always/never via "remember this choice") */
+    sessionSaveMode?: "never" | "always" | "ask";
+    /** When true, also serialize each terminal's scrollback into the saved
+     * session and replay it on restore. Off by default — scrollback can make
+     * the session file large. Only consulted when a save actually happens
+     * (mode "always", or "ask" + user picks Save). */
+    sessionSaveScrollback?: boolean;
 }

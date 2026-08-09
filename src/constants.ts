@@ -32,6 +32,12 @@ export const DEFAULT_TERMINAL_THEME: ITheme = {
 
 export const CONFIG_SAVE_PATH = "config.json";
 
+/** LazyStore file holding the last-saved terminal session (one key "session").
+ * Written on window close when sessionSaveMode != "never"; read once at startup
+ * to restore tabs. Kept separate from config.json so session data never
+ * pollutes the user's app config. See lib/session.ts. */
+export const SESSION_STORE_PATH = "session.json";
+
 /** Shared height for the custom chrome and the macOS traffic-light safe area. */
 export const CHROME_TITLE_BAR_HEIGHT = 36;
 
@@ -139,6 +145,8 @@ export const DEFAULT_CONFIG: GlobalConfig = {
     inheritWorkingDirectory: false,
     rememberWindowPosition: false,
     rememberWindowSize: false,
+    sessionSaveMode: "ask",
+    sessionSaveScrollback: false,
 };
 
 export const SETTINGS_TAB_ID = "__lum__settings__";

@@ -58,6 +58,10 @@ src/
 │   │                        #   exported actionSignature / keySignature
 │   ├── edgeBackground.ts    # sampleEdgeBackground (xterm buffer edge inspection)
 │   ├── tearoff.ts           # Tab tear-off: label mint/store/consume + WebviewWindow spawn
+│   ├── session.ts           # Terminal-session persistence: SavedTab/SavedSession types +
+│   │                        #   LazyStore("session.json") load/save/clear. Save-side re-spawn contract
+│   │                        #   (profile name + live cwd + optional scrollback); restore re-parses against
+│   │                        #   the current globalProfile. Pure logic — no React.
 │   ├── tabDragOverlay.ts    # mountTabDragOverlay (transparent full-window layer keeping dragover alive over canvas)
 │   ├── chunkedWriter.ts     # ChunkedWriter — bounded-chunk feeder for term.write() (UTF-16-safe slicing)
 │   ├── terminalGeometry.ts  # profileWindowSize — measure cell size + compute OS window size for rows/cols
@@ -83,7 +87,11 @@ src/
 │   ├── useWindowGeometry.ts # useWindowGeometry(isMainWindow) — restore + persist window pos/size (Wayland-aware)
 │   ├── useCommandPaletteActions.tsx # useCommandPaletteActions(opts) — build the palette action list (JSX)
 │   ├── useKeyRecorder.ts    # useKeyRecorder(index, onRecord, onCancel) — global keydown capture for bindings editor
-│   └── useTearoffSession.ts # useTearoffSession() → {label, payload} | "no" | null (tab tear-off boot)
+│   ├── useTearoffSession.ts # useTearoffSession() → {label, payload} | "no" | null (tab tear-off boot)
+│   └── useSessionPersistence.ts # useSessionPersistence(refs) — the app's only window close hook
+│                            #   (onCloseRequested): saves open tabs to session.json per sessionSaveMode,
+│                            #   drives the "ask" dialog, and one-shot-loads a saved session on mount for
+│                            #   useTerminalManager's seed effect to restore.
 │
 ├── components/
 │   ├── ui/                  # Shared design primitives (the visual system — one of each thing)
@@ -101,6 +109,8 @@ src/
 │   ├── TabBar.tsx           # Sidebar tab list
 │   ├── TitleBar.tsx         # Drag region + window controls (per-platform)
 │   ├── CommandPalette.tsx   # Ctrl+Shift+P modal
+│   ├── SessionSaveDialog.tsx # "Ask every time" close confirmation (Save / Don't Save + remember
+│   │                        #   this choice). Driven by useSessionPersistence; glass Modal.
 │   ├── ShellIcon.tsx        # Per-shell tab icon (bash/zsh/fish/nu/pwsh/ssh/default)
 │   ├── ThemePreview.tsx     # 8-color ANSI swatch with tooltip
 │   └── settings/

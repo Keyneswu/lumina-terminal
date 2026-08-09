@@ -19,6 +19,8 @@ import {
 import {emitTo, listen} from "@tauri-apps/api/event";
 import {useTearoffSession} from "./useTearoffSession.ts";
 import {useGlobalConfig} from "./config.tsx";
+import {useSessionPersistence} from "./useSessionPersistence.ts";
+import type {SavedSession} from "../lib/session.ts";
 
 /**
  * Owns the terminal-tab lifecycle: the id list, profile map, active id,
@@ -36,6 +38,9 @@ export interface TerminalManager {
     currentId: string | null;
     commands: Record<string, CurrentCommand | null>;
     reattachTabs: Record<string, {ptyId: string; scrollback: string}>;
+    /** Per-tab scrollback to replay on a fresh-start (session restore), keyed
+     *  by tab id. Term reads [id] via its initialScrollback prop. */
+    initialScrollbackTabs: Record<string, string>;
     serializeFns: React.MutableRefObject<Map<string, () => string>>;
     mergeTargetRef: React.MutableRefObject<TabDragHover | null>;
     dragScreenPosRef: React.MutableRefObject<{x: number; y: number} | null>;
@@ -50,10 +55,17 @@ export interface TerminalManager {
     openChromeTab: (id: string) => void;
     // True once the initial-tab seeding effect has run for this window.
     isInitialized: React.MutableRefObject<boolean>;
+    /** "Ask every time" close dialog state + resolver. App renders
+     *  SessionSaveDialog from these. */
+    sessionDialog: {
+        open: boolean;
+        count: number;
+        resolve: (decision: "save" | "nosave", remember: boolean) => void;
+    };
 }
 
 export function useTerminalManager(): TerminalManager {
-    const {config} = useGlobalConfig();
+    const {config, updateConfig} = useGlobalConfig();
     const tearoff = useTearoffSession();
 
     const [ids, setIds] = useState<string[]>([]);
@@ -61,6 +73,11 @@ export function useTerminalManager(): TerminalManager {
     const [currentId, setCurrentId] = useState<string | null>(null);
     const serializeFns = useRef<Map<string, () => string>>(new Map());
     const [reattachTabs, setReattachTabs] = useState<Record<string, {ptyId: string; scrollback: string}>>({});
+    // Per-tab scrollback to replay on a FRESH-start (session restore), keyed by
+    // tab id. Distinct from reattachTabs (which replay on REATTACH to a live
+    // PTY). Consumed by Term via the initialScrollback prop; a tab id is
+    // present in at most one of the two maps.
+    const [initialScrollbackTabs, setInitialScrollbackTabs] = useState<Record<string, string>>({});
     const mergeTargetRef = useRef<TabDragHover | null>(null);
     const dragScreenPosRef = useRef<{x: number; y: number} | null>(null);
     const [commands, setCommands] = useState<Record<string, CurrentCommand | null>>({});
@@ -79,8 +96,31 @@ export function useTerminalManager(): TerminalManager {
         return config.profiles.find(p => p.default) || config.profiles[0];
     }, [config.profiles]);
 
-    const newTerminal = useCallback(async (profile: TerminalProfile) => {
+    // Session persistence: close-time save hook + one-shot startup restore
+    // load + the "ask" dialog state. Passed the manager's refs so the close
+    // handler reads live state without re-deriving. restoreTabs is consumed
+    // by the seed effect below; markRestored clears it once tabs are seeded.
+    const session = useSessionPersistence({
+        config,
+        updateConfig,
+        idsRef,
+        terminalsRef,
+        currentIdRef,
+        serializeFns,
+    });
+
+    /** Synchronous core: mint a fresh id, register an already-resolved
+     *  profile, append to the tab list. Returns the new id WITHOUT touching
+     *  currentId. Shared by newTerminal (user/manual) and session restore
+     *  (batch insert + single setCurrentId at the end). */
+    const addTerminal = useCallback((resolvedProfile: TerminalProfile): string => {
         const id = crypto.randomUUID();
+        setTerminals((prevState) => ({...prevState, [id]: resolvedProfile}));
+        setIds((prevState) => [...prevState, id]);
+        return id;
+    }, []);
+
+    const newTerminal = useCallback(async (profile: TerminalProfile) => {
         let p = await parseProfile(profile, config.globalProfile);
         // "Inherit working directory" (optional, off by default): the new tab
         // starts in the ACTIVE terminal's current directory instead of the
@@ -97,15 +137,10 @@ export function useTerminalManager(): TerminalManager {
                 debug(`Inherit cwd failed for ${profile.name}, using profile default: ${e}`);
             }
         }
-        setTerminals((prevState) => {
-            let newState = {...prevState};
-            newState[id] = p;
-            return newState;
-        });
-        setIds((prevState) => [...prevState, id]);
+        const id = addTerminal(p);
         setCurrentId(id);
         info(`New terminal: profile=${profile.name} id=${id}`);
-    }, [config]);
+    }, [config, addTerminal]);
 
     const closeTerminal = useCallback((id: string) => {
         debug(`closeTerminal called for id=${id}`);
@@ -404,25 +439,114 @@ export function useTerminalManager(): TerminalManager {
         };
     }, []);
 
-    // Initial tab seeding. Three cases:
+    // Initial tab seeding. Four cases:
     //   - tear-off window (tearoff carries payload): seed ONE reattach-mode
     //     terminal from the stashed profile + PTY id. Do NOT call startTerminal
     //     — the PTY is alive on the backend; Term's reattach path handles it.
-    //   - main window with configured profiles: open the default profile.
+    //   - main window with a saved session to restore (mode != "never" and
+    //     restoreTabs loaded a non-empty session): map each SavedTab back to a
+    //     profile by name, re-parse against the current globalProfile, and seed
+    //     them in order (optionally replaying saved scrollback).
+    //   - main window with configured profiles but no session: open the default.
     //   - main window with no profiles yet: WelcomePage handles onboarding.
-    // `tearoff === null` means the session probe is still pending — wait.
+    // `tearoff === null` / `session.restoreTabs === undefined` mean a probe is
+    // still in flight — wait.
     useEffect(() => {
         if (isInitialized.current) return;
         if (tearoff === null) return; // tear-off probe in flight
         if (tearoff === "no") {
+            // Main window: also wait for the session-restore probe to finish.
+            if (session.restoreTabs === undefined) return;
             if (config.profiles.length && ids.length === 0) {
                 isInitialized.current = true;
                 getCurrentWindow().setResizable(true).catch((e) =>
                     error(`Failed to set window resizable: ${e}`)
                 );
-                newTerminal(defaultProfile).catch((e) =>
-                    error(`Failed to create initial terminal: ${e}`)
-                );
+                const saved = session.restoreTabs as SavedSession | null;
+                const canRestore =
+                    config.sessionSaveMode !== "never" &&
+                    saved &&
+                    saved.tabs.length > 0;
+                if (canRestore && saved) {
+                    // Map each saved tab back to a restorable entry. Terminal
+                    // tabs are re-parsed against the CURRENT globalProfile so
+                    // global render options (font/theme/…) changes still apply;
+                    // a terminal tab whose profile was deleted/renamed is
+                    // skipped + warned. Chrome tabs (Settings/About) restore
+                    // directly via their sentinel id. Order is preserved so the
+                    // restored tab bar matches what the user left.
+                    type RestoredEntry =
+                        | {kind: "terminal"; id: string; profile: TerminalProfile; scrollback?: string}
+                        | {kind: "chrome"; id: string};
+                    Promise.all(saved.tabs.map(async (tab): Promise<RestoredEntry | null> => {
+                        if (tab.kind === "chrome") {
+                            return {kind: "chrome", id: tab.chromeId};
+                        }
+                        const base = config.profiles.find(p => p.name === tab.profileName);
+                        if (!base) {
+                            warn(`Session restore: profile "${tab.profileName}" no longer exists; skipping tab`);
+                            return null;
+                        }
+                        const resolved = await parseProfile(
+                            tab.cwd ? {...base, cwd: tab.cwd} : base,
+                            config.globalProfile,
+                        );
+                        return {kind: "terminal", id: "", profile: resolved, scrollback: tab.scrollback};
+                    })).then((entries) => {
+                        const valid = entries.filter((e): e is RestoredEntry => e !== null);
+                        if (valid.length === 0) {
+                            info("Session restore yielded no valid tabs; opening default profile");
+                            session.markRestored();
+                            newTerminal(defaultProfile).catch((e) =>
+                                error(`Failed to create initial terminal: ${e}`)
+                            );
+                            return;
+                        }
+                        // Apply in order: terminal tabs via addTerminal (mints a
+                        // fresh id + registers the profile), chrome tabs via
+                        // their sentinel id. Track each restored id at its
+                        // original index so activeIndex focuses the right one.
+                        const restoredIds: string[] = [];
+                        for (const entry of valid) {
+                            if (entry.kind === "terminal") {
+                                const id = addTerminal(entry.profile);
+                                entry.id = id;
+                                restoredIds.push(id);
+                                if (entry.scrollback) {
+                                    setInitialScrollbackTabs((prev) => ({...prev, [id]: entry.scrollback!}));
+                                }
+                            } else {
+                                // Chrome tab: ensure its sentinel id is in the
+                                // list (de-duped). openChromeTab also activates,
+                                // but we set currentId once at the end based on
+                                // activeIndex, so just register the id here.
+                                setIds((prev) => (prev.includes(entry.id) ? prev : [...prev, entry.id]));
+                                restoredIds.push(entry.id);
+                            }
+                        }
+                        // Focus the tab that was active at save time. activeIndex
+                        // refers to the SAVED list; because we dropped skipped
+                        // tabs, clamp it to the restored range. Missing/invalid
+                        // → the last restored tab.
+                        const focusIdx = saved.activeIndex != null
+                            ? Math.min(Math.max(saved.activeIndex, 0), restoredIds.length - 1)
+                            : restoredIds.length - 1;
+                        setCurrentId(restoredIds[focusIdx] ?? null);
+                        session.markRestored();
+                        info(`Restored ${valid.length} tab(s) from saved session`);
+                    }).catch((e) => {
+                        error(`Session restore failed, falling back to default profile: ${e}`).catch(() => {});
+                        session.markRestored();
+                        newTerminal(defaultProfile).catch((err) =>
+                            error(`Failed to create initial terminal: ${err}`)
+                        );
+                    });
+                } else {
+                    session.markRestored();
+                    newTerminal(defaultProfile).catch((e) =>
+                        error(`Failed to create initial terminal: ${e}`)
+                    );
+                }
             }
             return;
         }
@@ -439,7 +563,7 @@ export function useTerminalManager(): TerminalManager {
         setCurrentId(ptyId);
         setReattachTabs({[ptyId]: {ptyId, scrollback: tearoff.payload.scrollback}});
         info(`Tear-off window seeded with ptyId=${ptyId}`);
-    }, [config, tearoff, defaultProfile]);
+    }, [config, tearoff, defaultProfile, session, addTerminal, newTerminal]);
 
     return {
         ids,
@@ -447,6 +571,7 @@ export function useTerminalManager(): TerminalManager {
         currentId,
         commands,
         reattachTabs,
+        initialScrollbackTabs,
         serializeFns,
         mergeTargetRef,
         dragScreenPosRef,
@@ -458,5 +583,6 @@ export function useTerminalManager(): TerminalManager {
         setCommandsFor,
         openChromeTab,
         isInitialized,
+        sessionDialog: {open: session.dialog.open, count: session.dialog.count, resolve: session.resolveDialog},
     };
 }

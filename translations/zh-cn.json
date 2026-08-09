@@ -183,5 +183,17 @@
     "Whole Word": "全字匹配",
     "Regular Expression": "正则表达式",
     "No results": "无结果",
-    "{n} of {m}": "第 {n} 项，共 {m} 项"
+    "{n} of {m}": "第 {n} 项，共 {m} 项",
+    "Session Restore": "会话恢复",
+    "Save Tabs on Exit": "退出时保存标签",
+    "Choose what happens to your open tabs when quitting Lumina": "选择退出 Lumina 时如何处理已打开的标签",
+    "Never": "不保存",
+    "Always": "总是保存",
+    "Ask Every Time": "每次询问",
+    "Save Terminal History": "保存终端历史输出",
+    "Replay each tab's scrollback when restoring (increases session file size)": "恢复时回放每个标签的历史输出（会增大 session 文件体积）",
+    "Save Tabs?": "保存标签吗？",
+    "Save your {n} open tab(s) and restore them next time?": "保存当前 {n} 个标签并在下次启动时恢复？",
+    "Don't Save": "不保存",
+    "Remember this choice": "记住此选择"
 }

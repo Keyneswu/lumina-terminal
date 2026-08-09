@@ -75,6 +75,12 @@ interface TermProps {
     // streams to this window. The `id` prop is ignored for backend calls in
     // this mode — `reattach.ptyId` is the canonical PTY id.
     reattach?: { ptyId: string; scrollback: string };
+    // Scrollback to replay on a FRESH-start (session restore), where a NEW
+    // PTY is spawned. Unlike reattach.scrollback (which plays before swapping
+    // the channel to a live process), this plays before startTerminal spawns
+    // the new shell — so the restored history appears, then the new prompt
+    // boots below it. Distinct from reattach: a tab is in at most one mode.
+    initialScrollback?: string;
     // Register a serialize function (captures the xterm buffer for tear-off)
     // with the parent. The parent stores it and calls it right before tearing
     // the tab off. Returns a cleanup that deregisters the function.
@@ -441,6 +447,13 @@ export default function Term(props : TermProps) {
                 error(`Failed to reattach terminal ptyId=${ptyId}: ${e}`).catch(() => {});
             });
         } else {
+            // Session-restore: replay saved scrollback before the new shell
+            // boots so the restored history shows, then the fresh prompt
+            // appears below it. The ChunkedWriter (`writer`) feeds xterm the
+            // same way live output does, so large scrollback stays smooth.
+            if (props.initialScrollback) {
+                term.current.write(props.initialScrollback);
+            }
             startTerminal(id, profile, outputChannel).then(() => {
                 info(`Terminal started: id=${id} profile=${profile.name}`);
                 resizeTerminal(id, term.current!.cols, term.current!.rows).then();
