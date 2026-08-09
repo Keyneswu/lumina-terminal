@@ -10,15 +10,20 @@ name: CI - Frontend
 # without catching extra regressions. Platform-specific breakage is the job of
 # ci-backend.yml.
 
+# Run on every branch and every PR, not just master — a feature branch should
+# be verified before it ever merges.
 on:
   push:
-    branches: [master]
   pull_request:
-    branches: [master]
 
-# Cancel a superseded run on the same ref when a new commit lands.
+# Merge push and pull_request onto the SAME branch key so the two events (a
+# push to a branch and the PR that tracks it) don't run twice for the same
+# commit:
+#   push          → github.head_ref is empty  → falls back to the branch name
+#   pull_request  → github.head_ref is the PR's source branch
+# Whichever arrives last wins; the earlier run is cancelled.
 concurrency:
-  group: ci-frontend-${{ github.ref }}
+  group: ci-frontend-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 jobs:

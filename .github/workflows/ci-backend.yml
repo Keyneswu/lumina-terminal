@@ -13,16 +13,11 @@ name: CI - Backend
 # a drift that would silently change resolved versions locally fails here
 # instead.
 
+# Run on every branch and every PR, not just master — a feature branch should
+# be verified before it ever merges.
 on:
   push:
-    branches: [master]
   pull_request:
-    branches: [master]
-
-# Per-OS group so a new commit cancels only the superseded run on that OS.
-concurrency:
-  group: ci-backend-${{ matrix.os }}-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
   check:
@@ -33,6 +28,19 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
 
     runs-on: ${{ matrix.os }}
+
+    # Per-OS group so a new commit cancels only the superseded run on that OS.
+    # Must live inside the job: `matrix` is only in scope after the job's
+    # strategy block, so a workflow-level concurrency block can't reference it.
+    #
+    # Keyed on the source branch (`github.head_ref || github.ref_name`), not on
+    # github.ref, so a push to a branch and the PR that tracks it share one
+    # group and don't run twice for the same commit:
+    #   push          → head_ref empty    → branch name
+    #   pull_request  → head_ref = source → branch name
+    concurrency:
+      group: ci-backend-${{ matrix.os }}-${{ github.head_ref || github.ref_name }}
+      cancel-in-progress: true
 
     steps:
       - name: Checkout
