@@ -1,0 +1,86 @@
+name: CI - Backend
+
+# Verifies the Rust/Tauri backend still compiles on every commit / PR, across
+# all three desktop platforms (Linux / Windows / macOS). Uses `cargo check`
+# (type + borrow check, no linking/codegen) for speed — NOT `tauri build`.
+#
+# This job is INTENTIONALLY independent of the frontend build: it drops a
+# placeholder dist/index.html (see below) instead of running `pnpm build`, so
+# a frontend regression cannot mask or supersede a genuine backend failure.
+# ci-frontend.yml owns frontend coverage separately.
+#
+# `--locked` enforces that the committed `src-tauri/Cargo.lock` is up to date;
+# a drift that would silently change resolved versions locally fails here
+# instead.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+# Per-OS group so a new commit cancels only the superseded run on that OS.
+concurrency:
+  group: ci-backend-${{ matrix.os }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: cargo check (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Tauri's Linux backend links against WebKitGTK / GTK / libsoup, so the
+      # dev headers must be present for `cargo check` to resolve the
+      # `tauri-build` build script and conditional `#[cfg(target_os)]` code.
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libgtk-3-dev \
+            libsoup-3.0-dev \
+            libjavascriptcoregtk-4.1-dev \
+            xdg-utils
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      # `tauri::generate_context!()` (expanded during cargo check) embeds the
+      # `frontendDist` directory (`../dist` from Cargo.toml's location) at
+      # compile time and fails if it is missing. It only needs the directory
+      # to EXIST — the embedded asset content has no bearing on the Rust
+      # type-check conclusion — so a one-line placeholder index.html satisfies
+      # it.
+      #
+      # Deliberately NOT running `pnpm build` here: this job must verify the
+      # Rust backend in isolation. If it depended on the frontend build, a
+      # frontend regression would mask / supersede a genuine backend failure.
+      # ci-frontend.yml owns frontend coverage independently.
+      - name: Create placeholder dist (for generate_context!)
+        shell: bash
+        run: |
+          mkdir -p dist
+          printf '<!DOCTYPE html><html><head></head><body></body></html>\n' > dist/index.html
+
+      # The actual verification: type + borrow check across the matrix. No
+      # binary is produced.
+      - name: cargo check
+        run: cargo check --locked --manifest-path src-tauri/Cargo.toml
