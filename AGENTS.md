@@ -63,6 +63,8 @@ src/
 │   │                        #   (profile name + live cwd + optional scrollback); restore re-parses against
 │   │                        #   the current globalProfile. Pure logic — no React.
 │   ├── tabDragOverlay.ts    # mountTabDragOverlay (transparent full-window layer keeping dragover alive over canvas)
+│   ├── tabReorder.ts        # Sidebar drag-reorder math: dropTargetFor (pointer Y → gap index)
+│   │                        #   + reorderByDrop (move item into gap; same ref when it's a no-op)
 │   ├── chunkedWriter.ts     # ChunkedWriter — bounded-chunk feeder for term.write() (UTF-16-safe slicing)
 │   ├── terminalGeometry.ts  # profileWindowSize — measure cell size + compute OS window size for rows/cols
 │   ├── bindingsSettings.ts  # bindings-editor pure logic: actionLabel, detectConflicts, toDraft, …
@@ -85,8 +87,8 @@ src/
 │   ├── useSshConfig.ts      # useSshConfig() — cached parse_ssh_config backend call
 │   ├── useOutputMode.ts     # useOutputMode(id) → {markInteractive}: debounced LowLatency toggle
 │   ├── useEffectiveTheme.ts # useEffectiveTheme(profile, currentId) → theme/bg/fg + HeroUI sync
-│   ├── useTerminalManager.ts# useTerminalManager() — tab list/profiles/active id + create/close/tear-off
-│   │                        #   + cross-window merge/hover listeners (extracted from App.tsx)
+│   ├── useTerminalManager.ts# useTerminalManager() — tab list/profiles/active id + create/close/reorder/
+│   │                        #   tear-off + cross-window merge/hover listeners (extracted from App.tsx)
 │   ├── useWindowGeometry.ts # useWindowGeometry(isMainWindow) — restore + persist window pos/size (Wayland-aware)
 │   ├── useCommandPaletteActions.tsx # useCommandPaletteActions(opts) — build the palette action list (JSX)
 │   ├── useKeyRecorder.ts    # useKeyRecorder(index, onRecord, onCancel) — global keydown capture for bindings editor
@@ -109,7 +111,10 @@ src/
 │   ├── SearchBar.tsx        # In-terminal search overlay (Ctrl+Shift+F): drives the headless
 │   │                        #   @xterm/addon-search via a glass top slide-down bar (case /
 │   │                        #   whole-word / regex toggles + result counter). Mounted in Term.
-│   ├── TabBar.tsx           # Sidebar tab list
+│   ├── TabBar.tsx           # Sidebar tab list. One HTML5 drag serves two outcomes: dropped
+│   │                        #   inside the list it reorders (local preview order rearranged
+│   │                        #   via lib/tabReorder.ts, rows glide with framer `layout`,
+│   │                        #   committed on drop), released outside it tears off / merges.
 │   ├── TitleBar.tsx         # Drag region + window controls (per-platform)
 │   ├── CommandPalette.tsx   # Ctrl+Shift+P modal
 │   ├── SessionSaveDialog.tsx # "Ask every time" close confirmation (Save / Don't Save + remember
