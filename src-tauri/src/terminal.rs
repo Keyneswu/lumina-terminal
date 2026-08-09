@@ -615,3 +615,75 @@ pub fn set_throttle(id: String, throttled: bool, state: State<TerminalState>) {
         log::warn!("set_throttle: terminal {} not found", id);
     }
 }
+
+/// Resolve the current working directory of a terminal's shell process, for
+/// the frontend's "inherit working directory" option: when the user creates a
+/// new tab, it starts in the active terminal's current directory instead of
+/// the profile default. Reads the SHELL's cwd (the directory the user last
+/// `cd`'d to), not a running foreground command's — a vim/npm session must not
+/// move the inherited directory. Returns `None` when the terminal is gone or
+/// the platform can't expose a cwd (Windows: no documented public API); the
+/// frontend then falls back to the profile's configured cwd untouched.
+#[tauri::command]
+pub fn get_terminal_cwd(id: String, state: State<TerminalState>) -> Option<String> {
+    let shell_pid = {
+        let terminals = match state.terminals.try_lock() {
+            Ok(t) => t,
+            Err(e) => {
+                log::error!("Failed to lock terminals for get_terminal_cwd {}: {}", id, e);
+                return None;
+            }
+        };
+        match terminals.get(&id) {
+            Some(entry) => entry.shell_pid,
+            None => {
+                log::warn!("get_terminal_cwd: terminal {} not found", id);
+                return None;
+            }
+        }
+    };
+    let cwd = shell_pid.and_then(process_cwd);
+    log::debug!("get_terminal_cwd for {}: {:?}", id, cwd);
+    cwd
+}
+
+/// Resolve a process's current working directory (platform-specific).
+#[cfg(target_os = "linux")]
+fn process_cwd(pid: u32) -> Option<String> {
+    // `/proc/<pid>/cwd` is a symlink to the process cwd; `read_link` gives the
+    // target as an absolute path without shelling out.
+    std::fs::read_link(format!("/proc/{}/cwd", pid))
+        .ok()
+        .map(|p| p.to_string_lossy().into_owned())
+}
+
+/// Resolve a process's current working directory (platform-specific).
+#[cfg(all(unix, not(target_os = "linux")))]
+fn process_cwd(pid: u32) -> Option<String> {
+    // macOS/BSD have no /proc. `lsof -a -d cwd -p <pid> -Fn` prints the cwd as
+    // an `n`-prefixed line; same-user processes are queryable without special
+    // privileges.
+    let out = std::process::Command::new("lsof")
+        .args(["-a", "-d", "cwd", "-p", &pid.to_string(), "-Fn"])
+        .output()
+        .ok()?;
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    for line in stdout.lines() {
+        if let Some(path) = line.strip_prefix('n') {
+            let path = path.trim();
+            if !path.is_empty() {
+                return Some(path.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Resolve a process's current working directory (platform-specific).
+#[cfg(windows)]
+fn process_cwd(_pid: u32) -> Option<String> {
+    // Windows has no documented public API for another process's cwd (the
+    // NtQueryInformationProcess trick is undocumented and needs PROCESS_QUERY
+    // rights). Return None so the frontend falls back to the profile cwd.
+    None
+}

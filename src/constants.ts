@@ -136,6 +136,7 @@ export const DEFAULT_CONFIG: GlobalConfig = {
     enableColorSpread: false,
     themeMode: "terminal",
     autoUpdateOnStartup: true,
+    inheritWorkingDirectory: false,
     rememberWindowPosition: false,
     rememberWindowSize: false,
 };

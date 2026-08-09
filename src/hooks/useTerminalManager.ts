@@ -2,7 +2,7 @@ import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {getCurrentWindow} from "@tauri-apps/api/window";
 import {TerminalProfile, CurrentCommand} from "../types/terminal.ts";
 import {parseProfile} from "../lib/term.ts";
-import {killTerminal} from "../lib/terminalApi.ts";
+import {killTerminal, getTerminalCwd} from "../lib/terminalApi.ts";
 import {info, debug, error, warn} from "@tauri-apps/plugin-log";
 import {SETTINGS_TAB_ID, ABOUT_TAB_ID} from "../constants.ts";
 import {
@@ -72,6 +72,8 @@ export function useTerminalManager(): TerminalManager {
     idsRef.current = ids;
     const currentIdRef = useRef(currentId);
     currentIdRef.current = currentId;
+    const terminalsRef = useRef(terminals);
+    terminalsRef.current = terminals;
 
     const defaultProfile = useMemo(() => {
         return config.profiles.find(p => p.default) || config.profiles[0];
@@ -79,7 +81,22 @@ export function useTerminalManager(): TerminalManager {
 
     const newTerminal = useCallback(async (profile: TerminalProfile) => {
         const id = crypto.randomUUID();
-        const p = await parseProfile(profile, config.globalProfile);
+        let p = await parseProfile(profile, config.globalProfile);
+        // "Inherit working directory" (optional, off by default): the new tab
+        // starts in the ACTIVE terminal's current directory instead of the
+        // profile default. Queries the backend shell cwd. Async, so any
+        // failure (source gone, platform unsupported → null/rejection) falls
+        // back to the profile cwd untouched; getTerminalCwd already logs
+        // rejections via invokeWithLog.
+        const sourceId = currentIdRef.current;
+        if (config.inheritWorkingDirectory && sourceId && sourceId in terminalsRef.current) {
+            try {
+                const cwd = await getTerminalCwd(sourceId);
+                if (cwd) p = {...p, cwd};
+            } catch (e) {
+                debug(`Inherit cwd failed for ${profile.name}, using profile default: ${e}`);
+            }
+        }
         setTerminals((prevState) => {
             let newState = {...prevState};
             newState[id] = p;

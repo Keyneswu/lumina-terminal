@@ -20,6 +20,7 @@ interface GeneralDraft {
     themeMode: "system" | "terminal" | "light" | "dark";
     enableColorSpread: boolean;
     autoUpdateOnStartup: boolean;
+    inheritWorkingDirectory: boolean;
     rememberWindowPosition: boolean;
     rememberWindowSize: boolean;
 }
@@ -50,6 +51,7 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
         themeMode: config.themeMode ?? "terminal",
         enableColorSpread: config.enableColorSpread !== false,
         autoUpdateOnStartup: config.autoUpdateOnStartup !== false,
+        inheritWorkingDirectory: config.inheritWorkingDirectory ?? false,
         rememberWindowPosition: config.rememberWindowPosition ?? false,
         rememberWindowSize: config.rememberWindowSize ?? false,
     };
@@ -66,6 +68,7 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
                 themeMode: d.themeMode,
                 enableColorSpread: d.enableColorSpread,
                 autoUpdateOnStartup: d.autoUpdateOnStartup,
+                inheritWorkingDirectory: d.inheritWorkingDirectory,
                 rememberWindowPosition: d.rememberWindowPosition,
                 rememberWindowSize: d.rememberWindowSize,
             };
@@ -80,7 +83,7 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
             }
             updateConfig(updated);
         },
-        [config.language, config.showTabBar, config.closeWindowOnLastTab, config.copyWithCtrl, config.themeMode, config.enableColorSpread, config.autoUpdateOnStartup, config.rememberWindowPosition, config.rememberWindowSize, currentDefault],
+        [config.language, config.showTabBar, config.closeWindowOnLastTab, config.copyWithCtrl, config.themeMode, config.enableColorSpread, config.autoUpdateOnStartup, config.inheritWorkingDirectory, config.rememberWindowPosition, config.rememberWindowSize, currentDefault],
     );
 
     return (
@@ -248,6 +251,25 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
                         </Switch>
                     </SettingRow>
                 )}
+
+                {/* Inherit Working Directory: new tabs start in the active
+                    terminal's current directory instead of the profile default,
+                    so users can hop between shells/profiles without re-`cd`'ing. */}
+                <SettingRow
+                    variant="toggle"
+                    label={<Label className="cursor-pointer">{t["Inherit Working Directory"]}</Label>}
+                    description={t["New terminals start in the active terminal's current directory"]}
+                    onClick={() => setDraft((prev) => ({...prev, inheritWorkingDirectory: !prev.inheritWorkingDirectory}))}
+                >
+                    <Switch
+                        isSelected={draft.inheritWorkingDirectory}
+                        onChange={(v) => setDraft((prev) => ({...prev, inheritWorkingDirectory: v}))}
+                    >
+                        <Switch.Control>
+                            <Switch.Thumb />
+                        </Switch.Control>
+                    </Switch>
+                </SettingRow>
 
                 {/* Theme Mode: how the app's light/dark appearance is decided.
                     Controls only rendering (text/icons/glass); the background

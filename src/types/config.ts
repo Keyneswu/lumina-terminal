@@ -33,6 +33,12 @@ export interface GlobalConfig {
      *  Default "terminal" preserves existing behavior. */
     themeMode?: "system" | "terminal" | "light" | "dark";
     autoUpdateOnStartup?: boolean;
+    /** When true, a new terminal tab inherits the ACTIVE terminal's current
+     * working directory as its startup cwd (instead of the profile default).
+     * Lets users hop between shells/profiles without re-`cd`'ing. Off by
+     * default. Only affects newly created tabs; the initial tab of a window
+     * has no active terminal to inherit from and uses the profile default. */
+    inheritWorkingDirectory?: boolean;
     /** When true, restore the main window to its last position on startup
      * (main window only; tear-off windows are positioned by their spawner). */
     rememberWindowPosition?: boolean;

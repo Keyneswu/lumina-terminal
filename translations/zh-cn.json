@@ -140,6 +140,8 @@
     "Check for Updates": "检查更新",
     "Auto-check for updates on startup": "启动时自动检查更新",
     "Check for available updates when the app starts": "应用启动时检查是否有可用更新",
+    "Inherit Working Directory": "继承工作目录",
+    "New terminals start in the active terminal's current directory": "新终端从当前活动终端的工作目录启动",
     "Theme Mode": "主题模式",
     "Decide light/dark appearance: follow the OS, the terminal background, or force one": "决定亮/暗外观：跟随系统、跟随终端背景，或强制指定",
     "Follow System": "跟随系统",

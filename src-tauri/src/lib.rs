@@ -170,6 +170,7 @@ pub fn run() {
             resize_terminal,
             set_output_mode,
             set_throttle,
+            get_terminal_cwd,
             find_shells,
             path_exist,
             read_file,

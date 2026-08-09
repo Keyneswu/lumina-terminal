@@ -140,6 +140,8 @@
     "Check for Updates": "Check for Updates",
     "Auto-check for updates on startup": "Auto-check for updates on startup",
     "Check for available updates when the app starts": "Check for available updates when the app starts",
+    "Inherit Working Directory": "Inherit Working Directory",
+    "New terminals start in the active terminal's current directory": "New terminals start in the active terminal's current directory",
     "Theme Mode": "Theme Mode",
     "Decide light/dark appearance: follow the OS, the terminal background, or force one": "Decide light/dark appearance: follow the OS, the terminal background, or force one",
     "Follow System": "Follow System",

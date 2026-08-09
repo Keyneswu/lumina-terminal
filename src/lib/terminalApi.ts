@@ -74,6 +74,17 @@ export function setOutputMode(id: string, lowLatency: boolean) {
 }
 
 /**
+ * Query a running terminal's current working directory — the shell process's
+ * cwd (where the user last `cd`'d), not a foreground command's. Used by the
+ * "inherit working directory" option so a new tab starts where the active one
+ * is. Resolves to null when the terminal is gone or the platform can't expose
+ * a cwd (Windows); callers fall back to the profile's configured cwd.
+ */
+export function getTerminalCwd(id: string): Promise<string | null> {
+    return invokeWithLog<string | null>("get_terminal_cwd", id, {});
+}
+
+/**
  * Toggle per-terminal read backpressure. When true the backend reader thread
  * pauses reading so it can't outrun xterm (which would pile up unbounded data
  * in the IPC bridge / JS heap and stall the renderer on heavy workloads like
