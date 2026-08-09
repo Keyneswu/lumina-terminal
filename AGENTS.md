@@ -72,6 +72,9 @@ src/
 │   ├── config.tsx           # GlobalConfigProvider + useGlobalConfig (LazyStore-backed)
 │   ├── i18n.tsx             # useI18n, languageNames, Languages type
 │   ├── maximized.ts         # useMaximized (window resize → isMaximized)
+│   ├── useAlwaysOnTop.ts    # useAlwaysOnTop() → {pinned, toggle}: per-window always-on-top
+│   │                        #   (optimistic local state; no-op on Wayland, so the TitleBar
+│   │                        #   pin button disables itself there)
 │   ├── paddingOffset.ts     # usePaddingOffset(isMaximized) → platform/maximize padding
 │   ├── surfaceColors.ts     # useSurfaceColors(bg) → derived border/overlay/glass/accent colors
 │   ├── useGlass.ts          # useGlass() → {supportsGlass, blurPx}: platform backdrop-filter capability

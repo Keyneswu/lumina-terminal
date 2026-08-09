@@ -1,9 +1,14 @@
-import {LucideMaximize, LucideMinimize, LucideMinus, LucideX, PanelLeftClose, PanelLeftOpen, Search, Settings} from "lucide-react";
+import type {CSSProperties} from "react";
+import {LucideMaximize, LucideMinimize, LucideMinus, LucideX, PanelLeftClose, PanelLeftOpen, Pin, PinOff, Search, Settings} from "lucide-react";
 import {getCurrentWindow} from "@tauri-apps/api/window";
+import {Tooltip} from "@heroui/react";
 import {ITheme} from "@xterm/xterm";
 import {isMacOS} from "../lib/platform.ts";
 import {useSurfaceColors} from "../hooks/surfaceColors.ts";
 import {useGlass} from "../hooks/useGlass.ts";
+import {useAlwaysOnTop} from "../hooks/useAlwaysOnTop.ts";
+import {useIsWayland} from "../hooks/useIsWayland.ts";
+import {useI18n} from "../hooks/i18n.tsx";
 import {glassSurface} from "../lib/glass.ts";
 import { info } from "@tauri-apps/plugin-log";
 import IconButton from "./ui/IconButton.tsx";
@@ -85,6 +90,58 @@ function WindowControl({size, isMaximized, hoverOverlay, activeOverlay, closeHov
     );
 }
 
+interface PinButtonProps {
+    size: number;
+    hoverOverlay: string;
+    activeOverlay: string;
+    fg: string;
+    style?: CSSProperties;
+}
+
+/** Toggles "always on top" for this window. Shared by both title-bar layouts;
+ *  the per-platform sizing/radius comes in as props rather than being decided
+ *  here.
+ *
+ *  Disabled under Wayland: tao maps `setAlwaysOnTop` to GTK's keep-above hint,
+ *  which only X11 honors, so the toggle would silently do nothing. Mirrors how
+ *  "remember window position" hides itself on Wayland. */
+function PinButton({size, hoverOverlay, activeOverlay, fg, style}: PinButtonProps) {
+    const t = useI18n();
+    const {pinned, toggle} = useAlwaysOnTop();
+    const isWayland = useIsWayland();
+
+    const label = isWayland
+        ? t["Always on top is not supported on Wayland"]
+        : pinned ? t["Unpin from Top"] : t["Pin on Top"];
+
+    return (
+        <Tooltip delay={300} closeDelay={0}>
+            <Tooltip.Trigger>
+                {/* The button is wrapped so the tooltip still opens on hover
+                    when it is disabled — disabled buttons dispatch no pointer
+                    events of their own. */}
+                <span className="inline-flex">
+                    <IconButton
+                        size={size}
+                        isActive={pinned}
+                        hoverOverlay={hoverOverlay}
+                        activeOverlay={activeOverlay}
+                        style={{color: fg, ...style}}
+                        onClick={toggle}
+                        disabled={isWayland}
+                        aria-label={label}
+                    >
+                        {pinned ? <PinOff size={18} /> : <Pin size={18} />}
+                    </IconButton>
+                </span>
+            </Tooltip.Trigger>
+            <Tooltip.Content>
+                <p className="text-xs">{label}</p>
+            </Tooltip.Content>
+        </Tooltip>
+    );
+}
+
 export default function TitleBar({
     theme,
     bgSpread,
@@ -138,6 +195,12 @@ export default function TitleBar({
                     {tabBarVisible ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
                 </IconButton>
                 <div className="flex-1" data-tauri-drag-region />
+                <PinButton
+                    size={28}
+                    hoverOverlay={hoverOverlay}
+                    activeOverlay={activeOverlay}
+                    fg={fg}
+                />
                 <IconButton
                     size={28}
                     hoverOverlay={hoverOverlay}
@@ -182,6 +245,13 @@ export default function TitleBar({
             </IconButton>
             <div className="flex-1" data-tauri-drag-region />
             <div className="flex flex-row items-center h-full">
+                <PinButton
+                    size={size}
+                    hoverOverlay={hoverOverlay}
+                    activeOverlay={activeOverlay}
+                    fg={fg}
+                    style={{borderRadius: 0}}
+                />
                 <IconButton
                     size={size}
                     hoverOverlay={hoverOverlay}
