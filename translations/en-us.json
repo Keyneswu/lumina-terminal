@@ -44,6 +44,12 @@
     "Create a new terminal with profile \"{name}\"": "Create a new terminal with profile \"{name}\"",
     "Settings": "Settings",
     "General": "General",
+    "Basics": "Basics",
+    "Appearance": "Appearance",
+    "Window": "Window",
+    "Tabs": "Tabs",
+    "Sessions": "Sessions",
+    "Behavior": "Behavior",
     "Global Profile": "Global Profile",
     "Add Profile": "Add Profile",
     "Delete Profile": "Delete Profile",
@@ -198,5 +204,6 @@
     "Remember this choice": "Remember this choice",
     "Pin on Top": "Pin on Top",
     "Unpin from Top": "Unpin from Top",
-    "Always on top is not supported on Wayland": "Always on top is not supported on Wayland"
+    "Always on top is not supported on Wayland": "Always on top is not supported on Wayland",
+    "Remembering window position is not supported on Wayland": "Remembering window position is not supported on Wayland"
 }

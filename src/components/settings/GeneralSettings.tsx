@@ -2,7 +2,7 @@ import {useGlobalConfig} from "../../hooks/config.tsx";
 import {languageNames, useI18n} from "../../hooks/i18n.tsx";
 import {useMemo} from "react";
 import {info} from "@tauri-apps/plugin-log";
-import {Label, ListBox, Select, Switch} from "@heroui/react";
+import {Label, ListBox, Select, Switch, Tooltip} from "@heroui/react";
 import {isMacOS} from "../../lib/platform.ts";
 import {useIsWayland} from "../../hooks/useIsWayland.ts";
 import {useSettingsDraft} from "../../hooks/useSettingsDraft.ts";
@@ -120,285 +120,352 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
         >
             <SectionTitle>{t["General"]}</SectionTitle>
 
-            <div className="flex flex-col gap-5">
-                <div className="flex flex-col lg:flex-row gap-5">
-                    {/* Language */}
-                    <SettingRow label={<Label>{t["Language"]}</Label>}>
-                        <Select
-                            selectedKey={draft.language}
-                            onSelectionChange={(key) => {
-                                if (key) {
-                                    setDraft((prev) => ({...prev, language: key as "en-us" | "zh-cn"}));
-                                }
+            {/* The settings are grouped into related subsections so the page
+                stays scannable as more options are added. Each subsection has
+                its own heading (variant="subsection") and a column of rows;
+                groups are separated by a larger gap than the rows within. */}
+            <div className="flex flex-col gap-8">
+                {/* Basics — language, default profile, update checks. */}
+                <section>
+                    <SectionTitle variant="subsection">{t["Basics"]}</SectionTitle>
+                    <div className="flex flex-col gap-5">
+                        <div className="flex flex-col lg:flex-row gap-5">
+                            {/* Language */}
+                            <SettingRow label={<Label>{t["Language"]}</Label>}>
+                                <Select
+                                    selectedKey={draft.language}
+                                    onSelectionChange={(key) => {
+                                        if (key) {
+                                            setDraft((prev) => ({...prev, language: key as "en-us" | "zh-cn"}));
+                                        }
+                                    }}
+                                >
+                                    <Select.Trigger>
+                                        <Select.Value />
+                                        <Select.Indicator />
+                                    </Select.Trigger>
+                                    <Select.Popover>
+                                        <ListBox>
+                                            {[...languageNames.keys()].map((lang) => (
+                                                <ListBox.Item id={lang} key={lang} textValue={lang}>
+                                                    {languageNames.get(lang)}
+                                                </ListBox.Item>
+                                            ))}
+                                        </ListBox>
+                                    </Select.Popover>
+                                </Select>
+                            </SettingRow>
+
+                            {/* Default Profile */}
+                            <SettingRow label={<Label>{t["Default Profile"]}</Label>}>
+                                <Select
+                                    selectedKey={draft.defaultProfile}
+                                    onSelectionChange={(key) => {
+                                        if (key) {
+                                            setDraft((prev) => ({...prev, defaultProfile: key as string}));
+                                        }
+                                    }}
+                                >
+                                    <Select.Trigger>
+                                        <Select.Value />
+                                        <Select.Indicator />
+                                    </Select.Trigger>
+                                    <Select.Popover>
+                                        <ListBox>
+                                            {config.profiles.map((p) => (
+                                                <ListBox.Item id={p.name} key={p.name} textValue={p.name}>
+                                                    {p.name}
+                                                </ListBox.Item>
+                                            ))}
+                                        </ListBox>
+                                    </Select.Popover>
+                                </Select>
+                            </SettingRow>
+                        </div>
+
+                        {/* Auto-check for updates on startup */}
+                        <SettingRow
+                            variant="toggle"
+                            label={<Label className="cursor-pointer">{t["Auto-check for updates on startup"]}</Label>}
+                            description={t["Check for available updates when the app starts"]}
+                            onClick={() => setDraft((prev) => ({...prev, autoUpdateOnStartup: !prev.autoUpdateOnStartup}))}
+                        >
+                            <Switch
+                                isSelected={draft.autoUpdateOnStartup}
+                                onChange={(v) => setDraft((prev) => ({...prev, autoUpdateOnStartup: v}))}
+                            >
+                                <Switch.Control>
+                                    <Switch.Thumb />
+                                </Switch.Control>
+                            </Switch>
+                        </SettingRow>
+                    </div>
+                </section>
+
+                {/* Appearance — how the app's light/dark rendering is decided. */}
+                <section>
+                    <SectionTitle variant="subsection">{t["Appearance"]}</SectionTitle>
+                    <div className="flex flex-col gap-5">
+                        {/* Theme Mode: how the app's light/dark appearance is
+                            decided. Controls only rendering (text/icons/glass);
+                            the background color still follows the terminal/TUI. */}
+                        <SettingRow
+                            label={<Label>{t["Theme Mode"]}</Label>}
+                            description={t["Decide light/dark appearance: follow the OS, the terminal background, or force one"]}
+                        >
+                            <Select
+                                selectedKey={draft.themeMode}
+                                onSelectionChange={(key) => {
+                                    if (key) {
+                                        setDraft((prev) => ({...prev, themeMode: key as GeneralDraft["themeMode"]}));
+                                    }
+                                }}
+                            >
+                                <Select.Trigger>
+                                    <Select.Value />
+                                    <Select.Indicator />
+                                </Select.Trigger>
+                                <Select.Popover>
+                                    <ListBox>
+                                        {THEME_MODES.map((mode) => (
+                                            <ListBox.Item id={mode} key={mode} textValue={mode}>
+                                                {themeModeLabel(mode, t)}
+                                            </ListBox.Item>
+                                        ))}
+                                    </ListBox>
+                                </Select.Popover>
+                            </Select>
+                        </SettingRow>
+
+                        {/* Color spread: let a fullscreen TUI's background bleed
+                            to the window edges. */}
+                        <SettingRow
+                            variant="toggle"
+                            label={<Label className="cursor-pointer">{t["Color Spread"]}</Label>}
+                            description={t["Let fullscreen apps' background fill the whole window"]}
+                            onClick={() => setDraft((prev) => ({...prev, enableColorSpread: !prev.enableColorSpread}))}
+                        >
+                            <Switch
+                                isSelected={draft.enableColorSpread}
+                                onChange={(v) => setDraft((prev) => ({...prev, enableColorSpread: v}))}
+                            >
+                                <Switch.Control>
+                                    <Switch.Thumb />
+                                </Switch.Control>
+                            </Switch>
+                        </SettingRow>
+                    </div>
+                </section>
+
+                {/* Window — restore main-window position/size on startup. */}
+                <section>
+                    <SectionTitle variant="subsection">{t["Window"]}</SectionTitle>
+                    <div className="flex flex-col gap-5">
+                        {/* Remember Window Position. Shown but disabled under
+                            Wayland: the compositor forbids knowing/setting
+                            absolute position, so the toggle would be a no-op.
+                            Instead of hiding it we gray the row out and wrap it
+                            in a Tooltip (mirroring the pin button) so users
+                            learn *why* it's unavailable rather than wondering
+                            where it went. Non-Wayland: a plain, clickable row. */}
+                        {(() => {
+                            const row = (
+                                <SettingRow
+                                    variant="toggle"
+                                    label={<Label className={isWayland ? "cursor-not-allowed opacity-50" : "cursor-pointer"}>{t["Remember Window Position"]}</Label>}
+                                    description={t["Restore the window to its last position on startup"]}
+                                    onClick={() => {
+                                        if (isWayland) return;
+                                        setDraft((prev) => ({...prev, rememberWindowPosition: !prev.rememberWindowPosition}));
+                                    }}
+                                >
+                                    <Switch
+                                        isSelected={draft.rememberWindowPosition}
+                                        isDisabled={isWayland}
+                                        onChange={(v) => setDraft((prev) => ({...prev, rememberWindowPosition: v}))}
+                                    >
+                                        <Switch.Control>
+                                            <Switch.Thumb />
+                                        </Switch.Control>
+                                    </Switch>
+                                </SettingRow>
+                            );
+                            return isWayland ? (
+                                <Tooltip delay={300} closeDelay={0}>
+                                    {/* The disabled Switch dispatches no pointer
+                                        events of its own, so wrap the whole row
+                                        to keep the tooltip hover target alive. */}
+                                    <Tooltip.Trigger>
+                                        <span className="block">{row}</span>
+                                    </Tooltip.Trigger>
+                                    <Tooltip.Content>
+                                        <p className="text-xs">{t["Remembering window position is not supported on Wayland"]}</p>
+                                    </Tooltip.Content>
+                                </Tooltip>
+                            ) : row;
+                        })()}
+
+                        {/* Remember Window Size */}
+                        <SettingRow
+                            variant="toggle"
+                            label={<Label className="cursor-pointer">{t["Remember Window Size"]}</Label>}
+                            description={t["Restore the window to its last size on startup"]}
+                            onClick={() => setDraft((prev) => ({...prev, rememberWindowSize: !prev.rememberWindowSize}))}
+                        >
+                            <Switch
+                                isSelected={draft.rememberWindowSize}
+                                onChange={(v) => setDraft((prev) => ({...prev, rememberWindowSize: v}))}
+                            >
+                                <Switch.Control>
+                                    <Switch.Thumb />
+                                </Switch.Control>
+                            </Switch>
+                        </SettingRow>
+                    </div>
+                </section>
+
+                {/* Tabs — sidebar visibility and the last-tab-close policy. */}
+                <section>
+                    <SectionTitle variant="subsection">{t["Tabs"]}</SectionTitle>
+                    <div className="flex flex-col gap-5">
+                        {/* Show Tab Bar */}
+                        <SettingRow
+                            variant="toggle"
+                            label={<Label className="cursor-pointer">{t["Show Tab Bar"]}</Label>}
+                            onClick={() => setDraft((prev) => ({...prev, showTabBar: !prev.showTabBar}))}
+                        >
+                            <Switch
+                                isSelected={draft.showTabBar}
+                                onChange={(v) => setDraft((prev) => ({...prev, showTabBar: v}))}
+                            >
+                                <Switch.Control>
+                                    <Switch.Thumb />
+                                </Switch.Control>
+                            </Switch>
+                        </SettingRow>
+
+                        {/* Close Window on Last Tab */}
+                        <SettingRow
+                            variant="toggle"
+                            label={<Label className="cursor-pointer">{t["Close Window on Last Tab Closed"]}</Label>}
+                            onClick={() => setDraft((prev) => ({...prev, closeWindowOnLastTab: !prev.closeWindowOnLastTab}))}
+                        >
+                            <Switch
+                                isSelected={draft.closeWindowOnLastTab}
+                                onChange={(v) => setDraft((prev) => ({...prev, closeWindowOnLastTab: v}))}
+                            >
+                                <Switch.Control>
+                                    <Switch.Thumb />
+                                </Switch.Control>
+                            </Switch>
+                        </SettingRow>
+                    </div>
+                </section>
+
+                {/* Sessions — whether open tabs are saved on exit and restored. */}
+                <section>
+                    <SectionTitle variant="subsection">{t["Sessions"]}</SectionTitle>
+                    <div className="flex flex-col gap-5">
+                        {/* Session Restore: whether open tabs are saved on exit
+                            and restored on next launch. See lib/session.ts. */}
+                        <SettingRow
+                            label={<Label>{t["Save Tabs on Exit"]}</Label>}
+                            description={t["Choose what happens to your open tabs when quitting Lumina"]}
+                        >
+                            <Select
+                                selectedKey={draft.sessionSaveMode}
+                                onSelectionChange={(key) => {
+                                    if (key) {
+                                        setDraft((prev) => ({...prev, sessionSaveMode: key as GeneralDraft["sessionSaveMode"]}));
+                                    }
+                                }}
+                            >
+                                <Select.Trigger>
+                                    <Select.Value />
+                                    <Select.Indicator />
+                                </Select.Trigger>
+                                <Select.Popover>
+                                    <ListBox>
+                                        {SESSION_SAVE_MODES.map((mode) => (
+                                            <ListBox.Item id={mode} key={mode} textValue={mode}>
+                                                {sessionSaveModeLabel(mode, t)}
+                                            </ListBox.Item>
+                                        ))}
+                                    </ListBox>
+                                </Select.Popover>
+                            </Select>
+                        </SettingRow>
+
+                        {/* Save Terminal History (scrollback): only meaningful
+                            when a save actually happens. Disabled when mode is
+                            "never" so the toggle can't be left on with no
+                            effect. */}
+                        <SettingRow
+                            variant="toggle"
+                            label={<Label className={draft.sessionSaveMode === "never" ? "cursor-pointer opacity-50" : "cursor-pointer"}>{t["Save Terminal History"]}</Label>}
+                            description={t["Replay each tab's scrollback when restoring (increases session file size)"]}
+                            onClick={() => {
+                                if (draft.sessionSaveMode === "never") return;
+                                setDraft((prev) => ({...prev, sessionSaveScrollback: !prev.sessionSaveScrollback}));
                             }}
                         >
-                            <Select.Trigger>
-                                <Select.Value />
-                                <Select.Indicator />
-                            </Select.Trigger>
-                            <Select.Popover>
-                                <ListBox>
-                                    {[...languageNames.keys()].map((lang) => (
-                                        <ListBox.Item id={lang} key={lang} textValue={lang}>
-                                            {languageNames.get(lang)}
-                                        </ListBox.Item>
-                                    ))}
-                                </ListBox>
-                            </Select.Popover>
-                        </Select>
-                    </SettingRow>
+                            <Switch
+                                isSelected={draft.sessionSaveScrollback}
+                                isDisabled={draft.sessionSaveMode === "never"}
+                                onChange={(v) => setDraft((prev) => ({...prev, sessionSaveScrollback: v}))}
+                            >
+                                <Switch.Control>
+                                    <Switch.Thumb />
+                                </Switch.Control>
+                            </Switch>
+                        </SettingRow>
+                    </div>
+                </section>
 
-                    {/* Default Profile */}
-                    <SettingRow label={<Label>{t["Default Profile"]}</Label>}>
-                        <Select
-                            selectedKey={draft.defaultProfile}
-                            onSelectionChange={(key) => {
-                                if (key) {
-                                    setDraft((prev) => ({...prev, defaultProfile: key as string}));
-                                }
-                            }}
+                {/* Behavior — per-keystroke conventions new terminals follow. */}
+                <section>
+                    <SectionTitle variant="subsection">{t["Behavior"]}</SectionTitle>
+                    <div className="flex flex-col gap-5">
+                        {/* Copy with Ctrl+C (non-macOS only) */}
+                        {!isMacOS() && (
+                            <SettingRow
+                                variant="toggle"
+                                label={<Label className="cursor-pointer">{t["Copy with Ctrl+C"]}</Label>}
+                                description={t["Swap Ctrl+C and Ctrl+Shift+C for copy and interrupt on non-macOS systems"]}
+                                onClick={() => setDraft((prev) => ({...prev, copyWithCtrl: !prev.copyWithCtrl}))}
+                            >
+                                <Switch
+                                    isSelected={draft.copyWithCtrl}
+                                    onChange={(v) => setDraft((prev) => ({...prev, copyWithCtrl: v}))}
+                                >
+                                    <Switch.Control>
+                                        <Switch.Thumb />
+                                    </Switch.Control>
+                                </Switch>
+                            </SettingRow>
+                        )}
+
+                        {/* Inherit Working Directory: new tabs start in the
+                            active terminal's current directory instead of the
+                            profile default, so users can hop between
+                            shells/profiles without re-`cd`'ing. */}
+                        <SettingRow
+                            variant="toggle"
+                            label={<Label className="cursor-pointer">{t["Inherit Working Directory"]}</Label>}
+                            description={t["New terminals start in the active terminal's current directory"]}
+                            onClick={() => setDraft((prev) => ({...prev, inheritWorkingDirectory: !prev.inheritWorkingDirectory}))}
                         >
-                            <Select.Trigger>
-                                <Select.Value />
-                                <Select.Indicator />
-                            </Select.Trigger>
-                            <Select.Popover>
-                                <ListBox>
-                                    {config.profiles.map((p) => (
-                                        <ListBox.Item id={p.name} key={p.name} textValue={p.name}>
-                                            {p.name}
-                                        </ListBox.Item>
-                                    ))}
-                                </ListBox>
-                            </Select.Popover>
-                        </Select>
-                    </SettingRow>
-                </div>
-
-                {/* Show Tab Bar */}
-                <SettingRow
-                    variant="toggle"
-                    label={<Label className="cursor-pointer">{t["Show Tab Bar"]}</Label>}
-                >
-                    <Switch
-                        isSelected={draft.showTabBar}
-                        onChange={(v) => setDraft((prev) => ({...prev, showTabBar: v}))}
-                    >
-                        <Switch.Control>
-                            <Switch.Thumb />
-                        </Switch.Control>
-                    </Switch>
-                </SettingRow>
-
-                {/* Close Window on Last Tab */}
-                <SettingRow
-                    variant="toggle"
-                    label={<Label className="cursor-pointer">{t["Close Window on Last Tab Closed"]}</Label>}
-                >
-                    <Switch
-                        isSelected={draft.closeWindowOnLastTab}
-                        onChange={(v) => setDraft((prev) => ({...prev, closeWindowOnLastTab: v}))}
-                    >
-                        <Switch.Control>
-                            <Switch.Thumb />
-                        </Switch.Control>
-                    </Switch>
-                </SettingRow>
-
-                {/* Remember Window Position (hidden on Wayland — compositor
-                    forbids knowing/setting absolute position, so it'd be
-                    a no-op that only confuses users). */}
-                {!isWayland && (
-                    <SettingRow
-                        variant="toggle"
-                        label={<Label className="cursor-pointer">{t["Remember Window Position"]}</Label>}
-                        description={t["Restore the window to its last position on startup"]}
-                        onClick={() => setDraft((prev) => ({...prev, rememberWindowPosition: !prev.rememberWindowPosition}))}
-                    >
-                        <Switch
-                            isSelected={draft.rememberWindowPosition}
-                            onChange={(v) => setDraft((prev) => ({...prev, rememberWindowPosition: v}))}
-                        >
-                            <Switch.Control>
-                                <Switch.Thumb />
-                            </Switch.Control>
-                        </Switch>
-                    </SettingRow>
-                )}
-
-                {/* Remember Window Size */}
-                <SettingRow
-                    variant="toggle"
-                    label={<Label className="cursor-pointer">{t["Remember Window Size"]}</Label>}
-                    description={t["Restore the window to its last size on startup"]}
-                    onClick={() => setDraft((prev) => ({...prev, rememberWindowSize: !prev.rememberWindowSize}))}
-                >
-                    <Switch
-                        isSelected={draft.rememberWindowSize}
-                        onChange={(v) => setDraft((prev) => ({...prev, rememberWindowSize: v}))}
-                    >
-                        <Switch.Control>
-                            <Switch.Thumb />
-                        </Switch.Control>
-                    </Switch>
-                </SettingRow>
-
-                {/* Copy with Ctrl+C (non-macOS only) */}
-                {!isMacOS() && (
-                    <SettingRow
-                        variant="toggle"
-                        label={<Label className="cursor-pointer">{t["Copy with Ctrl+C"]}</Label>}
-                        description={t["Swap Ctrl+C and Ctrl+Shift+C for copy and interrupt on non-macOS systems"]}
-                        onClick={() => setDraft((prev) => ({...prev, copyWithCtrl: !prev.copyWithCtrl}))}
-                    >
-                        <Switch
-                            isSelected={draft.copyWithCtrl}
-                            onChange={(v) => setDraft((prev) => ({...prev, copyWithCtrl: v}))}
-                        >
-                            <Switch.Control>
-                                <Switch.Thumb />
-                            </Switch.Control>
-                        </Switch>
-                    </SettingRow>
-                )}
-
-                {/* Inherit Working Directory: new tabs start in the active
-                    terminal's current directory instead of the profile default,
-                    so users can hop between shells/profiles without re-`cd`'ing. */}
-                <SettingRow
-                    variant="toggle"
-                    label={<Label className="cursor-pointer">{t["Inherit Working Directory"]}</Label>}
-                    description={t["New terminals start in the active terminal's current directory"]}
-                    onClick={() => setDraft((prev) => ({...prev, inheritWorkingDirectory: !prev.inheritWorkingDirectory}))}
-                >
-                    <Switch
-                        isSelected={draft.inheritWorkingDirectory}
-                        onChange={(v) => setDraft((prev) => ({...prev, inheritWorkingDirectory: v}))}
-                    >
-                        <Switch.Control>
-                            <Switch.Thumb />
-                        </Switch.Control>
-                    </Switch>
-                </SettingRow>
-
-                {/* Session Restore: whether open tabs are saved on exit and
-                    restored on next launch. See lib/session.ts. */}
-                <SettingRow
-                    label={<Label>{t["Save Tabs on Exit"]}</Label>}
-                    description={t["Choose what happens to your open tabs when quitting Lumina"]}
-                >
-                    <Select
-                        selectedKey={draft.sessionSaveMode}
-                        onSelectionChange={(key) => {
-                            if (key) {
-                                setDraft((prev) => ({...prev, sessionSaveMode: key as GeneralDraft["sessionSaveMode"]}));
-                            }
-                        }}
-                    >
-                        <Select.Trigger>
-                            <Select.Value />
-                            <Select.Indicator />
-                        </Select.Trigger>
-                        <Select.Popover>
-                            <ListBox>
-                                {SESSION_SAVE_MODES.map((mode) => (
-                                    <ListBox.Item id={mode} key={mode} textValue={mode}>
-                                        {sessionSaveModeLabel(mode, t)}
-                                    </ListBox.Item>
-                                ))}
-                            </ListBox>
-                        </Select.Popover>
-                    </Select>
-                </SettingRow>
-
-                {/* Save Terminal History (scrollback): only meaningful when a
-                    save actually happens. Disabled when mode is "never" so the
-                    toggle can't be left on with no effect. */}
-                <SettingRow
-                    variant="toggle"
-                    label={<Label className={draft.sessionSaveMode === "never" ? "cursor-pointer opacity-50" : "cursor-pointer"}>{t["Save Terminal History"]}</Label>}
-                    description={t["Replay each tab's scrollback when restoring (increases session file size)"]}
-                    onClick={() => {
-                        if (draft.sessionSaveMode === "never") return;
-                        setDraft((prev) => ({...prev, sessionSaveScrollback: !prev.sessionSaveScrollback}));
-                    }}
-                >
-                    <Switch
-                        isSelected={draft.sessionSaveScrollback}
-                        isDisabled={draft.sessionSaveMode === "never"}
-                        onChange={(v) => setDraft((prev) => ({...prev, sessionSaveScrollback: v}))}
-                    >
-                        <Switch.Control>
-                            <Switch.Thumb />
-                        </Switch.Control>
-                    </Switch>
-                </SettingRow>
-
-                {/* Theme Mode: how the app's light/dark appearance is decided.
-                    Controls only rendering (text/icons/glass); the background
-                    color still follows the terminal/TUI. */}
-                <SettingRow
-                    label={<Label>{t["Theme Mode"]}</Label>}
-                    description={t["Decide light/dark appearance: follow the OS, the terminal background, or force one"]}
-                >
-                    <Select
-                        selectedKey={draft.themeMode}
-                        onSelectionChange={(key) => {
-                            if (key) {
-                                setDraft((prev) => ({...prev, themeMode: key as GeneralDraft["themeMode"]}));
-                            }
-                        }}
-                    >
-                        <Select.Trigger>
-                            <Select.Value />
-                            <Select.Indicator />
-                        </Select.Trigger>
-                        <Select.Popover>
-                            <ListBox>
-                                {THEME_MODES.map((mode) => (
-                                    <ListBox.Item id={mode} key={mode} textValue={mode}>
-                                        {themeModeLabel(mode, t)}
-                                    </ListBox.Item>
-                                ))}
-                            </ListBox>
-                        </Select.Popover>
-                    </Select>
-                </SettingRow>
-
-                {/* Color spread: let a fullscreen TUI's background bleed to the
-                    window edges. */}
-                <SettingRow
-                    variant="toggle"
-                    label={<Label className="cursor-pointer">{t["Color Spread"]}</Label>}
-                    description={t["Let fullscreen apps' background fill the whole window"]}
-                    onClick={() => setDraft((prev) => ({...prev, enableColorSpread: !prev.enableColorSpread}))}
-                >
-                    <Switch
-                        isSelected={draft.enableColorSpread}
-                        onChange={(v) => setDraft((prev) => ({...prev, enableColorSpread: v}))}
-                    >
-                        <Switch.Control>
-                            <Switch.Thumb />
-                        </Switch.Control>
-                    </Switch>
-                </SettingRow>
-
-                {/* Auto-check for updates on startup */}
-                <SettingRow
-                    variant="toggle"
-                    label={<Label className="cursor-pointer">{t["Auto-check for updates on startup"]}</Label>}
-                    description={t["Check for available updates when the app starts"]}
-                    onClick={() => setDraft((prev) => ({...prev, autoUpdateOnStartup: !prev.autoUpdateOnStartup}))}
-                >
-                    <Switch
-                        isSelected={draft.autoUpdateOnStartup}
-                        onChange={(v) => setDraft((prev) => ({...prev, autoUpdateOnStartup: v}))}
-                    >
-                        <Switch.Control>
-                            <Switch.Thumb />
-                        </Switch.Control>
-                    </Switch>
-                </SettingRow>
+                            <Switch
+                                isSelected={draft.inheritWorkingDirectory}
+                                onChange={(v) => setDraft((prev) => ({...prev, inheritWorkingDirectory: v}))}
+                            >
+                                <Switch.Control>
+                                    <Switch.Thumb />
+                                </Switch.Control>
+                            </Switch>
+                        </SettingRow>
+                    </div>
+                </section>
             </div>
         </SettingsShell>
     );

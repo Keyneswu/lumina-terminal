@@ -44,6 +44,12 @@
     "Create a new terminal with profile \"{name}\"": "使用配置 \"{name}\" 新建一个终端",
     "Settings": "设置",
     "General": "常规",
+    "Basics": "基础",
+    "Appearance": "外观",
+    "Window": "窗口",
+    "Tabs": "标签页",
+    "Sessions": "会话",
+    "Behavior": "行为",
     "Global Profile": "全局配置",
     "Add Profile": "添加配置",
     "Delete Profile": "删除配置",
@@ -198,5 +204,6 @@
     "Remember this choice": "记住此选择",
     "Pin on Top": "置顶窗口",
     "Unpin from Top": "取消置顶",
-    "Always on top is not supported on Wayland": "Wayland 会话不支持窗口置顶"
+    "Always on top is not supported on Wayland": "Wayland 会话不支持窗口置顶",
+    "Remembering window position is not supported on Wayland": "Wayland 会话不支持记住窗口位置"
 }
