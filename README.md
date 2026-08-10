@@ -49,52 +49,38 @@ curl -fsSL https://raw.githubusercontent.com/iewnfod/lumina-terminal/master/inst
 ### Terminal
 * Multi-tab terminal backed by [portable-pty](https://docs.rs/portable-pty/latest/portable_pty/) — each tab runs a real shell process
 * **Tear off tabs** — move a tab into its own window (`Ctrl+Shift+L` / `Cmd+Shift+L`) while keeping the running process and scrollback alive
-* **Find in terminal** — search the scrollback (`Ctrl+Shift+F` / `Cmd+Shift+F`) with match-case / whole-word / regex toggles and a live result counter, powered by [addon-search](https://github.com/xtermjs/xterm.js/tree/master/addons/addon-search)
-* Configurable shell per profile — use PowerShell, WSL, Git Bash, or any executable
-* [WebGL renderer](https://github.com/xtermjs/xterm.js/tree/master/addons/addon-webgl) for GPU-accelerated rendering (optional per-profile)
-* [Unicode 11 width rules](https://github.com/xtermjs/xterm.js/tree/master/addons/addon-unicode11) — correct column widths for modern emoji and symbols (xterm ships only Unicode 6 by default)
-* Optional [grapheme-cluster](https://github.com/xtermjs/xterm.js/tree/master/addons/addon-unicode-graphemes) rendering (experimental) — correctly clusters complex emoji ZWJ sequences, flags, and combining marks that Unicode 11 still splits
-* Optional [programming ligatures](https://github.com/princjef/font-ligatures) — full font-specific ligature support via the real OpenType GSUB table (Fira Code's `www`, `//`, JetBrains Mono's `==`, …), with the Rust backend reading the font file and `opentype.js` parsing it client-side
+* **Find in terminal** (`Ctrl+Shift+F` / `Cmd+Shift+F`) — match-case / whole-word / regex with a live result counter, via [addon-search](https://github.com/xtermjs/xterm.js/tree/master/addons/addon-search)
+* Configurable shell per profile — PowerShell, WSL, Git Bash, or any executable
+* Optional [WebGL renderer](https://github.com/xtermjs/xterm.js/tree/master/addons/addon-webgl) for GPU-accelerated rendering
+* [Unicode 11 width rules](https://github.com/xtermjs/xterm.js/tree/master/addons/addon-unicode11) + optional [grapheme-cluster](https://github.com/xtermjs/xterm.js/tree/master/addons/addon-unicode-graphemes) rendering for correct emoji/symbol widths
+* Optional [programming ligatures](https://github.com/princjef/font-ligatures) via the real OpenType GSUB table (Fira Code `www`/`//`, JetBrains Mono `==`, …)
 * Chunked output batching — smoothly handles large text dumps without blocking the UI
-* Drag and drop files into the terminal to insert their paths
-* Auto-resize terminal dimensions when the window or container changes
+* Drag and drop files into the terminal to insert their paths; auto-resize on window/container changes
 
 ### User Interface
 * **Command Palette** (`Ctrl+Shift+P` / `Cmd+Shift+P`) — search and execute commands with keyboard navigation
-* **Tab Bar** — sidebar with tab list, drag region, and hover-close buttons, toggleable via title bar or command palette
-* **Custom Title Bar** — window controls (minimize/maximize/close) integrated with the terminal theme on Windows & Linux
-* **Auto Theme** — UI light/dark mode automatically syncs to the terminal background color
-* **Color Spread** — a fullscreen TUI app's uniform edge background can fill the whole window chrome for an immersive look (toggleable in settings)
+* **Tab Bar** — sidebar with drag region and hover-close, toggleable via title bar or palette
+* **Custom Title Bar** — window controls integrated with the terminal theme on Windows & Linux
+* **Auto Theme** — UI light/dark mode syncs to the terminal background color
+* **Color Spread** — a fullscreen TUI's uniform edge background fills the window chrome for an immersive look (toggleable)
 
 ### Keyboard Shortcuts
-* Fully customizable keybindings stored in the config file
-* Default bindings:
-  * `Ctrl/Cmd+T` — New tab
-  * `Ctrl/Cmd+W` — Close current tab
-  * `Ctrl/Cmd+Shift+L` — Tear off current tab into a new window
-  * `Ctrl/Cmd+Shift+F` — Find in terminal
-  * `Ctrl/Cmd+,` — Open settings
-  * `Ctrl/Cmd+Shift+P` — Command palette
+* Fully customizable keybindings stored in the config file. Defaults:
+  * `Ctrl/Cmd+T` — New tab · `Ctrl/Cmd+W` — Close tab
+  * `Ctrl/Cmd+Shift+L` — Tear off tab · `Ctrl/Cmd+Shift+F` — Find
+  * `Ctrl/Cmd+,` — Settings · `Ctrl/Cmd+Shift+P` — Command palette
   * `Ctrl/Cmd+1–9` — Switch to tab by index
-* `Ctrl+C` / `Ctrl+Shift+C` swap (non-macOS) — copy selection with `Ctrl+C`, send SIGINT with `Ctrl+Shift+C`
+* `Ctrl+C` / `Ctrl+Shift+C` swap (non-macOS) — copy with `Ctrl+C`, send SIGINT with `Ctrl+Shift+C`
 
 ### Profiles
-* Multiple named profiles with per-profile shell, dimensions, fonts, and theme
-* Terminal settings per profile:
-  * Shell executable path (with file browser)
-  * Rows & columns
-  * Padding
-  * Font family, weight, size, and italic style
-  * WebGL renderer toggle
-  * Startup command — run a program (e.g. `vim`, `opencode`) instead of dropping into an interactive shell; the tab closes when the command exits (passed to the remote host for SSH profiles)
+* Multiple named profiles with per-profile shell, dimensions, font, theme, and startup command (e.g. `vim`, `opencode` — tab closes on exit; passed to the remote host for SSH profiles)
 * Custom terminal themes via JSON files (xterm.js ITheme format) with live color preview
 
 ### i18n
-* English
-* Simplified Chinese (简体中文)
+* English · Simplified Chinese (简体中文)
 
 ### Welcome Wizard
-* First-run onboarding with language selection, profile creation, and a confetti finish
+* First-run onboarding: language → profile → confetti finish
 
 ## Performance
 
@@ -120,64 +106,28 @@ Benchmarks below use [vtebench](https://github.com/alacritty/vtebench) (the same
 | sync_medium_cells | 4ms | 9ms | 72ms | 164ms |
 | unicode | 4ms | 7ms | 73ms | 56ms |
 
-Lumina now **matches or beats Alacritty** on several benchmarks (medium_cells, scrolling_fullscreen, sync_medium_cells, unicode) and **comfortably outperforms both Tabby and the VS Code integrated terminal** across the board — while running the same underlying web rendering stack.
+Lumina **matches or beats Alacritty** on several benchmarks (medium_cells, scrolling_fullscreen, sync_medium_cells, unicode) and **comfortably outperforms both Tabby and the VS Code integrated terminal** across the board — while running the same underlying web rendering stack.
 
-For a pure rendering-stress test, [DOOM Fire](https://github.com/const-void/DOOM-fire-node) (a continuous full-screen ANSI animation simulating the DOOM fire effect) measures sustained frames per second (higher is better):
+For a pure rendering-stress test, [DOOM Fire](https://github.com/const-void/DOOM-fire-node) (a continuous full-screen ANSI animation) measures sustained frames per second (higher is better):
 
 | | Lumina | Alacritty | Tabby | VS Code |
 |---|-------:|----------:|------:|--------:|
 | fps | ~420 | ~1800 | ~175 | ~60 |
 
-Lumina sustains **~7× the framerate of Tabby and VS Code** under continuous heavy repaint — the WebGL renderer and time-sliced output pipeline keep the animation smooth where other web-tech terminals stutter.
+Lumina sustains **~7× the framerate of Tabby and VS Code** under continuous heavy repaint.
 
 > Tested on `AMD Ryzen™ AI 9 HX 370 w`, `NVIDIA GeForce RTX™ 5080 Laptop GPU`, Arch Linux.
 
 ## Development
-1. Clone the repo and enter it.
+
 ```shell
 git clone https://github.com/iewnfod/lumina-terminal.git
 cd lumina-terminal
-```
-2. Install dependencies.
-```shell
 pnpm install
-```
-3. Run tauri dev.
-```shell
 pnpm tauri dev
 ```
 
-### Adding an App Icon
-
-When a recognized TUI/CLI app is running in a tab, Lumina shows its brand icon
-instead of the shell icon. The icon registry is data-driven — adding one takes
-two steps and no component changes.
-
-1. Drop the app's SVG file(s) under `src/assets/app-icons/<id>/`. The id is the
-   directory name (e.g. `vim`). Pick a variant based on what background the
-   icon sits on (not the logo's own tone):
-   - `<id>-light.svg` — for **light** backgrounds (logo itself tends dark)
-   - `<id>-dark.svg` — for **dark** backgrounds (logo itself tends light)
-   - `<id>.svg` — neutral single-color variant, used when a dedicated
-     light/dark file is missing. A monochrome logo can ship just this one file.
-
-   A colored brand logo usually ships a light/dark pair; a monochrome icon can
-   ship a single `<id>.svg`. Missing variants fall back gracefully.
-2. Register the command name → icon id in `APP_COMMANDS` in
-   [`src/lib/appIcon.ts`](src/lib/appIcon.ts):
-   ```ts
-   const APP_COMMANDS: Record<string, AppIconId> = {
-       opencode: "opencode",
-       vim: "vim",          // ← command basename → icon id (directory name)
-   };
-   ```
-   The key is the command's argv[0] basename (lowercase), as reported by the
-   shell or the process tracker. Wrappers (`sudo`, `env`, `nohup`, ...) are
-   skipped automatically, so `sudo vim` resolves to the vim icon.
-
-Then `pnpm build` (or `pnpm tauri dev`) — the icon is picked up at build time
-and shown whenever that command is foreground in a tab, including when it is
-the profile's startup command.
+See [**CONTRIBUTING.md**](./CONTRIBUTING.md) for the development setup, app-icon guide, and code standards. The full architecture and contributor rules live in [AGENTS.md](./AGENTS.md).
 
 ## Technology Used
 * [Tauri & Tauri Plugins](https://tauri.app/)
