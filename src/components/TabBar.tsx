@@ -103,10 +103,13 @@ export default function TabBar(props: TabBarProps) {
     // eat a new gesture's first event; the drop handler measures unthrottled,
     // so this only bounds how often the preview re-renders.
     const lastMeasureRef = useRef(0);
-    // Set by a reorder drop so the dragend below skips tear-off dispatch.
-    const didReorderRef = useRef(false);
-    // Escape during a drag — dragend must not treat a missing `drop` as a
-    // successful reorder (see dragend fallback below).
+    // Set by a drop inside the sidebar so the dragend below skips tear-off
+    // dispatch. Named for the gesture outcome (a drop was handled) rather than
+    // for reordering: a no-op drop back into the source's own slot still sets
+    // this, because "released inside the list" must never tear off.
+    const dropHandledRef = useRef(false);
+    // Escape during a drag cancels the WHOLE gesture — dragend must skip both
+    // the reorder fallback AND tear-off (see dragend below).
     const dragCancelledRef = useRef(false);
     // Mirrors of drag state for dragend: the row's onDragEnd closure can be
     // stale relative to the latest preview, and WebKit sometimes zeros
@@ -264,7 +267,7 @@ export default function TabBar(props: TabBarProps) {
         const {next} = landingOrder(id, clientY);
         const index = next.indexOf(id);
         const beforeId = index >= 0 ? next[index + 1] ?? null : null;
-        didReorderRef.current = true;
+        dropHandledRef.current = true;
         onReorder?.(id, beforeId);
     };
 
@@ -354,9 +357,11 @@ export default function TabBar(props: TabBarProps) {
                             className="relative my-0.5 cursor-pointer"
                             style={{opacity: isDragging ? 0.4 : 1}}
                             title={tab.name}
-                            draggable={isTerminalTab}
+                            // All tabs are draggable (so Settings/About can be
+                            // reordered), but only terminal tabs carry the
+                            // tear-off/merge machinery below.
+                            draggable
                             onDragStart={(e: ReactDragEvent) => {
-                                if (!isTerminalTab) return;
                                 setDraggingId(tab.id);
                                 // Seed the preview with the current order so
                                 // dragover only ever rearranges a live array.
@@ -368,15 +373,24 @@ export default function TabBar(props: TabBarProps) {
                                 // another one.
                                 lastMeasureRef.current = 0;
                                 lastDragClientRef.current = null;
-                                didReorderRef.current = false;
+                                dropHandledRef.current = false;
                                 dragCancelledRef.current = false;
                                 // effectAllowed + setData are required for the
-                                // browser to start a drag. Use a proprietary MIME
-                                // only — `text/plain` makes macOS Finder drop a
+                                // browser to start a drag — without them the
+                                // browser treats this as an empty drag and NEVER
+                                // fires dragover/drop, so the reorder preview
+                                // would not work for any tab. Must run for every
+                                // tab (incl. Settings/About) before the early
+                                // return below. Use a proprietary MIME only —
+                                // `text/plain` makes macOS Finder drop a
                                 // .textClipping on the Desktop and lets text
                                 // fields treat the gesture as copy/paste.
                                 e.dataTransfer.effectAllowed = "move";
                                 e.dataTransfer.setData(TAB_DRAG_MIME, tab.id);
+                                // Settings/About have no standalone-window
+                                // semantics, so the tear-off/merge heartbeat
+                                // stops here — they only reorder.
+                                if (!isTerminalTab) return;
                                 // Clear any stale merge target from a previous
                                 // drag — only heartbeats during THIS drag count.
                                 if (mergeTargetRef) mergeTargetRef.current = null;
@@ -417,18 +431,26 @@ export default function TabBar(props: TabBarProps) {
                                 );
                             }}
                             onDragEnd={(e: ReactDragEvent) => {
-                                if (!isTerminalTab) return;
-                                dragCleanupRef.current?.();
-                                dragCleanupRef.current = null;
-                                emit(DRAG_END_EVENT).catch((err) =>
-                                    info(`Failed to broadcast ${DRAG_END_EVENT}: ${err}`).catch(() => {})
-                                );
-                                // A reorder already consumed this gesture. The
-                                // heartbeat below would resolve to "cancel"
-                                // anyway, but being explicit keeps a reordered
-                                // tab from ever being torn off by a stale one.
-                                if (didReorderRef.current) {
-                                    didReorderRef.current = false;
+                                // dragCleanupRef holds the document listeners
+                                // a terminal-tab dragstart attached; for a
+                                // Settings/About drag it's null. Guarded so the
+                                // broadcast/tear-off path runs for terminal tabs
+                                // only, but the shared reorder cleanup below it
+                                // runs for every tab.
+                                if (isTerminalTab) {
+                                    dragCleanupRef.current?.();
+                                    dragCleanupRef.current = null;
+                                    emit(DRAG_END_EVENT).catch((err) =>
+                                        info(`Failed to broadcast ${DRAG_END_EVENT}: ${err}`).catch(() => {})
+                                    );
+                                }
+                                // A drop inside the sidebar already consumed
+                                // this gesture. The heartbeat below would
+                                // resolve to "cancel" anyway, but being explicit
+                                // keeps a dropped tab from ever being torn off by
+                                // a stale heartbeat.
+                                if (dropHandledRef.current) {
+                                    dropHandledRef.current = false;
                                     setDraggingId(null);
                                     setPreviewIds(null);
                                     clearStuckHover();
@@ -454,7 +476,7 @@ export default function TabBar(props: TabBarProps) {
                                 ) {
                                     info(`dragend fallback reorder (drop event missing) id=${tab.id}`);
                                     commitReorderAt(tab.id, point.y);
-                                    didReorderRef.current = false;
+                                    dropHandledRef.current = false;
                                     setDraggingId(null);
                                     setPreviewIds(null);
                                     clearStuckHover();
@@ -463,7 +485,18 @@ export default function TabBar(props: TabBarProps) {
                                 setDraggingId(null);
                                 setPreviewIds(null);
                                 clearStuckHover();
-                                if (!onTearOff) return;
+                                // Escape cancels the WHOLE gesture, not just the
+                                // reorder fallback above — without this guard a
+                                // drag that left the sidebar and was then
+                                // Escape-cancelled would fall through to tear-off
+                                // (endInsideSelf=false → action="new").
+                                if (dragCancelledRef.current) {
+                                    info(`dragend cancelled by Escape → skip tear-off`);
+                                    return;
+                                }
+                                // Settings/About tabs are reorder-only; they
+                                // never tear off into their own window.
+                                if (!isTerminalTab || !onTearOff) return;
                                 // Capture release coords sync from the DragEvent
                                 // (always present, unlike mid-drag dragover which
                                 // dies over xterm on macOS WebKit).
