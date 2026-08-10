@@ -2,6 +2,7 @@ import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {getCurrentWindow} from "@tauri-apps/api/window";
 import {TerminalProfile, CurrentCommand} from "../types/terminal.ts";
 import {parseProfile} from "../lib/term.ts";
+import {reorderByDrop} from "../lib/tabReorder.ts";
 import {killTerminal, getTerminalCwd} from "../lib/terminalApi.ts";
 import {info, debug, error, warn} from "@tauri-apps/plugin-log";
 import {SETTINGS_TAB_ID, ABOUT_TAB_ID} from "../constants.ts";
@@ -48,6 +49,11 @@ export interface TerminalManager {
     closeTerminal: (id: string) => void;
     switchTab: (id: string) => void;
     toTab: (index: number) => void;
+    /** Move tab `id` so it sits immediately before `beforeId`, or to the end
+     *  when `beforeId` is null. Takes a neighbor id rather than an index so a
+     *  caller working off the rendered tab list can never land on the wrong
+     *  slot of `ids`. Drives sidebar drag-reordering. */
+    reorderTabs: (id: string, beforeId: string | null) => void;
     tearOffTab: (id: string, opts?: {mergeTarget?: string; position?: {x: number; y: number}}) => Promise<void>;
     setCommandsFor: (id: string, cmd: CurrentCommand | null) => void;
     /** Add a chrome-only tab (Settings/About — no PTY). If already present,
@@ -341,6 +347,24 @@ export function useTerminalManager(): TerminalManager {
         setCurrentId(ids[idx]);
     }, [ids]);
 
+    const reorderTabs = useCallback((id: string, beforeId: string | null) => {
+        const current = idsRef.current;
+        const from = current.indexOf(id);
+        if (from < 0) {
+            warn(`reorderTabs: unknown tab id=${id}`);
+            return;
+        }
+        const insertIndex = beforeId === null ? current.length : current.indexOf(beforeId);
+        if (insertIndex < 0) {
+            warn(`reorderTabs: unknown neighbor id=${beforeId}`);
+            return;
+        }
+        const next = reorderByDrop(current, from, insertIndex);
+        if (next === current) return; // dropped back into its own slot
+        setIds(next);
+        info(`Tab reordered: id=${id} ${from} → ${next.indexOf(id)}`);
+    }, []);
+
     const openChromeTab = useCallback((id: string) => {
         setIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
         setCurrentId(id);
@@ -579,6 +603,7 @@ export function useTerminalManager(): TerminalManager {
         closeTerminal,
         switchTab,
         toTab,
+        reorderTabs,
         tearOffTab,
         setCommandsFor,
         openChromeTab,

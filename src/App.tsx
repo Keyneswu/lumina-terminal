@@ -311,6 +311,7 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
                     onClose={mgr.closeTerminal}
                     onNew={() => mgr.newTerminal(defaultProfile)}
                     onTearOff={mgr.tearOffTab}
+                    onReorder={mgr.reorderTabs}
                     mergeTargetRef={mgr.mergeTargetRef}
                     dragScreenPosRef={mgr.dragScreenPosRef}
                     backgroundColor={effectiveBg ?? "#000000"}
