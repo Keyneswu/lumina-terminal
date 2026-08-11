@@ -21,6 +21,7 @@ import {emitTo, listen} from "@tauri-apps/api/event";
 import {useTearoffSession} from "./useTearoffSession.ts";
 import {useGlobalConfig} from "./config.tsx";
 import {useSessionPersistence} from "./useSessionPersistence.ts";
+import {useSystemTheme} from "./useSystemTheme.ts";
 import type {SavedSession} from "../lib/session.ts";
 
 /**
@@ -73,6 +74,11 @@ export interface TerminalManager {
 export function useTerminalManager(): TerminalManager {
     const {config, updateConfig} = useGlobalConfig();
     const tearoff = useTearoffSession();
+    // OS light/dark preference drives the fallback terminal palette (a bare
+    // profile with no themePath/inline theme): light → GitHub Light, dark/未决
+    // → legacy black. Passed into parseProfile so new tabs pick it up at create
+    // time. Existing tabs keep their baked-in palette (same as themePath).
+    const systemTheme = useSystemTheme();
 
     const [ids, setIds] = useState<string[]>([]);
     const [terminals, setTerminals] = useState<Record<string, TerminalProfile>>({});
@@ -127,7 +133,7 @@ export function useTerminalManager(): TerminalManager {
     }, []);
 
     const newTerminal = useCallback(async (profile: TerminalProfile) => {
-        let p = await parseProfile(profile, config.globalProfile);
+        let p = await parseProfile(profile, config.globalProfile, systemTheme);
         // "Inherit working directory" (optional, off by default): the new tab
         // starts in the ACTIVE terminal's current directory instead of the
         // profile default. Queries the backend shell cwd. Async, so any
@@ -146,7 +152,7 @@ export function useTerminalManager(): TerminalManager {
         const id = addTerminal(p);
         setCurrentId(id);
         info(`New terminal: profile=${profile.name} id=${id}`);
-    }, [config, addTerminal]);
+    }, [config, addTerminal, systemTheme]);
 
     const closeTerminal = useCallback((id: string) => {
         debug(`closeTerminal called for id=${id}`);
@@ -514,6 +520,7 @@ export function useTerminalManager(): TerminalManager {
                         const resolved = await parseProfile(
                             tab.cwd ? {...base, cwd: tab.cwd} : base,
                             config.globalProfile,
+                            systemTheme,
                         );
                         return {kind: "terminal", id: "", profile: resolved, scrollback: tab.scrollback};
                     })).then((entries) => {
@@ -587,7 +594,7 @@ export function useTerminalManager(): TerminalManager {
         setCurrentId(ptyId);
         setReattachTabs({[ptyId]: {ptyId, scrollback: tearoff.payload.scrollback}});
         info(`Tear-off window seeded with ptyId=${ptyId}`);
-    }, [config, tearoff, defaultProfile, session, addTerminal, newTerminal]);
+    }, [config, tearoff, defaultProfile, session, addTerminal, newTerminal, systemTheme]);
 
     return {
         ids,

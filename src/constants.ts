@@ -30,6 +30,38 @@ export const DEFAULT_TERMINAL_THEME: ITheme = {
     brightWhite: "#ffffff",
 };
 
+/** 兜底终端配色（亮色）— GitHub Light。
+ *  与 {@link DEFAULT_TERMINAL_THEME}（暗色）成对：当一个 profile 既无
+ *  themePath 又无内联 theme 时，按系统明暗在这两者间选择（亮 → 本配色，
+ *  暗/未决 → DEFAULT_TERMINAL_THEME）。取自用户 themes/github_light.json。 */
+export const GITHUB_LIGHT_TERMINAL_THEME: ITheme = {
+    background: "#ffffff",
+    foreground: "#24292f",
+    cursor: "#24292f",
+    cursorAccent: "#ffffff",
+    selectionBackground: "rgba(36, 41, 47, 0.3)",
+
+    // 标准 16 色 ANSI 工具盘
+    black: "#24292e",
+    red: "#d73a49",
+    green: "#28a745",
+    yellow: "#dbab09",
+    blue: "#0366d6",
+    magenta: "#5a32a3",
+    cyan: "#0598bc",
+    white: "#6a737d",
+
+    // Bright (高亮) 16 色 ANSI
+    brightBlack: "#959da5",
+    brightRed: "#cb2431",
+    brightGreen: "#22863a",
+    brightYellow: "#b08800",
+    brightBlue: "#005cc5",
+    brightMagenta: "#5a32a3",
+    brightCyan: "#3192aa",
+    brightWhite: "#d1d5da",
+};
+
 export const CONFIG_SAVE_PATH = "config.json";
 
 /** LazyStore file holding the last-saved terminal session (one key "session").

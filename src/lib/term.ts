@@ -2,6 +2,7 @@ import {TerminalProfile, TerminalRenderOptions} from "../types/terminal.ts";
 import {ITheme} from "@xterm/xterm";
 import {
     DEFAULT_TERMINAL_THEME,
+    GITHUB_LIGHT_TERMINAL_THEME,
     TERMINAL_CORNER_CONTENT_INSET,
     TERMINAL_LEFT_CONTENT_INSET,
 } from "../constants.ts";
@@ -44,8 +45,15 @@ export function parseProfilePadding(profile: TerminalProfile, paddingOffset: num
     };
 }
 
-export async function parseProfileTheme(profile: TerminalRenderOptions, defaultTheme?: ITheme) {
-    let theme: ITheme = defaultTheme ?? DEFAULT_TERMINAL_THEME;
+/** OS light/dark preference used to pick the fallback terminal palette when a
+ *  profile has no themePath and no inline theme. `null`/undefined = unresolved,
+ *  treated as dark (matches useSystemTheme's convention for unknown/未决). */
+export type SystemTheme = "light" | "dark" | null;
+
+export async function parseProfileTheme(profile: TerminalRenderOptions, defaultTheme?: ITheme, systemTheme?: SystemTheme) {
+    // 起始兜底配色：显式 defaultTheme > 按 systemTheme 在亮/暗间选择。
+    // dark 与未决(null)都走原黑底，保持向后兼容且与 useSystemTheme 约定一致。
+    let theme: ITheme = defaultTheme ?? (systemTheme === "light" ? GITHUB_LIGHT_TERMINAL_THEME : DEFAULT_TERMINAL_THEME);
     if (profile.themePath) {
         const basePath = await appDataDir();
         const fullPath = await join(basePath, profile.themePath);
@@ -75,15 +83,15 @@ export async function parseProfileTheme(profile: TerminalRenderOptions, defaultT
     return theme;
 }
 
-export async function parseProfile(profile: TerminalProfile, globalProfile?: TerminalRenderOptions): Promise<TerminalProfile> {
+export async function parseProfile(profile: TerminalProfile, globalProfile?: TerminalRenderOptions, systemTheme?: SystemTheme): Promise<TerminalProfile> {
     const cleanGlobal = globalProfile ? Object.fromEntries(Object.entries(globalProfile).filter(([_, v]) => v !== undefined)) : {};
     const cleanProfile = Object.fromEntries(Object.entries(profile).filter(([_, v]) => v !== undefined));
     const p = {...cleanGlobal, ...cleanProfile} as TerminalProfile;
     if (globalProfile) {
-        let globalTheme = await parseProfileTheme(globalProfile);
-        p.theme = await parseProfileTheme(profile, globalTheme);
+        let globalTheme = await parseProfileTheme(globalProfile, undefined, systemTheme);
+        p.theme = await parseProfileTheme(profile, globalTheme, systemTheme);
     } else {
-        p.theme = await parseProfileTheme(p);
+        p.theme = await parseProfileTheme(p, undefined, systemTheme);
     }
     delete p.themePath;
     return p;
