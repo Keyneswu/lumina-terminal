@@ -147,3 +147,6 @@ See [**CONTRIBUTING.md**](./CONTRIBUTING.md) for the development setup, app-icon
 
 ## License
 [Mozilla Public License Version 2.0](./LICENSE)
+
+## Publicity Community
+* [LINUX DO](https://linux.do/)

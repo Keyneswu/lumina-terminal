@@ -146,3 +146,6 @@ pnpm tauri dev
 
 ## 开源协议
 [Mozilla Public License Version 2.0](./LICENSE)
+
+## 宣发社区
+* [LINUX DO](https://linux.do/)
