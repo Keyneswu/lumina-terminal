@@ -77,6 +77,10 @@ interface TabBarProps {
      *  chrome unmodified (no extra darkening/lightening). */
     bgSpread?: boolean;
     collapsed: boolean;
+    /** Brand text shown in the sidebar's top-left. Falls back to "Lumina" when
+     *  absent (e.g. tear-off windows, or the main window launched with no
+     *  `-T/--title`). Overridden by the launch `--title` on the main window. */
+    brandTitle?: string;
     defaultProfileName?: string;
     /** When set, an update is available — show a banner above "New Tab". */
     updateVersion?: string | null;
@@ -84,7 +88,7 @@ interface TabBarProps {
 }
 
 export default function TabBar(props: TabBarProps) {
-    const { tabs, activeId, onSelect, onClose, onNew, onTearOff, onReorder, mergeTargetRef, dragScreenPosRef, backgroundColor, foregroundColor, dangerColor, bgSpread, collapsed, defaultProfileName, updateVersion, onUpdateClick } = props;
+    const { tabs, activeId, onSelect, onClose, onNew, onTearOff, onReorder, mergeTargetRef, dragScreenPosRef, backgroundColor, foregroundColor, dangerColor, bgSpread, collapsed, brandTitle, defaultProfileName, updateVersion, onUpdateClick } = props;
     const t = useI18n();
 
     // ---- Drag-to-reorder state ----
@@ -331,7 +335,7 @@ export default function TabBar(props: TabBarProps) {
                                 className="h-5 w-5 pointer-events-none"
                             />
                             <span className="text-sm font-medium truncate leading-tight">
-                                Lumina
+                                {brandTitle ?? "Lumina"}
                             </span>
                         </>
                     )}

@@ -40,6 +40,7 @@ src/
 ├── constants.ts             # Default config, default bindings, tab-id sentinels
 ├── types/
 │   ├── config.ts            # GlobalConfig, Binding, Actions, WithKeys
+│   ├── cli.ts               # CliArgs — parsed launch flags (mirrors src-tauri/src/cli.rs CliArgs)
 │   └── terminal.ts          # TerminalProfile (+ keepAfterExit: "exit"|"freeze"|"shell" — what
 │                            #   happens after startupCommand finishes), TerminalRenderOptions, SSHConfig
 │
@@ -53,6 +54,7 @@ src/
 │   ├── ssh.ts               # formatSshAddress / formatSshEntry
 │   ├── term.ts              # parseProfile, parseProfileTheme, parseProfilePadding
 │   ├── terminalApi.ts       # invoke wrappers: writeToTerminal, resizeTerminal, ...
+│   ├── cliApi.ts            # getCliArgs() wrapper — reads parsed launch flags (log-on-reject)
 │   ├── shellIcon.ts         # getShellType(profile) → "bash"|"zsh"|"fish"|"nu"|"pwsh"|"ssh"|"default"
 │   ├── bindings.ts          # parseBindings, matchBinding, loadBindings, useKeyboardBindings,
 │   │                        #   exported actionSignature / keySignature
@@ -85,6 +87,9 @@ src/
 │   │                        #   shared draft+dirty+save logic for all settings panels
 │   ├── useShells.ts         # useShells() — cached find_shells backend call
 │   ├── useSshConfig.ts      # useSshConfig() — cached parse_ssh_config backend call
+│   ├── useCliArgs.ts        # useCliArgs() — cached get_cli_args; Alacritty-style launch flags,
+│   │                        #   consumed by useTerminalManager's seed effect to shape the main
+│   │                        #   window's first tab (--profile/--command/--working-directory/--hold/--title)
 │   ├── useOutputMode.ts     # useOutputMode(id) → {markInteractive}: debounced LowLatency toggle
 │   ├── useEffectiveTheme.ts # useEffectiveTheme(profile, currentId) → theme/bg/fg + HeroUI sync
 │   ├── useTerminalManager.ts# useTerminalManager() — tab list/profiles/active id + create/close/reorder/
@@ -143,7 +148,12 @@ src/
 ```
 src-tauri/src/
 ├── main.rs        # entry, calls lib::run()
-├── lib.rs         # Tauri builder: plugins, state, invoke_handler registration
+├── lib.rs         # Tauri builder: plugins, state, invoke_handler registration; parse_cli() at top
+│                  #   of run() (handles --help/--version + exits before the window spawns)
+├── cli.rs         # clap-based launch-flag parsing (Alacritty-style): CliArgs (-e/--command,
+│                  #   --working-directory, -T/--title, --hold, --profile), CliState, parse_cli
+│                  #   (filters macOS -psn_*), get_cli_args command — args are surfaced to the
+│                  #   frontend, which decides how they shape the initial tab
 ├── state.rs       # TerminalState (HashMap of PTY pairs + writers + force_low_latency flags
 │                  #   + swappable output_channel for tab tear-off reattach)
 ├── terminal.rs    # start/reattach/kill/write/resize_terminal, set_output_mode commands;

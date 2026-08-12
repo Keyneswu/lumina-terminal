@@ -82,6 +82,28 @@ curl -fsSL https://raw.githubusercontent.com/iewnfod/lumina-terminal/master/inst
 ### 欢迎向导
 * 首次启动引导：语言选择 → 创建配置文件 → 撒花完成
 
+## 命令行参数
+
+Lumina 支持类似 Alacritty 的启动参数（外加 Lumina 特有的 `--profile`）。只要传入了其中任意一个参数，就会**只打开一个标签页**应用这些覆盖配置，并跳过会话恢复。
+
+| 参数 | 说明 |
+|------|------|
+| `-e, --command <COMMAND>...` | 启动时运行的命令及参数（必须是**最后一个**参数 —— 其后的所有内容都视为命令）。通过配置文件的 shell 执行；除非给定 `--hold`，命令退出后标签页关闭。 |
+| `--working-directory <DIR>` | 在此目录启动 shell。 |
+| `-T, --title <TITLE>` | 设置窗口标题。 |
+| `--hold` | 命令退出后保持终端打开（冻结输出、只读）。 |
+| `--profile <NAME>` | 按名称打开某个配置文件；其它参数在其基础上叠加。找不到时回退到默认配置文件。*（Lumina 特有）* |
+| `--version` / `--help` | 打印版本 / 用法并退出（不启动窗口）。 |
+
+```shell
+lumina-terminal -e nvim                         # 运行 nvim；:q 后关闭
+lumina-terminal --hold -e ls -la                # 运行 ls -la 并保留输出
+lumina-terminal --working-directory ~/projects -e npm run dev
+lumina-terminal --profile work                  # 打开 "work" 配置文件
+lumina-terminal --profile dev -e cargo build --hold
+lumina-terminal -T "build log"                  # 设置窗口标题
+```
+
 ## 性能
 
 Lumina Terminal 的渲染管线针对高负载输出做了调优 —— 大文件 `cat`、ANSI 密集的 TUI、滚动、Unicode —— 同时通过读取背压保持内存占用可控。
@@ -132,6 +154,7 @@ pnpm tauri dev
 ## 使用的技术
 * [Tauri & Tauri Plugins](https://tauri.app/)
 * [Rust](https://rust-lang.org/)
+* [clap](https://docs.rs/clap/) — 命令行参数解析
 * [pnpm](https://pnpm.io/)
 * [TypeScript](https://www.typescriptlang.org/)
 * [React](https://zh-hans.react.dev/)

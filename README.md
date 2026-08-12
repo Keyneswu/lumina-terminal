@@ -82,6 +82,28 @@ curl -fsSL https://raw.githubusercontent.com/iewnfod/lumina-terminal/master/inst
 ### Welcome Wizard
 * First-run onboarding: language → profile → confetti finish
 
+## Command-line options
+
+Lumina accepts Alacritty-style launch flags (with a Lumina-specific `--profile`). When any of these is given, a **single tab** is opened with the overrides and session restore is skipped.
+
+| Flag | Description |
+|------|-------------|
+| `-e, --command <COMMAND>...` | Command + args to run on startup (must be the **last** flag — everything after it is the command). Runs through the profile's configured shell; the tab closes when the command exits unless `--hold` is given. |
+| `--working-directory <DIR>` | Start the shell in this directory. |
+| `-T, --title <TITLE>` | Set the window title. |
+| `--hold` | Keep the terminal open (frozen, read-only) after the command exits. |
+| `--profile <NAME>` | Open a configured profile by name; other flags layer on top. Falls back to the default if not found. *(Lumina-specific)* |
+| `--version` / `--help` | Print version / usage and exit (no window). |
+
+```shell
+lumina-terminal -e nvim                         # run nvim; closes on :q
+lumina-terminal --hold -e ls -la                # run ls -la, keep the output
+lumina-terminal --working-directory ~/projects -e npm run dev
+lumina-terminal --profile work                  # open the "work" profile
+lumina-terminal --profile dev -e cargo build --hold
+lumina-terminal -T "build log"                  # set the window title
+```
+
 ## Performance
 
 Lumina Terminal's rendering pipeline is tuned to stay smooth under heavy output — large `cat`, ANSI-dense TUIs, scrolling, and unicode — while keeping memory bounded via read backpressure.
@@ -132,6 +154,7 @@ See [**CONTRIBUTING.md**](./CONTRIBUTING.md) for the development setup, app-icon
 ## Technology Used
 * [Tauri & Tauri Plugins](https://tauri.app/)
 * [Rust](https://rust-lang.org/)
+* [clap](https://docs.rs/clap/) — command-line argument parsing
 * [pnpm](https://pnpm.io/)
 * [TypeScript](https://www.typescriptlang.org/)
 * [React](https://react.dev/)

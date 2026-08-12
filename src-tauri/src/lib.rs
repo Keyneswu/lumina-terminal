@@ -1,3 +1,4 @@
+mod cli;
 mod command_tracker;
 mod file_manager;
 mod fonts;
@@ -9,6 +10,7 @@ mod system;
 mod terminal;
 mod utils;
 
+use crate::cli::*;
 use crate::file_manager::*;
 use crate::fonts::*;
 use crate::install_source::*;
@@ -116,6 +118,12 @@ fn configure_about_menu(app: &tauri::App) -> tauri::Result<()> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Parse CLI flags first: --help / --version print and exit here, before any
+    // window or logging is set up. macOS LaunchServices `-psn_*` args are
+    // filtered inside parse_cli.
+    let cli = parse_cli();
+    let cli_state = CliState::new(cli);
+
     #[cfg(target_os = "linux")]
     {
         use std::env;
@@ -152,6 +160,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .manage(state)
+        .manage(cli_state)
         .setup(|app| {
             // `app` is only used on macOS to build the native menu bar; on other
             // platforms it's intentionally unused, so allow it.
@@ -182,6 +191,7 @@ pub fn run() {
             parse_ssh_config,
             open_in_file_manager,
             find_font,
+            get_cli_args,
             #[cfg(debug_assertions)]
             open_devtools,
         ])

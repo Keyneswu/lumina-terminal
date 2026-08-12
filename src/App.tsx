@@ -319,6 +319,7 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
                     dangerColor={dangerColor}
                     bgSpread={isSpread}
                     collapsed={!tabBarVisible}
+                    brandTitle={mgr.brandTitle}
                     defaultProfileName={defaultProfile?.name}
                     updateVersion={updater.status === "available" && updater.info ? updater.info.version : null}
                     onUpdateClick={() => setIsUpdateModalOpen(true)}

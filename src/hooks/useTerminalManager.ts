@@ -19,6 +19,7 @@ import {
 } from "../lib/tearoff.ts";
 import {emitTo, listen} from "@tauri-apps/api/event";
 import {useTearoffSession} from "./useTearoffSession.ts";
+import {useCliArgs} from "./useCliArgs.ts";
 import {useGlobalConfig} from "./config.tsx";
 import {useSessionPersistence} from "./useSessionPersistence.ts";
 import {useSystemTheme} from "./useSystemTheme.ts";
@@ -39,6 +40,9 @@ export interface TerminalManager {
     terminals: Record<string, TerminalProfile>;
     currentId: string | null;
     commands: Record<string, CurrentCommand | null>;
+    /** Brand text for the sidebar's top-left. Set to the launch `-T/--title`
+     *  on the main window; undefined otherwise (→ TabBar shows "Lumina"). */
+    brandTitle: string | undefined;
     reattachTabs: Record<string, {ptyId: string; scrollback: string}>;
     /** Per-tab scrollback to replay on a fresh-start (session restore), keyed
      *  by tab id. Term reads [id] via its initialScrollback prop. */
@@ -79,6 +83,11 @@ export function useTerminalManager(): TerminalManager {
     // → legacy black. Passed into parseProfile so new tabs pick it up at create
     // time. Existing tabs keep their baked-in palette (same as themePath).
     const systemTheme = useSystemTheme();
+    // Parsed launch flags (Alacritty-style), parsed once on the backend.
+    // `undefined` while the first fetch is in flight; the seed effect waits on
+    // it before deciding the main window's initial tab. Process-global, so the
+    // value is shared by every window — only the main window consumes it.
+    const cliArgs = useCliArgs();
 
     const [ids, setIds] = useState<string[]>([]);
     const [terminals, setTerminals] = useState<Record<string, TerminalProfile>>({});
@@ -484,6 +493,7 @@ export function useTerminalManager(): TerminalManager {
     useEffect(() => {
         if (isInitialized.current) return;
         if (tearoff === null) return; // tear-off probe in flight
+        if (cliArgs === undefined) return; // CLI args probe in flight
         if (tearoff === "no") {
             // Main window: also wait for the session-restore probe to finish.
             if (session.restoreTabs === undefined) return;
@@ -492,6 +502,56 @@ export function useTerminalManager(): TerminalManager {
                 getCurrentWindow().setResizable(true).catch((e) =>
                     error(`Failed to set window resizable: ${e}`)
                 );
+                // CLI launch args (Alacritty-style): if any shaping flag was
+                // given (--profile/--command/--working-directory/--hold/--title),
+                // open a SINGLE tab built from them and skip session restore —
+                // the user explicitly asked for a specific launch. No args at
+                // all falls through to the normal session-restore / default
+                // path below, preserving today's behavior.
+                const hasLaunchArgs =
+                    cliArgs.command.length > 0 ||
+                    !!cliArgs.workingDirectory ||
+                    cliArgs.hold ||
+                    !!cliArgs.title ||
+                    !!cliArgs.profile;
+                if (hasLaunchArgs) {
+                    session.markRestored();
+                    // Base profile: --profile if it resolves, else default.
+                    let base = defaultProfile;
+                    if (cliArgs.profile) {
+                        const found = config.profiles.find(p => p.name === cliArgs.profile);
+                        if (found) {
+                            base = found;
+                        } else {
+                            warn(`CLI --profile "${cliArgs.profile}" not found; using default profile`);
+                        }
+                    }
+                    const p: TerminalProfile = {...base};
+                    if (cliArgs.workingDirectory) p.cwd = cliArgs.workingDirectory;
+                    if (cliArgs.command.length > 0) {
+                        // -e runs through the configured shell (Lumina's
+                        // startupCommand model). Without --hold the tab closes
+                        // when the command exits (Alacritty-faithful); --hold
+                        // freezes the output instead.
+                        p.startupCommand = cliArgs.command.join(" ");
+                        p.keepAfterExit = cliArgs.hold ? "freeze" : "exit";
+                    } else if (cliArgs.hold) {
+                        p.keepAfterExit = "freeze";
+                    }
+                    if (cliArgs.title) {
+                        getCurrentWindow().setTitle(cliArgs.title).catch((e) =>
+                            error(`Failed to set window title to "${cliArgs.title}": ${e}`).catch(() => {})
+                        );
+                    }
+                    info(
+                        `CLI launch: profile=${p.name} cwd=${p.cwd ?? "(default)"} ` +
+                        `cmd=${p.startupCommand ?? "(none)"} hold=${cliArgs.hold}`,
+                    );
+                    newTerminal(p).catch((e) =>
+                        error(`Failed to create CLI-launched terminal: ${e}`).catch(() => {})
+                    );
+                    return;
+                }
                 const saved = session.restoreTabs as SavedSession | null;
                 const canRestore =
                     config.sessionSaveMode !== "never" &&
@@ -594,13 +654,20 @@ export function useTerminalManager(): TerminalManager {
         setCurrentId(ptyId);
         setReattachTabs({[ptyId]: {ptyId, scrollback: tearoff.payload.scrollback}});
         info(`Tear-off window seeded with ptyId=${ptyId}`);
-    }, [config, tearoff, defaultProfile, session, addTerminal, newTerminal, systemTheme]);
+    }, [config, tearoff, cliArgs, defaultProfile, session, addTerminal, newTerminal, systemTheme]);
+
+    // Brand text shown in the sidebar's top-left. `-T/--title` overrides the
+    // default "Lumina" — but only on the main window, mirroring how the
+    // setTitle() call above is scoped to the main window's seed path. Tear-off
+    // windows keep "Lumina" (undefined here → TabBar falls back to it).
+    const brandTitle = tearoff === "no" ? cliArgs?.title : undefined;
 
     return {
         ids,
         terminals,
         currentId,
         commands,
+        brandTitle,
         reattachTabs,
         initialScrollbackTabs,
         serializeFns,
