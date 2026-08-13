@@ -3,7 +3,7 @@ import {getCurrentWindow} from "@tauri-apps/api/window";
 import {TerminalProfile, CurrentCommand} from "../types/terminal.ts";
 import {parseProfile} from "../lib/term.ts";
 import {reorderByDrop} from "../lib/tabReorder.ts";
-import {killTerminal, getTerminalCwd} from "../lib/terminalApi.ts";
+import {killTerminal, getTerminalCwd, setActiveTab} from "../lib/terminalApi.ts";
 import {info, debug, error, warn} from "@tauri-apps/plugin-log";
 import {SETTINGS_TAB_ID, ABOUT_TAB_ID} from "../constants.ts";
 import {
@@ -110,6 +110,14 @@ export function useTerminalManager(): TerminalManager {
     idsRef.current = ids;
     const currentIdRef = useRef(currentId);
     currentIdRef.current = currentId;
+    // Mirror the focused terminal to the backend so the read-only MCP server
+    // can answer `get_active_tab`. The frontend tab list is the source of
+    // truth; this is a best-effort cache (failures are logged, not blocking).
+    // Settings/About ids aren't in the backend's PTY map, so they naturally
+    // resolve to "no active terminal" on the MCP side.
+    useEffect(() => {
+        setActiveTab(currentId);
+    }, [currentId]);
     const terminalsRef = useRef(terminals);
     terminalsRef.current = terminals;
 

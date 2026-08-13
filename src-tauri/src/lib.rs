@@ -3,6 +3,7 @@ mod command_tracker;
 mod file_manager;
 mod fonts;
 mod install_source;
+mod mcp;
 mod shells;
 mod ssh;
 mod state;
@@ -14,6 +15,7 @@ use crate::cli::*;
 use crate::file_manager::*;
 use crate::fonts::*;
 use crate::install_source::*;
+use crate::mcp::*;
 use crate::shells::*;
 use crate::ssh::*;
 use crate::state::TerminalState;
@@ -161,6 +163,7 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .manage(state)
         .manage(cli_state)
+        .manage(McpServerHandle::default())
         .setup(|app| {
             // `app` is only used on macOS to build the native menu bar; on other
             // platforms it's intentionally unused, so allow it.
@@ -180,6 +183,9 @@ pub fn run() {
             set_output_mode,
             set_throttle,
             get_terminal_cwd,
+            set_active_tab,
+            start_mcp_server,
+            stop_mcp_server,
             find_shells,
             path_exist,
             read_file,

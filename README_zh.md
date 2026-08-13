@@ -56,6 +56,7 @@ curl -fsSL https://raw.githubusercontent.com/iewnfod/lumina-terminal/master/inst
 * 可选的[编程连体字](https://github.com/princjef/font-ligatures) — 通过字体真实的 OpenType GSUB 表实现（Fira Code 的 `www`、`//`，JetBrains Mono 的 `==` 等）
 * 分块批量输出 — 流畅处理大文本输出，不阻塞 UI
 * 拖放文件到终端即可插入文件路径；窗口/容器变化时自动调整尺寸
+* **MCP 服务器（实验性）** — 可选地通过只读回环端点向本地 AI 客户端暴露终端状态(打开的标签页、运行中的命令、当前目录、最近输出),基于 [rmcp](https://github.com/modelcontextprotocol/rust-sdk) 实现。在「设置 → 开发者」中开启。
 
 ### 用户界面
 * **命令面板**（`Ctrl+Shift+P` / `Cmd+Shift+P`）— 搜索并执行命令，支持键盘导航
@@ -161,6 +162,9 @@ pnpm tauri dev
 * [Vite](https://cn.vite.dev/)
 * [HeroUI](https://heroui.com/)
 * [portable-pty](https://docs.rs/portable-pty/latest/portable_pty/)
+* [rmcp](https://github.com/modelcontextprotocol/rust-sdk) — 模型上下文协议(Model Context Protocol)服务器(为 AI 客户端提供只读终端状态)
+* [axum](https://github.com/tokio-rs/axum) — 模块化 Web 框架(MCP Streamable HTTP 端点)
+* [tokio](https://tokio.rs/) — 异步运行时(MCP 服务器)
 * [log](https://docs.rs/log/latest/log/)
 * [Xterm.js & Addons](https://xtermjs.org/)
 * [Tailwind CSS](https://tailwindcss.com/)

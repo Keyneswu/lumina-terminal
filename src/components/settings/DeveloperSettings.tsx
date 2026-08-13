@@ -2,9 +2,12 @@ import {useI18n} from "../../hooks/i18n.tsx";
 import {useEffect, useState} from "react";
 import {getConfigFilePath} from "../../lib/configFile.ts";
 import {invoke} from "@tauri-apps/api/core";
-import {Button, Label, ListBox, Select} from "@heroui/react";
-import {Bug, FolderOpen} from "lucide-react";
-import {warn, error} from "@tauri-apps/plugin-log";
+import {Button, Input, Label, ListBox, Select, Switch} from "@heroui/react";
+import {Bug, Clipboard, FolderOpen} from "lucide-react";
+import {info, warn, error} from "@tauri-apps/plugin-log";
+import {useGlobalConfig} from "../../hooks/config.tsx";
+import {useMcpStatus} from "../../hooks/useMcpServer.ts";
+import {MCP_DEFAULT_PORT} from "../../constants.ts";
 import SettingsShell from "../ui/SettingsShell.tsx";
 import SettingRow from "../ui/SettingRow.tsx";
 import SectionTitle from "../ui/SectionTitle.tsx";
@@ -15,10 +18,15 @@ type MockValue = "available" | "upToDate" | "error" | "";
 
 export default function DeveloperSettings() {
     const t = useI18n();
+    const {config, updateConfig} = useGlobalConfig();
+    const mcpStatus = useMcpStatus();
+    const mcpEnabled = config.enableMcp ?? false;
+    const mcpPort = config.mcpPort ?? MCP_DEFAULT_PORT;
+    const [copied, setCopied] = useState(false);
     const [configPath, setConfigPath] = useState("");
     const [logDir, setLogDir] = useState("");
     const [isDebug, setIsDebug] = useState(false);
-    // Mock update state — read straight from localStorage, no real data involved.
+    // Mock update state — read right from localStorage, no real data involved.
     const [mockUpdate, setMockUpdate] = useState<MockValue>("");
 
     useEffect(() => {
@@ -44,6 +52,17 @@ export default function DeveloperSettings() {
         } else {
             localStorage.setItem(MOCK_KEY, value);
         }
+    };
+
+    const copyMcpUrl = () => {
+        if (!mcpStatus.endpoint) return;
+        navigator.clipboard.writeText(mcpStatus.endpoint.url).then(() => {
+            setCopied(true);
+            info("MCP connection URL copied to clipboard").catch(() => {});
+            setTimeout(() => setCopied(false), 1500);
+        }).catch((e) => {
+            warn(`Failed to copy MCP URL: ${e}`).catch(() => {});
+        });
     };
 
     return (
@@ -115,6 +134,81 @@ export default function DeveloperSettings() {
                         {t["Open"]}
                     </Button>
                 </SettingRow>
+
+                {/* MCP Server — expose the terminal state to local AI clients
+                    over a read-only loopback endpoint. Off by default. The
+                    server lifecycle is managed at the app root
+                    (useMcpServerLifecycle), not here, so it keeps running when
+                    settings is closed. */}
+                <SettingRow
+                    variant="toggle"
+                    label={<Label className="cursor-pointer">{t["MCP Server"]}</Label>}
+                    description={t["Let local AI clients read your terminal state over a loopback connection (read-only)"]}
+                    onClick={() => updateConfig({enableMcp: !mcpEnabled})}
+                >
+                    <Switch
+                        isSelected={mcpEnabled}
+                        onChange={(v) => updateConfig({enableMcp: v})}
+                    >
+                        <Switch.Control>
+                            <Switch.Thumb />
+                        </Switch.Control>
+                    </Switch>
+                </SettingRow>
+
+                {/* MCP port. Changing it does not restart the running server —
+                    toggle off/on to apply a new port (avoids flapping while
+                    typing into the field). */}
+                <SettingRow
+                    label={<Label>{t["Port"]}</Label>}
+                    description={t["Loopback port for the MCP server. Apply with a new port by toggling off/on."]}
+                >
+                    <Input
+                        type="number"
+                        value={String(mcpPort)}
+                        className="w-28"
+                        onChange={(e) => {
+                            const n = parseInt(e.target.value, 10);
+                            if (!Number.isNaN(n) && n > 0 && n < 65536) {
+                                updateConfig({mcpPort: n});
+                            }
+                        }}
+                    />
+                </SettingRow>
+
+                {/* Connection status — shown whenever MCP is enabled, so a start
+                    problem is never silent. Reflects the three states: the URL
+                    (running, with a copy button), an error (start failed), or a
+                    "starting" hint while the request is in flight. Copy the URL
+                    into an MCP client (ZCode, Claude Desktop, Cursor, …) to let
+                    the AI read this terminal's state. */}
+                {mcpEnabled && (
+                    <SettingRow
+                        variant="action"
+                        label={<Label>{mcpStatus.error ? t["Error"] : t["Connection URL"]}</Label>}
+                        description={
+                            mcpStatus.error ? (
+                                <span className="truncate block text-danger" title={mcpStatus.error}>{mcpStatus.error}</span>
+                            ) : mcpStatus.endpoint ? (
+                                <span className="truncate block" title={mcpStatus.endpoint.url}>{mcpStatus.endpoint.url}</span>
+                            ) : (
+                                <span className="text-muted">{t["Starting the MCP server…"]}</span>
+                            )
+                        }
+                    >
+                        {mcpStatus.endpoint && (
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className="shrink-0"
+                                onPress={copyMcpUrl}
+                            >
+                                <Clipboard size={15} />
+                                {copied ? t["Copied"] : t["Copy"]}
+                            </Button>
+                        )}
+                    </SettingRow>
+                )}
 
                 {/* Mock Update State — dev-only, drives the updater mock purely
                     via localStorage (see lib/updater.ts DEV MOCK). */}

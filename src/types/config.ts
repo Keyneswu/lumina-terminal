@@ -64,4 +64,12 @@ export interface GlobalConfig {
      * the session file large. Only consulted when a save actually happens
      * (mode "always", or "ask" + user picks Save). */
     sessionSaveScrollback?: boolean;
+    /** When true, run a read-only MCP (Model Context Protocol) HTTP server on
+     *  127.0.0.1 so a local AI client can see open tabs, the running command,
+     *  the live cwd, and recent terminal output. Off by default. The server
+     *  is read-only — there is deliberately no tool to write to the PTY. */
+    enableMcp?: boolean;
+    /** Port for the MCP server (loopback only). Defaults to 28700 when unset.
+     *  Only consulted when the server (re)starts. */
+    mcpPort?: number;
 }

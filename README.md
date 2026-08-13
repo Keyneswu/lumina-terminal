@@ -56,6 +56,7 @@ curl -fsSL https://raw.githubusercontent.com/iewnfod/lumina-terminal/master/inst
 * Optional [programming ligatures](https://github.com/princjef/font-ligatures) via the real OpenType GSUB table (Fira Code `www`/`//`, JetBrains Mono `==`, …)
 * Chunked output batching — smoothly handles large text dumps without blocking the UI
 * Drag and drop files into the terminal to insert their paths; auto-resize on window/container changes
+* **MCP server (experimental)** — optionally expose terminal state (open tabs, running command, cwd, recent output) to local AI clients over a read-only loopback endpoint, via [rmcp](https://github.com/modelcontextprotocol/rust-sdk). Enable in Settings → Developer.
 
 ### User Interface
 * **Command Palette** (`Ctrl+Shift+P` / `Cmd+Shift+P`) — search and execute commands with keyboard navigation
@@ -161,6 +162,9 @@ See [**CONTRIBUTING.md**](./CONTRIBUTING.md) for the development setup, app-icon
 * [Vite](https://vite.dev/)
 * [HeroUI](https://heroui.com/)
 * [portable-pty](https://docs.rs/portable-pty/latest/portable_pty/)
+* [rmcp](https://github.com/modelcontextprotocol/rust-sdk) — Model Context Protocol server (read-only terminal state for AI clients)
+* [axum](https://github.com/tokio-rs/axum) — modular web framework (MCP Streamable HTTP endpoint)
+* [tokio](https://tokio.rs/) — async runtime (MCP server)
 * [log](https://docs.rs/log/latest/log/)
 * [Xterm.js & Addons](https://xtermjs.org/)
 * [Tailwind CSS](https://tailwindcss.com/)

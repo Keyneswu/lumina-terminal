@@ -6,7 +6,7 @@ use crate::state::TerminalState;
 /// and whether it looks like a privileged/elevated operation (sudo, su, doas,
 /// pkexec, or a process running as root). The frontend shows a red dot before
 /// the command name when `privileged` is true.
-#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+#[derive(Debug, Serialize, schemars::JsonSchema, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct CommandInfo {
     /// argv[0] basename (e.g. "npm", "sudo"). Empty string = idle at prompt.

@@ -95,6 +95,17 @@ export function setThrottle(id: string, throttled: boolean) {
     return invokeWithLog<void>("set_throttle", id, {throttled});
 }
 
+/** Mirror the focused terminal id to the backend so the read-only MCP server
+ *  can answer `get_active_tab`. The frontend's tab list is the source of
+ *  truth; this just caches the value backend-side. Pass null when no terminal
+ *  is focused (e.g. a settings/about tab). Best-effort: failures are logged
+ *  but never block a tab switch. */
+export function setActiveTab(id: string | null) {
+    invoke<void>("set_active_tab", {id}).catch((e) => {
+        error(`Failed to mirror active tab to backend: ${e}`).catch(() => {});
+    });
+}
+
 /**
  * Find a system font file by CSS family name and return its binary contents.
  * Used by the ligature feature to parse the font's GSUB table client-side.

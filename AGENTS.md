@@ -54,6 +54,8 @@ src/
 │   ├── ssh.ts               # formatSshAddress / formatSshEntry
 │   ├── term.ts              # parseProfile, parseProfileTheme, parseProfilePadding
 │   ├── terminalApi.ts       # invoke wrappers: writeToTerminal, resizeTerminal, ...
+│   ├── mcpApi.ts            # startMcpServer/stopMcpServer invoke wrappers (log-on-reject) — the
+│   │                        #   read-only MCP server domain API (sibling to terminalApi.ts)
 │   ├── cliApi.ts            # getCliArgs() wrapper — reads parsed launch flags (log-on-reject)
 │   ├── shellIcon.ts         # getShellType(profile) → "bash"|"zsh"|"fish"|"nu"|"pwsh"|"ssh"|"default"
 │   ├── bindings.ts          # parseBindings, matchBinding, loadBindings, useKeyboardBindings,
@@ -87,6 +89,10 @@ src/
 │   │                        #   shared draft+dirty+save logic for all settings panels
 │   ├── useShells.ts         # useShells() — cached find_shells backend call
 │   ├── useSshConfig.ts      # useSshConfig() — cached parse_ssh_config backend call
+│   ├── useMcpServer.ts      # useMcpServerLifecycle() — drives the MCP HTTP server from config.enableMcp
+│   │                        #   (called once at the app root, so the server follows the app lifecycle,
+│   │                        #   not the settings panel); useMcpEndpoint() reactively reads the running
+│   │                        #   server's URL+token (module-level singleton via useSyncExternalStore)
 │   ├── useCliArgs.ts        # useCliArgs() — cached get_cli_args; Alacritty-style launch flags,
 │   │                        #   consumed by useTerminalManager's seed effect to shape the main
 │   │                        #   window's first tab (--profile/--command/--working-directory/--hold/--title)
@@ -161,6 +167,12 @@ src-tauri/src/
 │                  #   with streaming-UTF-8 decoding + two-mode burst coalescing;
 │                  #   reattach_terminal atomically swaps the channel for tab tear-off
 ├── command_tracker.rs # CommandInfo type + foreground_command() /proc + ps + privileged-name logic
+├── mcp.rs         # Read-only MCP (Model Context Protocol) server: rmcp tool handlers
+│                  #   (list_tabs/get_active_tab/get_tab/get_foreground_command/get_recent_output/
+│                  #   get_terminal_cwd) reusing TerminalState + command_tracker + the per-tab
+│                  #   recent_output ring buffer; Streamable HTTP endpoint on 127.0.0.1 via axum,
+│                  #   config-driven start/stop (start_mcp_server/stop_mcp_server). Read-only by
+│                  #   design — no PTY-write tool.
 ├── ssh.rs         # SshConfig/SshHostEntry types + parse_ssh_config (~/.ssh/config)
 ├── shells.rs      # find_shells — PATH + known-dir shell discovery (Win MSYS2/Git, Unix homebrew)
 ├── system.rs      # is_wayland, is_debug, get_commit_hash, get_log_dir, open_devtools
@@ -389,6 +401,10 @@ path to the logger.
     contributor knows they exist.
 12. If you add new dependencies, add them into README with a link to its
     official website or repo.
+13. **Keep all README languages in sync.** The README exists in two languages:
+    `README.md` (English) and `README_zh.md` (Simplified Chinese). Any change
+    to one — features, dependencies, structure, wording — MUST be mirrored in
+    the other in the same change. Never update only one.
 
 ---
 

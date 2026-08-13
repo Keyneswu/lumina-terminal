@@ -179,7 +179,11 @@ export const DEFAULT_CONFIG: GlobalConfig = {
     rememberWindowSize: false,
     sessionSaveMode: "ask",
     sessionSaveScrollback: false,
+    enableMcp: false,
 };
+
+/** Default loopback port for the read-only MCP server. */
+export const MCP_DEFAULT_PORT = 28700;
 
 export const SETTINGS_TAB_ID = "__lum__settings__";
 

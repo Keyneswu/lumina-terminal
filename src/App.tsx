@@ -3,6 +3,7 @@ import MaskedSurface from "./components/ui/MaskedSurface.tsx";
 import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {getCurrentWindow} from "@tauri-apps/api/window";
 import {useGlobalConfig} from "./hooks/config.tsx";
+import {useMcpServerLifecycle} from "./hooks/useMcpServer.ts";
 import {useI18n} from "./hooks/i18n.tsx";
 import WelcomePage from "./pages/WelcomePage.tsx";
 import TitleBar from "./components/TitleBar.tsx";
@@ -37,6 +38,10 @@ const OPEN_ABOUT_EVENT = "lumina-open-about";
 
 function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOffset: number}) {
     const {config, updateConfig} = useGlobalConfig();
+    // MCP server lifecycle follows the app (not the settings panel), so the
+    // server keeps running even when settings is closed — and (later) when only
+    // the tray remains. See hooks/useMcpServer.ts.
+    useMcpServerLifecycle();
     const t = useI18n();
 
     // Terminal lifecycle: tab list, profiles, active id, tear-off + merge.

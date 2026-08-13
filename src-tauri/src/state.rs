@@ -21,6 +21,51 @@ type TerminalWriter = Box<dyn Write + Send>;
 /// pipe).
 pub type OutputChannel = Arc<Mutex<Option<Channel<String>>>>;
 
+/// Soft cap on retained recent output, per terminal, for the read-only MCP
+/// server's `get_recent_output` tool. 64 KiB captures the last few screenfuls
+/// of a build log / error trace without growing unbounded.
+const MAX_RECENT_OUTPUT_BYTES: usize = 64 * 1024;
+
+/// A bounded tail buffer of a terminal's decoded output, kept on the backend
+/// so the read-only MCP server can expose "recent output" without round-
+/// tripping to the frontend's xterm scrollback. The reader thread appends
+/// every flushed chunk here in addition to forwarding it over the IPC channel.
+/// Only output produced after the terminal was created is captured. Trims from
+/// the front on overflow, snapping to a UTF-8 char boundary so a multi-byte
+/// sequence is never split.
+#[derive(Default)]
+pub struct RecentOutput {
+    buf: String,
+}
+
+impl RecentOutput {
+    /// Append a decoded chunk, trimming the front on overflow.
+    pub fn push_str(&mut self, s: &str) {
+        self.buf.push_str(s);
+        if self.buf.len() > MAX_RECENT_OUTPUT_BYTES {
+            let cut = self.buf.len() - MAX_RECENT_OUTPUT_BYTES;
+            // Advance to the next UTF-8 char boundary so we never slice a
+            // multi-byte sequence in half (which would invalidate the buffer).
+            let mut at = cut;
+            while at < self.buf.len() && !self.buf.is_char_boundary(at) {
+                at += 1;
+            }
+            self.buf.drain(..at);
+        }
+    }
+
+    /// Return the full retained tail, or only its last `lines` lines.
+    pub fn snapshot(&self, lines: Option<usize>) -> String {
+        match lines {
+            None => self.buf.clone(),
+            Some(n) => {
+                let tail: Vec<&str> = self.buf.lines().rev().take(n).collect();
+                tail.into_iter().rev().collect::<Vec<_>>().join("\n")
+            }
+        }
+    }
+}
+
 /// Everything the backend tracks per terminal. Fields are read/written from
 /// the terminal commands and the watcher thread.
 pub struct TerminalEntry {
@@ -50,9 +95,28 @@ pub struct TerminalEntry {
     /// so the live PTY process can keep streaming to whichever window now
     /// owns it.
     pub output_channel: OutputChannel,
+    /// Bounded tail of this terminal's decoded output (see `RecentOutput`),
+    /// fed by the reader thread on every flush. Kept on the backend so the
+    /// read-only MCP server's `get_recent_output` tool can expose "recent
+    /// output" without round-tripping to the frontend xterm scrollback. Only
+    /// output produced after the terminal was created is captured.
+    pub recent_output: Arc<Mutex<RecentOutput>>,
+    /// Executable path of the shell/program this tab runs (the local shell
+    /// path, or the `ssh` binary for remote profiles). Surfaced to the
+    /// read-only MCP server so an AI client can tell what each tab is.
+    pub exe_path: String,
+    /// `"local"` or `"remote"` (SSH). Surfaced to the MCP server.
+    pub profile_type: Option<String>,
+    /// For SSH profiles, the resolved `Host`; `None` for local tabs.
+    pub ssh_host: Option<String>,
 }
 
 #[derive(Default, Clone)]
 pub struct TerminalState {
     pub terminals: Arc<Mutex<HashMap<String, TerminalEntry>>>,
+    /// The terminal id currently focused in the UI, mirrored from the
+    /// frontend via the `set_active_tab` command so the read-only MCP server
+    /// can answer `get_active_tab`. The frontend remains the single source of
+    /// truth; this is only a cached mirror for the backend's MCP surface.
+    pub active_id: Arc<Mutex<Option<String>>>,
 }

@@ -1,4 +1,4 @@
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -8,7 +8,9 @@ use tauri::{ipc::Channel, AppHandle, Emitter, State};
 #[cfg(unix)]
 use crate::command_tracker::{foreground_command, CommandInfo};
 use crate::ssh::SshConfig;
-use crate::state::{CommandChild, OutputChannel, SharedChild, TerminalEntry, TerminalState};
+use crate::state::{
+    CommandChild, OutputChannel, RecentOutput, SharedChild, TerminalEntry, TerminalState,
+};
 
 #[tauri::command]
 pub fn start_terminal(
@@ -50,7 +52,7 @@ pub fn start_terminal(
 
     let cmd = if profile_type.as_deref() == Some("remote") {
         let ssh = ssh_config.as_ref().expect("SSH config required for remote profile");
-        let ssh_exe = if exe_path.is_empty() { "ssh".to_string() } else { exe_path };
+        let ssh_exe = if exe_path.is_empty() { "ssh".to_string() } else { exe_path.clone() };
         let mut c = CommandBuilder::new(ssh_exe);
         let user_host = if let Some(ref user) = ssh.user {
             format!("{}@{}", user, ssh.host)
@@ -196,6 +198,9 @@ pub fn start_terminal(
     // Option so `reattach_terminal` (tab tear-off) can redirect the live PTY
     // stream to a different window without respawning the process.
     let output_channel: OutputChannel = Arc::new(std::sync::Mutex::new(Some(on_output)));
+    // Bounded tail of decoded output, mirrored by the reader thread for the
+    // read-only MCP server's `get_recent_output` tool. See `RecentOutput`.
+    let recent_output: Arc<Mutex<RecentOutput>> = Arc::new(Mutex::new(RecentOutput::default()));
 
     // Store in state
     {
@@ -213,6 +218,10 @@ pub fn start_terminal(
                 force_low_latency: force_low_latency.clone(),
                 throttled: throttled.clone(),
                 output_channel: output_channel.clone(),
+                recent_output: recent_output.clone(),
+                exe_path: exe_path.clone(),
+                profile_type: profile_type.clone(),
+                ssh_host: ssh_config.as_ref().map(|c| c.host.clone()),
             },
         );
     }
@@ -263,6 +272,9 @@ pub fn start_terminal(
         // tear-off) can swap it atomically: the reader picks up the new
         // channel on the next flush and the old window stops receiving.
         let output_channel_reader = output_channel.clone();
+        // Clone of the recent-output tail, mirrored on every flush for the
+        // read-only MCP server. Same capture pattern as the output channel.
+        let recent_output_reader = recent_output.clone();
         let flush = |pending: &mut Vec<u8>| {
             if pending.is_empty() {
                 return;
@@ -288,6 +300,15 @@ pub fn start_terminal(
                 let s = std::str::from_utf8(&pending[..valid_len])
                     .expect("valid UTF-8 prefix verified above")
                     .to_string();
+                // Mirror the decoded chunk into the bounded recent-output tail
+                // for the read-only MCP server's `get_recent_output`. Done
+                // before `s` is moved into the channel send below. try_lock so
+                // the reader never blocks if an MCP tool happens to be reading;
+                // a skipped mirror just means one fewer chunk in the tail
+                // (caught up on the next flush).
+                if let Ok(mut recent) = recent_output_reader.try_lock() {
+                    recent.push_str(&s);
+                }
                 // Hold the channel lock only long enough to send. If no window
                 // is attached (`None`, e.g. mid-tear-off), drop the bytes but
                 // keep draining the PTY so the child never blocks on a full
@@ -647,9 +668,22 @@ pub fn get_terminal_cwd(id: String, state: State<TerminalState>) -> Option<Strin
     cwd
 }
 
+/// Mirror the frontend's focused tab id into backend state so the read-only
+/// MCP server can answer `get_active_tab`. The frontend (the UI's tab list) is
+/// the single source of truth; this only caches the value for the backend's
+/// MCP surface. Called by the frontend whenever the active tab changes.
+#[tauri::command]
+pub fn set_active_tab(id: Option<String>, state: State<TerminalState>) {
+    let mut active = state.active_id.try_lock().unwrap_or_else(|e| {
+        log::error!("Failed to lock active_id for set_active_tab: {}", e);
+        panic!("Failed to lock active_id: {}", e);
+    });
+    *active = id;
+}
+
 /// Resolve a process's current working directory (platform-specific).
 #[cfg(target_os = "linux")]
-fn process_cwd(pid: u32) -> Option<String> {
+pub(crate) fn process_cwd(pid: u32) -> Option<String> {
     // `/proc/<pid>/cwd` is a symlink to the process cwd; `read_link` gives the
     // target as an absolute path without shelling out.
     std::fs::read_link(format!("/proc/{}/cwd", pid))
@@ -659,7 +693,7 @@ fn process_cwd(pid: u32) -> Option<String> {
 
 /// Resolve a process's current working directory (platform-specific).
 #[cfg(all(unix, not(target_os = "linux")))]
-fn process_cwd(pid: u32) -> Option<String> {
+pub(crate) fn process_cwd(pid: u32) -> Option<String> {
     // macOS/BSD have no /proc. `lsof -a -d cwd -p <pid> -Fn` prints the cwd as
     // an `n`-prefixed line; same-user processes are queryable without special
     // privileges.
@@ -681,7 +715,7 @@ fn process_cwd(pid: u32) -> Option<String> {
 
 /// Resolve a process's current working directory (platform-specific).
 #[cfg(windows)]
-fn process_cwd(_pid: u32) -> Option<String> {
+pub(crate) fn process_cwd(_pid: u32) -> Option<String> {
     // Windows has no documented public API for another process's cwd (the
     // NtQueryInformationProcess trick is undocumented and needs PROCESS_QUERY
     // rights). Return None so the frontend falls back to the profile cwd.
