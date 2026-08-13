@@ -32,6 +32,7 @@ import {UnicodeGraphemesAddon} from "@xterm/addon-unicode-graphemes";
 import {IMAGE_ADDON_SETTINGS} from "../constants.ts";
 import {reattachTerminal, resizeTerminal, setThrottle, startTerminal, writeToTerminal} from "../lib/terminalApi.ts";
 import {CurrentCommandParser} from "../lib/currentCommand.ts";
+import {installImeCompositionGuard} from "../lib/imeCompositionGuard.ts";
 import SearchBar from "./SearchBar.tsx";
 
 let hasAppliedInitialWindowSize = false;
@@ -476,6 +477,15 @@ export default function Term(props : TermProps) {
                 error(`Failed to start terminal id=${id} (profile=${profile.name}): ${e}`).catch(() => {});
             });
         }
+    }, [id]);
+
+    // WebKitGTK + IBus can commit text without a matching compositionstart.
+    // Normalize that event sequence before xterm's delayed keyCode-229 fallback
+    // reads the textarea, and suppress its duplicate unmatched compositionend.
+    useEffect(() => {
+        const textarea = termRef.current?.querySelector<HTMLTextAreaElement>(".xterm-helper-textarea");
+        if (!textarea) return;
+        return installImeCompositionGuard(textarea);
     }, [id]);
 
     // Register this terminal's serialize function with the parent so the

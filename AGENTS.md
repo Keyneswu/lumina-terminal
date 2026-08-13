@@ -71,6 +71,7 @@ src/
 │   │                        #   + reorderByDrop (move item into gap; same ref when it's a no-op)
 │   ├── chunkedWriter.ts     # ChunkedWriter — bounded-chunk feeder for term.write() (UTF-16-safe slicing)
 │   ├── terminalGeometry.ts  # profileWindowSize — measure cell size + compute OS window size for rows/cols
+│   ├── imeCompositionGuard.ts # WebKitGTK/IBus normalization for xterm's unmatched keyCode-229 IME fallback
 │   ├── bindingsSettings.ts  # bindings-editor pure logic: actionLabel, detectConflicts, toDraft, …
 │   └── FloatingFitAddon.ts  # xterm fit addon subclass (centered sub-cell fit)
 │
