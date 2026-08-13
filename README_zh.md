@@ -153,23 +153,33 @@ pnpm tauri dev
 开发环境搭建、应用图标指南和代码规范请见 [**CONTRIBUTING.md**](./CONTRIBUTING.md)。完整的架构说明和贡献者规则在 [AGENTS.md](./AGENTS.md) 中。
 
 ## 使用的技术
-* [Tauri & Tauri Plugins](https://tauri.app/)
-* [Rust](https://rust-lang.org/)
+<!-- lumina:tech-stack — anchor parsed by the About page; keep on its own line -->
+
+### 核心
+* [Tauri & Tauri Plugins](https://tauri.app/) — 跨平台桌面框架
+* [Rust](https://rust-lang.org/) — 后端语言(PTY、MCP、文件系统)
+* [portable-pty](https://docs.rs/portable-pty/latest/portable_pty/) — 伪终端创建与 I/O
+
+### 后端
 * [clap](https://docs.rs/clap/) — 命令行参数解析
-* [pnpm](https://pnpm.io/)
-* [TypeScript](https://www.typescriptlang.org/)
-* [React](https://zh-hans.react.dev/)
-* [Vite](https://cn.vite.dev/)
-* [HeroUI](https://heroui.com/)
-* [portable-pty](https://docs.rs/portable-pty/latest/portable_pty/)
-* [rmcp](https://github.com/modelcontextprotocol/rust-sdk) — 模型上下文协议(Model Context Protocol)服务器(为 AI 客户端提供只读终端状态)
+* [rmcp](https://github.com/modelcontextprotocol/rust-sdk) — 模型上下文协议(Model Context Protocol)服务器
 * [axum](https://github.com/tokio-rs/axum) — 模块化 Web 框架(MCP Streamable HTTP 端点)
-* [tokio](https://tokio.rs/) — 异步运行时(MCP 服务器)
-* [log](https://docs.rs/log/latest/log/)
-* [Xterm.js & Addons](https://xtermjs.org/)
-* [Tailwind CSS](https://tailwindcss.com/)
-* [Lucide Icons](https://lucide.dev/)
-* [react-markdown](https://github.com/remarkjs/react-markdown)
+* [tokio](https://tokio.rs/) — 异步运行时
+* [log](https://docs.rs/log/latest/log/) — 结构化日志
+
+### 前端
+* [TypeScript](https://www.typescriptlang.org/) — 类型化前端语言
+* [React](https://zh-hans.react.dev/) — UI 组件框架
+* [HeroUI](https://heroui.com/) — React UI 组件库
+* [Xterm.js & Addons](https://xtermjs.org/) — 终端渲染器
+* [Tailwind CSS](https://tailwindcss.com/) — 实用优先的样式方案
+* [Lucide Icons](https://lucide.dev/) — 图标库
+* [Framer Motion](https://www.framer.com/motion/) — 动画库
+* [react-markdown](https://github.com/remarkjs/react-markdown) — Markdown 渲染
+
+### 工具链
+* [pnpm](https://pnpm.io/) — 包管理器
+* [Vite](https://cn.vite.dev/) — 打包与开发服务器
 
 ## 开源协议
 [Mozilla Public License Version 2.0](./LICENSE)

@@ -153,24 +153,33 @@ pnpm tauri dev
 See [**CONTRIBUTING.md**](./CONTRIBUTING.md) for the development setup, app-icon guide, and code standards. The full architecture and contributor rules live in [AGENTS.md](./AGENTS.md).
 
 ## Technology Used
-* [Tauri & Tauri Plugins](https://tauri.app/)
-* [Rust](https://rust-lang.org/)
+<!-- lumina:tech-stack — anchor parsed by the About page; keep on its own line -->
+
+### Core
+* [Tauri & Tauri Plugins](https://tauri.app/) — cross-platform desktop framework
+* [Rust](https://rust-lang.org/) — backend language (PTY, MCP, filesystem)
+* [portable-pty](https://docs.rs/portable-pty/latest/portable_pty/) — pseudo-terminal spawning and I/O
+
+### Backend
 * [clap](https://docs.rs/clap/) — command-line argument parsing
-* [pnpm](https://pnpm.io/)
-* [TypeScript](https://www.typescriptlang.org/)
-* [React](https://react.dev/)
-* [Vite](https://vite.dev/)
-* [HeroUI](https://heroui.com/)
-* [portable-pty](https://docs.rs/portable-pty/latest/portable_pty/)
-* [rmcp](https://github.com/modelcontextprotocol/rust-sdk) — Model Context Protocol server (read-only terminal state for AI clients)
+* [rmcp](https://github.com/modelcontextprotocol/rust-sdk) — Model Context Protocol server
 * [axum](https://github.com/tokio-rs/axum) — modular web framework (MCP Streamable HTTP endpoint)
-* [tokio](https://tokio.rs/) — async runtime (MCP server)
-* [log](https://docs.rs/log/latest/log/)
-* [Xterm.js & Addons](https://xtermjs.org/)
-* [Tailwind CSS](https://tailwindcss.com/)
-* [Lucide Icons](https://lucide.dev/)
-* [Framer Motion](https://www.framer.com/motion/)
-* [react-markdown](https://github.com/remarkjs/react-markdown)
+* [tokio](https://tokio.rs/) — async runtime
+* [log](https://docs.rs/log/latest/log/) — structured logging
+
+### Frontend
+* [TypeScript](https://www.typescriptlang.org/) — typed frontend language
+* [React](https://react.dev/) — UI component framework
+* [HeroUI](https://heroui.com/) — React UI component library
+* [Xterm.js & Addons](https://xtermjs.org/) — terminal renderer
+* [Tailwind CSS](https://tailwindcss.com/) — utility-first styling
+* [Lucide Icons](https://lucide.dev/) — icon set
+* [Framer Motion](https://www.framer.com/motion/) — animation library
+* [react-markdown](https://github.com/remarkjs/react-markdown) — markdown rendering
+
+### Tooling
+* [pnpm](https://pnpm.io/) — package manager
+* [Vite](https://vite.dev/) — bundler and dev server
 
 ## License
 [Mozilla Public License Version 2.0](./LICENSE)

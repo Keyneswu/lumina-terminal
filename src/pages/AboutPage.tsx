@@ -1,12 +1,15 @@
 import {useEffect, useMemo, useState} from "react";
 import { ITheme } from "@xterm/xterm";
+import { useGlobalConfig } from "../hooks/config.tsx";
 import { useI18n } from "../hooks/i18n.tsx";
 import { useSurfaceColors } from "../hooks/surfaceColors.ts";
 import type { UpdaterState } from "../hooks/useUpdater.ts";
 import type { InstallSource } from "../hooks/useInstallSource.ts";
 import { fetchReleaseNotes } from "../lib/releaseNotes.ts";
+import {parseTechStack} from "../lib/techStack.ts";
 import iconSvg from "../assets/icon.svg";
-import readmeRaw from "../../README.md?raw";
+import enReadme from "../../README.md?raw";
+import zhReadme from "../../README_zh.md?raw";
 import {invoke} from "@tauri-apps/api/core";
 import {getVersion} from "@tauri-apps/api/app";
 import {Button, Modal} from "@heroui/react";
@@ -16,8 +19,10 @@ import {
 	Download,
 	LoaderCircle,
 	RefreshCw,
+	ChevronRight,
 } from "lucide-react";
 import Markdown from "../components/Markdown.tsx";
+import TechStackModal from "../components/TechStackModal.tsx";
 
 interface AboutPageProps {
 	theme: ITheme | null;
@@ -45,34 +50,16 @@ function GithubMark({ size = 14 }: { size?: number }) {
     );
 }
 
-interface TechItem {
-    name: string;
-    url: string;
-}
-
-function parseTechStack(readme: string): TechItem[] {
-    // Match the "Technology Used" section
-    const sectionRegex = /^## Technology Used\s*$[\s\S]*?(?=^## |\Z)/m;
-    const section = readme.match(sectionRegex);
-    if (!section) return [];
-
-    // Parse markdown list items: * [Name](url)
-    const items: TechItem[] = [];
-    const itemRegex = /^\*\s+\[(.+?)]\((.+?)\)/gm;
-    let match;
-    while ((match = itemRegex.exec(section[0])) !== null) {
-        items.push({ name: match[1], url: match[2] });
-    }
-    return items;
-}
-
 export default function AboutPage({ theme, updater, installSource, onShowUpdateModal }: AboutPageProps) {
     const t = useI18n();
     const bg = theme?.background ?? "#000000";
     const fg = theme?.foreground ?? "#ffffff";
     const colors = useSurfaceColors(bg);
 
-    const technologies = useMemo(() => parseTechStack(readmeRaw), []);
+    const {config} = useGlobalConfig();
+    const readme = config.language === "zh-cn" ? zhReadme : enReadme;
+    const techGroups = useMemo(() => parseTechStack(readme), [readme]);
+    const techCount = techGroups.reduce((n, g) => n + g.items.length, 0);
     const [commitHash, setCommitHash] = useState<string>("");
     const [version, setVersion] = useState<string>("");
 
@@ -84,6 +71,7 @@ export default function AboutPage({ theme, updater, installSource, onShowUpdateM
     const [currentNotes, setCurrentNotes] = useState<string | null>(null);
     const [notesLoading, setNotesLoading] = useState(false);
     const [isNotesModalOpen, setIsNotesModalOpen] = useState(false);
+    const [isTechModalOpen, setIsTechModalOpen] = useState(false);
 
     const openCurrentReleaseNotes = () => {
         if (!version) return;
@@ -106,7 +94,7 @@ export default function AboutPage({ theme, updater, installSource, onShowUpdateM
 
     return (
         <div
-            className="flex flex-col items-center h-full overflow-y-auto px-6 py-8"
+            className="flex flex-col items-center justify-center h-full overflow-y-auto px-6 py-8 pb-12"
             style={{ background: bg, color: fg }}
         >
             <div className="flex flex-col items-center gap-6 max-w-sm w-full">
@@ -286,27 +274,19 @@ export default function AboutPage({ theme, updater, installSource, onShowUpdateM
                         </a>
                     </div>
 
-                    {/* Technologies */}
-                    <div className="flex flex-col gap-2 py-2">
+                    {/* Technologies — opens the full, grouped list in a modal */}
+                    <button
+                        type="button"
+                        onClick={() => setIsTechModalOpen(true)}
+                        className="flex items-center justify-between w-full py-2 px-0 border-0 bg-transparent cursor-pointer rounded-[var(--radius-sm)] transition-colors duration-[var(--duration-fast)] ease-[var(--ease-glass)] hover:bg-default/10"
+                        style={{ borderBottom: `1px solid ${colors.borderColor}` }}
+                    >
                         <span className="text-muted text-sm">{t["Technology Stack"]}</span>
-                        <div className="flex flex-wrap gap-2">
-                            {technologies.map((tech) => (
-                                <a
-                                    key={tech.name}
-                                    href={tech.url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="lum-tech-chip px-2.5 py-1 rounded-[var(--radius-sm)] text-xs transition-colors duration-[var(--duration-fast)] ease-[var(--ease-glass)] hover:opacity-80"
-                                    style={{
-                                        background: colors.hoverOverlay,
-                                        color: fg,
-                                    }}
-                                >
-                                    {tech.name}
-                                </a>
-                            ))}
-                        </div>
-                    </div>
+                        <span className="flex items-center gap-1.5" style={{ color: fg }}>
+                            <span className="tabular-nums">{techCount}</span>
+                            <ChevronRight size={14} />
+                        </span>
+                    </button>
                 </div>
             </div>
 
@@ -353,6 +333,15 @@ export default function AboutPage({ theme, updater, installSource, onShowUpdateM
                     </Modal.Dialog>
                 </Modal.Container>
             </Modal.Backdrop>
+
+            {/* Technology stack — grouped list (opened from the row above) */}
+            <TechStackModal
+                open={isTechModalOpen}
+                onOpenChange={setIsTechModalOpen}
+                groups={techGroups}
+                backgroundColor={bg}
+                foregroundColor={fg}
+            />
         </div>
     );
 }

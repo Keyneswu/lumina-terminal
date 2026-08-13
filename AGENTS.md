@@ -363,8 +363,6 @@ path to the logger.
 
 ## 4. Rules for AI Contributors
 
-## 4. Rules for AI Contributors
-
 1. **Do not duplicate.** Search the codebase for existing logic before writing
    new. Grep for function names, `invoke("...")` strings, and UI patterns.
 2. **Respect the layering.** Put pure logic in `lib/`, React-aware logic in
