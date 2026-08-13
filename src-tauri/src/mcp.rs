@@ -33,7 +33,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
 
 use crate::command_tracker::CommandInfo;
-use crate::state::TerminalState;
+use crate::state::{CommandHistoryEntry, TerminalState};
 
 // ---- tool parameter / output shapes ----
 
@@ -55,6 +55,17 @@ struct RecentOutputParams {
     lines: Option<usize>,
 }
 
+/// Input for `list_command_history`.
+#[derive(Deserialize, schemars::JsonSchema)]
+struct HistoryParams {
+    /// The terminal id (from `list_tabs`).
+    id: String,
+    /// If set, return only the last N commands. If omitted, all retained
+    /// history (up to ~50) is returned.
+    #[serde(default)]
+    limit: Option<usize>,
+}
+
 /// Lightweight per-tab info returned by `list_tabs`. Heavier per-call data
 /// (cwd, running command) is intentionally omitted here to keep `list_tabs`
 /// cheap; ask for it explicitly with `get_tab` / `get_terminal_cwd` /
@@ -66,6 +77,9 @@ struct TabBrief {
     shell: String,
     /// True for SSH (remote) profiles.
     is_ssh: bool,
+    /// Always "running" here — `list_tabs` lists only live tabs. Use
+    /// `list_recent_exits` for tabs that have terminated.
+    status: String,
 }
 
 /// Detailed per-tab info returned by `get_tab` / `get_active_tab`.
@@ -83,6 +97,31 @@ struct TabDetail {
     /// the shell is idle at the prompt / on non-Unix / SSH tabs (where the
     /// foreground process group can't be inspected locally).
     foreground_command: Option<CommandInfo>,
+    /// "running" (live process) or "exited" (child terminated; live PTY gone).
+    status: String,
+    /// Exit code of the child process; null while running or unknown.
+    exit_code: Option<i32>,
+    /// Signal name if the process was killed by a signal (Unix); else null.
+    exit_signal: Option<String>,
+    /// The most recently finished command's text (from shell integration), or
+    /// null if none has completed yet.
+    last_command: Option<String>,
+    /// The most recently finished command's exit code (from shell integration,
+    /// PER COMMAND). null until at least one command has finished. Distinct
+    /// from `exit_code`, which is the whole shell's exit code at termination.
+    last_exit_code: Option<i32>,
+}
+
+/// A recently-exited terminal, returned by `list_recent_exits`.
+#[derive(Serialize, schemars::JsonSchema)]
+struct RecentExitEntry {
+    id: String,
+    shell: String,
+    is_ssh: bool,
+    /// Exit code of the child process; null if it couldn't be determined.
+    exit_code: Option<i32>,
+    /// Signal name if killed by a signal (Unix); else null.
+    exit_signal: Option<String>,
 }
 
 // ---- helpers (reuse existing backend logic — no duplication) ----
@@ -110,24 +149,63 @@ fn live_cwd(state: &TerminalState, id: &str) -> Option<String> {
     shell_pid.and_then(crate::terminal::process_cwd)
 }
 
-/// Build a `TabDetail` for a tab id, reusing `foreground` / `live_cwd`.
+/// Build a `TabDetail` for a tab id. Prefers the live PTY entry (status
+/// "running"); falls back to `recent_exits` (status "exited") so a tab's exit
+/// code is still queryable after its child has terminated and the entry was
+/// freed. Returns `None` only when the id is neither live nor recently exited.
 fn tab_detail(state: &TerminalState, id: &str) -> Option<TabDetail> {
-    let (shell, is_ssh, ssh_host) = {
-        let terminals = state.terminals.try_lock().ok()?;
-        let entry = terminals.get(id)?;
-        (
-            entry.exe_path.clone(),
-            entry.profile_type.as_deref() == Some("remote"),
-            entry.ssh_host.clone(),
-        )
-    };
-    Some(TabDetail {
+    // Most recent finished command (shell-integration history), independent of
+    // live vs exited — available for both states.
+    let last_cmd = state
+        .command_history
+        .try_lock()
+        .ok()
+        .and_then(|h| h.get(id).and_then(|v| v.last().cloned()));
+    let last_command = last_cmd.as_ref().and_then(|c| c.command.clone());
+    let last_exit_code = last_cmd.map(|c| c.exit_code);
+
+    let live = state.terminals.try_lock().ok().and_then(|t| {
+        t.get(id).map(|e| {
+            (
+                e.exe_path.clone(),
+                e.profile_type.as_deref() == Some("remote"),
+                e.ssh_host.clone(),
+            )
+        })
+    });
+    if let Some((shell, is_ssh, ssh_host)) = live {
+        return Some(TabDetail {
+            id: id.to_string(),
+            shell,
+            is_ssh,
+            ssh_host,
+            cwd: live_cwd(state, id),
+            foreground_command: foreground(state, id),
+            status: "running".into(),
+            exit_code: None,
+            exit_signal: None,
+            last_command,
+            last_exit_code,
+        });
+    }
+    // Child has exited — look it up in the recent-exit cache.
+    let exited = state
+        .recent_exits
+        .try_lock()
+        .ok()
+        .and_then(|e| e.get(id).cloned());
+    exited.map(|x| TabDetail {
         id: id.to_string(),
-        shell,
-        is_ssh,
-        ssh_host,
-        cwd: live_cwd(state, id),
-        foreground_command: foreground(state, id),
+        shell: x.shell,
+        is_ssh: x.is_ssh,
+        ssh_host: x.ssh_host,
+        cwd: None,
+        foreground_command: None,
+        status: "exited".into(),
+        exit_code: x.exit.code,
+        exit_signal: x.exit.signal,
+        last_command,
+        last_exit_code,
     })
 }
 
@@ -234,6 +312,7 @@ impl LuminaMcpServer {
                 id: id.clone(),
                 shell: entry.exe_path.clone(),
                 is_ssh: entry.profile_type.as_deref() == Some("remote"),
+                status: "running".into(),
             })
             .collect::<Vec<_>>();
         Json(tabs)
@@ -259,6 +338,50 @@ impl LuminaMcpServer {
         Parameters(IdParams { id }): Parameters<IdParams>,
     ) -> Json<Option<TabDetail>> {
         Json(tab_detail(&self.state, &id))
+    }
+
+    #[tool(name = "list_recent_exits", description = "List terminal tabs whose child process has recently exited (id, shell, isSsh, exitCode, exitSignal). Useful to notice failed commands; pair with get_tab for details. Bounded to the last few exits.")]
+    fn list_recent_exits(&self) -> Json<Vec<RecentExitEntry>> {
+        let exits = match self.state.recent_exits.try_lock() {
+            Ok(e) => e,
+            Err(e) => {
+                log::error!("MCP list_recent_exits: failed to lock recent_exits: {}", e);
+                return Json(Vec::new());
+            }
+        };
+        let entries = exits
+            .iter()
+            .map(|(id, x)| RecentExitEntry {
+                id: id.clone(),
+                shell: x.shell.clone(),
+                is_ssh: x.is_ssh,
+                exit_code: x.exit.code,
+                exit_signal: x.exit.signal.clone(),
+            })
+            .collect::<Vec<_>>();
+        Json(entries)
+    }
+
+    #[tool(name = "list_command_history", description = "List a tab's recent commands with their PER-COMMAND exit codes (newest last), captured via shell integration. Use this to see what failed (non-zero exitCode). Bounded to the last ~50.")]
+    fn list_command_history(
+        &self,
+        Parameters(HistoryParams { id, limit }): Parameters<HistoryParams>,
+    ) -> Json<Vec<CommandHistoryEntry>> {
+        let hist = match self.state.command_history.try_lock() {
+            Ok(h) => h,
+            Err(e) => {
+                log::error!("MCP list_command_history: failed to lock: {}", e);
+                return Json(Vec::new());
+            }
+        };
+        let entries = match hist.get(&id) {
+            Some(v) => {
+                let start = limit.and_then(|n| v.len().checked_sub(n)).unwrap_or(0);
+                v[start..].to_vec()
+            }
+            None => Vec::new(),
+        };
+        Json(entries)
     }
 
     #[tool(name = "get_foreground_command", description = "Get the command currently running in a tab's foreground ({command, privileged}), or null when the shell is idle at the prompt / on SSH / non-Unix.")]

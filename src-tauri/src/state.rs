@@ -111,6 +111,43 @@ pub struct TerminalEntry {
     pub ssh_host: Option<String>,
 }
 
+/// How a terminal's child process ended. `code` is the exit code (always
+/// present when the wait succeeded); `signal` is the terminating signal NAME
+/// on Unix (e.g. "Terminated") when the process was killed by a signal. Both
+/// `None` only when the wait itself failed.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExitInfo {
+    pub code: Option<i32>,
+    pub signal: Option<String>,
+}
+
+/// A terminal whose child process has exited, kept briefly so the read-only
+/// MCP server can still report its exit code (and basic identity) after the
+/// live PTY entry is cleaned up. The reader's `recent_output` is NOT carried
+/// over — output from before the exit lives only in xterm's scrollback.
+#[derive(Clone)]
+pub struct ExitedTab {
+    pub exit: ExitInfo,
+    pub shell: String,
+    pub is_ssh: bool,
+    pub ssh_host: Option<String>,
+}
+
+/// One entry in a tab's command history, fed by shell integration when a
+/// command finishes (OSC `CurrentCommandExit=<code>`), paired with the command
+/// text from preexec (zsh/fish) or /proc (bash). Surfaced via the read-only
+/// MCP server's `list_command_history` and (later) the proactive-suggestion
+/// feature.
+#[derive(Debug, Clone, serde::Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CommandHistoryEntry {
+    /// The command line, or argv[0] basename on the bash /proc path. `None`
+    /// only if no text was available from either source.
+    pub command: Option<String>,
+    pub exit_code: i32,
+}
+
 #[derive(Default, Clone)]
 pub struct TerminalState {
     pub terminals: Arc<Mutex<HashMap<String, TerminalEntry>>>,
@@ -119,4 +156,52 @@ pub struct TerminalState {
     /// can answer `get_active_tab`. The frontend remains the single source of
     /// truth; this is only a cached mirror for the backend's MCP surface.
     pub active_id: Arc<Mutex<Option<String>>>,
+    /// Recently-exited terminals (keyed by tab id), so the read-only MCP
+    /// server can still report a tab's exit code after its PTY entry is freed.
+    /// Bounded to the last few exits by `record_exit`.
+    pub recent_exits: Arc<Mutex<HashMap<String, ExitedTab>>>,
+    /// Per-tab command history (newest last), fed by shell integration via
+    /// `report_command_finished`. Bounded by `record_command`. Read by the
+    /// read-only MCP server's `list_command_history`.
+    pub command_history: Arc<Mutex<HashMap<String, Vec<CommandHistoryEntry>>>>,
+}
+
+impl TerminalState {
+    /// Record a recently-exited terminal, trimming to a small cap so this
+    /// can't grow unbounded. Trim order is arbitrary (HashMap) — fine, since
+    /// this is only a brief tail for MCP exit-code queries, not an ordered log.
+    pub fn record_exit(&self, id: String, tab: ExitedTab) {
+        const RECENT_EXIT_CAP: usize = 16;
+        let Ok(mut exits) = self.recent_exits.try_lock() else {
+            log::warn!("record_exit: failed to lock recent_exits, skipping");
+            return;
+        };
+        exits.insert(id, tab);
+        while exits.len() > RECENT_EXIT_CAP {
+            let Some(key) = exits.keys().next().cloned() else { break };
+            exits.remove(&key);
+        }
+    }
+
+    /// Append a finished command to a tab's history, capped to the last N.
+    pub fn record_command(&self, id: String, entry: CommandHistoryEntry) {
+        const COMMAND_HISTORY_CAP: usize = 50;
+        let Ok(mut hist) = self.command_history.try_lock() else {
+            log::warn!("record_command: failed to lock command_history, skipping");
+            return;
+        };
+        let v = hist.entry(id).or_default();
+        v.push(entry);
+        let overflow = v.len().saturating_sub(COMMAND_HISTORY_CAP);
+        if overflow > 0 {
+            v.drain(..overflow);
+        }
+    }
+
+    /// Drop a tab's command history (on close / exit).
+    pub fn clear_command_history(&self, id: &str) {
+        if let Ok(mut hist) = self.command_history.try_lock() {
+            hist.remove(id);
+        }
+    }
 }

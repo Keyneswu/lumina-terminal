@@ -33,6 +33,7 @@ import {listen} from "@tauri-apps/api/event";
 import {useWindowGeometry} from "./hooks/useWindowGeometry.ts";
 import {useTerminalManager} from "./hooks/useTerminalManager.ts";
 import {useCommandPaletteActions} from "./hooks/useCommandPaletteActions.tsx";
+import {reportCommandFinished} from "./lib/terminalApi.ts";
 
 const OPEN_ABOUT_EVENT = "lumina-open-about";
 
@@ -441,6 +442,9 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
                                     }}
                                     onCommandChange={(cmd) => {
                                         mgr.setCommandsFor(id, cmd);
+                                    }}
+                                    onCommandExit={(p) => {
+                                        reportCommandFinished(id, p.command, p.exitCode);
                                     }}
                                 />
                                 </MaskedSurface>

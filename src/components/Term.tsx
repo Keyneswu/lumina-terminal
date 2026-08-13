@@ -69,6 +69,11 @@ interface TermProps {
     // Reports the currently-running command for this terminal, or null when
     // idle at the shell prompt. Drives the small subtitle under the tab title.
     onCommandChange?: (command: CurrentCommand | null) => void;
+    // Reports a finished command's exit code (shell-integration precmd),
+    // paired with the command text that was just running. Feeds the per-command
+    // history on the backend (MCP `list_command_history`). The current command
+    // is cleared separately via onCommandChange(null) immediately after.
+    onCommandExit?: (payload: {command: string | null; exitCode: number}) => void;
     // When set, this Term reattaches to an existing live PTY (torn-off-tab
     // window) instead of spawning a new one: it replays `scrollback` into
     // xterm, then calls `reattachTerminal(ptyId, …)` so the running process
@@ -182,6 +187,8 @@ export default function Term(props : TermProps) {
     // Keep onCommandChange ref fresh and track the current command.
     const onCommandChangeRef = useRef(props.onCommandChange);
     onCommandChangeRef.current = props.onCommandChange;
+    const onCommandExitRef = useRef<((payload: {command: string | null; exitCode: number}) => void) | undefined>(undefined);
+    onCommandExitRef.current = props.onCommandExit;
     // Last command reported upward. `null` = nothing reported yet / idle.
     const currentCommandRef = useRef<CurrentCommand | null>(null);
     const commandParserRef = useRef<CurrentCommandParser | null>(null);
@@ -422,12 +429,20 @@ export default function Term(props : TermProps) {
             if (term.current && data) {
                 // Parse shell-integration sequences BEFORE writing to xterm;
                 // xterm drops unknown OSC, so the visible output is unaffected.
-                const parsed = commandParserRef.current!.feed(data);
-                if (parsed !== null) {
-                    oscActiveRef.current = true;
-                    reportCommand(
-                        parsed === "" ? null : { command: parsed, privileged: false }
-                    );
+                for (const ev of commandParserRef.current!.feed(data)) {
+                    if (ev.type === "command") {
+                        oscActiveRef.current = true;
+                        reportCommand({command: ev.value, privileged: false});
+                    } else {
+                        // Command finished: pair the just-run command text with
+                        // its exit code, forward to the backend history, then
+                        // clear the current command (shell is back at prompt).
+                        onCommandExitRef.current?.({
+                            command: currentCommandRef.current?.command ?? null,
+                            exitCode: ev.code,
+                        });
+                        reportCommand(null);
+                    }
                 }
                 writer.push(data);
             }

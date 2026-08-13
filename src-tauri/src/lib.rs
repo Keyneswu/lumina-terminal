@@ -4,6 +4,7 @@ mod file_manager;
 mod fonts;
 mod install_source;
 mod mcp;
+mod shell_integration;
 mod shells;
 mod ssh;
 mod state;
@@ -184,6 +185,7 @@ pub fn run() {
             set_throttle,
             get_terminal_cwd,
             set_active_tab,
+            report_command_finished,
             start_mcp_server,
             stop_mcp_server,
             find_shells,

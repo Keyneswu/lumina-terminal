@@ -106,6 +106,15 @@ export function setActiveTab(id: string | null) {
     });
 }
 
+/** Report a finished command (text + exit code) to the backend, so the
+ *  read-only MCP server's `list_command_history` can see it. Called when shell
+ *  integration reports the previous command's exit code (OSC CurrentCommandExit). */
+export function reportCommandFinished(id: string, command: string | null, exitCode: number) {
+    invoke<void>("report_command_finished", {id, command, exitCode}).catch((e) => {
+        error(`Failed to report command finished: ${e}`).catch(() => {});
+    });
+}
+
 /**
  * Find a system font file by CSS family name and return its binary contents.
  * Used by the ligature feature to parse the font's GSUB table client-side.

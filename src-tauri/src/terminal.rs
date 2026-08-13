@@ -9,7 +9,8 @@ use tauri::{ipc::Channel, AppHandle, Emitter, State};
 use crate::command_tracker::{foreground_command, CommandInfo};
 use crate::ssh::SshConfig;
 use crate::state::{
-    CommandChild, OutputChannel, RecentOutput, SharedChild, TerminalEntry, TerminalState,
+    CommandChild, CommandHistoryEntry, ExitedTab, ExitInfo, OutputChannel, RecentOutput,
+    SharedChild, TerminalEntry, TerminalState,
 };
 
 #[tauri::command]
@@ -148,7 +149,10 @@ pub fn start_terminal(
                 c.args(&["--login", "-i", "-c", cmd]);
             }
         } else {
-            c.args(&["--login", "-i"]);
+            // Pure interactive shell. Apply shell-integration injection
+            // (bash/zsh/fish) so we can capture per-command exit codes; the
+            // helper falls back to `--login -i` for unsupported shells.
+            crate::shell_integration::apply_interactive(&mut c, &shell_base, &app);
         }
         c.env("TERM", "xterm-256color");
         // xterm.js renders 24-bit color natively, so advertise it: programs that
@@ -431,29 +435,41 @@ pub fn start_terminal(
         let mut last_command: Option<CommandInfo> = None;
         #[cfg(unix)]
         let mut tick: u32 = 0;
-        loop {
-            let exited = {
+        // The exit code/signal, captured when the child terminates (the loop
+        // below breaks with it) and used to record the exit + emit
+        // `term-exit-<id>` with it as payload.
+        let exit: ExitInfo = loop {
+            let exit_info: Option<ExitInfo> = {
                 let mut child_guard = shared_child.try_lock().unwrap_or_else(|e| {
                     log::error!("Failed to lock child in watcher {}: {}", id_watcher, e);
                     panic!("Failed to lock child in watcher: {}", e);
                 });
                 match child_guard.try_wait() {
                     Ok(Some(status)) => {
+                        let info = ExitInfo {
+                            code: Some(status.exit_code() as i32),
+                            signal: status.signal().map(|s| s.to_string()),
+                        };
                         log::info!(
-                            "Child process {} exited with {:?}",
-                            id_watcher, status
+                            "Child process {} exited with code={} signal={:?}",
+                            id_watcher,
+                            info.code.unwrap_or(-1),
+                            info.signal
                         );
-                        true
+                        Some(info)
                     }
-                    Ok(None) => false,
+                    Ok(None) => None,
                     Err(e) => {
                         log::error!("Child process {} wait error: {}", id_watcher, e);
-                        true
+                        Some(ExitInfo {
+                            code: None,
+                            signal: None,
+                        })
                     }
                 }
             };
-            if exited {
-                break;
+            if let Some(info) = exit_info {
+                break info;
             }
 
             // Foreground-command tracking runs on Unix only (the master pty
@@ -480,29 +496,45 @@ pub fn start_terminal(
             }
 
             thread::sleep(Duration::from_millis(200));
-        }
+        };
 
-        // Clean up terminal state
+        // Clean up terminal state. Before freeing the PTY entry, snapshot its
+        // identity into `recent_exits` along with the exit code, so the
+        // read-only MCP server can still answer get_tab / list_recent_exits
+        // for this tab after its live entry is gone.
         log::debug!("Cleaning up state for terminal {}", id_watcher);
         {
             let mut terminals = state_watcher.terminals.try_lock().unwrap_or_else(|e| {
                 log::error!("Failed to lock terminals in watcher {}: {}", id_watcher, e);
                 panic!("Failed to lock terminals in watcher: {}", e);
             });
-            let removed = terminals.remove(&id_watcher);
-            log::debug!(
-                "Terminal {} removed from state: {:?}",
-                id_watcher,
-                removed.is_some()
-            );
+            if let Some(entry) = terminals.remove(&id_watcher) {
+                state_watcher.record_exit(
+                    id_watcher.clone(),
+                    ExitedTab {
+                        exit: exit.clone(),
+                        shell: entry.exe_path.clone(),
+                        is_ssh: entry.profile_type.as_deref() == Some("remote"),
+                        ssh_host: entry.ssh_host.clone(),
+                    },
+                );
+                log::debug!("Terminal {} removed from state (exit recorded)", id_watcher);
+            } else {
+                log::warn!(
+                    "Watcher {}: terminal already gone on cleanup",
+                    id_watcher
+                );
+            }
         }
 
-        // Notify frontend
+        // Notify frontend — payload now carries the exit code/signal, for the
+        // (future) proactive-suggestion UI and any frontend exit handling.
         log::debug!("Emitting term-exit event for {}", id_watcher);
-        app_watcher.emit(&term_exit_event_name, ()).unwrap_or_else(|e| {
+        if let Err(e) = app_watcher.emit(&term_exit_event_name, exit.clone()) {
             log::error!("Failed to emit term-exit event for {}: {}", id_watcher, e);
-        });
-        log::debug!("term-exit event emitted for {}", id_watcher);
+        } else {
+            log::debug!("term-exit event emitted for {}", id_watcher);
+        }
     });
 }
 
@@ -553,6 +585,12 @@ pub fn kill_terminal(id: String, state: State<TerminalState>) {
     } else {
         log::warn!("Terminal with id {} not found", id);
     }
+    // Drop this tab's MCP-side data (recent exit + command history) now that
+    // the user closed it, so these bounded stores don't leak closed-tab entries.
+    if let Ok(mut exits) = state.recent_exits.try_lock() {
+        exits.remove(&id);
+    }
+    state.clear_command_history(&id);
 }
 
 #[tauri::command]
@@ -679,6 +717,20 @@ pub fn set_active_tab(id: Option<String>, state: State<TerminalState>) {
         panic!("Failed to lock active_id: {}", e);
     });
     *active = id;
+}
+
+/// Record a finished command (text + exit code) in a tab's history. Called by
+/// the frontend when shell integration reports `CurrentCommandExit=<code>`
+/// (parsed in currentCommand.ts), paired with the command text from preexec or
+/// /proc. Feeds the read-only MCP server's `list_command_history`.
+#[tauri::command]
+pub fn report_command_finished(
+    id: String,
+    command: Option<String>,
+    exit_code: i32,
+    state: State<TerminalState>,
+) {
+    state.record_command(id, CommandHistoryEntry { command, exit_code });
 }
 
 /// Resolve a process's current working directory (platform-specific).
